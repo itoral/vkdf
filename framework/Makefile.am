@@ -5,7 +5,7 @@ lib_LTLIBRARIES = libvkdf.la
 libvkdf_la_SOURCES = \
     vkdf.hpp \
     vkdf-error.hpp vkdf-error.cpp \
-    vkdf-init.hpp vkdf-init.cpp \
+    vkdf-init.hpp vkdf-init-priv.hpp vkdf-init.cpp \
     vkdf-event-loop.hpp vkdf-event-loop.cpp \
     vkdf-cmd-buffer.hpp vkdf-cmd-buffer.cpp \
     vkdf-buffer.hpp vkdf-buffer.cpp \

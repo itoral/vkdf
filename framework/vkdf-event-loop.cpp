@@ -1,4 +1,5 @@
 #include "vkdf.hpp"
+#include "vkdf-init-priv.hpp"
 
 #if VKDF_LOG_FPS_ENABLE
 static uint64_t _frames = 0;
@@ -28,6 +29,32 @@ frame_end()
 }
 #endif
 
+void
+vkdf_rebuild_swap_chain(VkdfContext *ctx)
+{
+   int32_t width, height;
+
+   if (!ctx->before_rebuild_swap_chain_cb ||
+       !ctx->before_rebuild_swap_chain_cb) {
+      vkdf_error("Swap chain needs to be resized but no swap chain "
+                 "rebuild callbacks have been provided.");
+      return;
+   }
+
+   glfwGetWindowSize(ctx->window, &width, &height);
+
+   vkDeviceWaitIdle(ctx->device);
+
+   ctx->before_rebuild_swap_chain_cb(ctx, ctx->rebuild_swap_chain_cb_data);
+
+   ctx->width = width;
+   ctx->height = height;
+
+   _init_swap_chain(ctx);
+
+   ctx->after_rebuild_swap_chain_cb(ctx, ctx->rebuild_swap_chain_cb_data);
+}
+
 static void
 acquire_next_image(VkdfContext *ctx)
 {
@@ -53,7 +80,8 @@ acquire_next_image(VkdfContext *ctx)
           res != VK_SUBOPTIMAL_KHR) {
          vkdf_fatal("Failed to acquire image from swap chain");
       } else if (res == VK_ERROR_OUT_OF_DATE_KHR) {
-         vkdf_error("swap chain resize not supported");
+         vkdf_rebuild_swap_chain(ctx);
+         sem_index = 0;
       } else {
          image_acquired = true;
       }

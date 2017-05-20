@@ -1,4 +1,5 @@
 #include "vkdf.hpp"
+#include "vkdf-init-priv.hpp"
 
 #include <string.h>
 
@@ -259,10 +260,13 @@ init_logical_device(VkdfContext *ctx)
 
 static void
 init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
-                    bool fullscreen)
+                    bool fullscreen, bool resizable)
 {
    // Create window
    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+
+   if (!resizable)
+      glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
    ctx->width = width;
    ctx->height = height;
@@ -272,6 +276,12 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
                                   NULL);
    if (!ctx->window)
       vkdf_fatal("Failed to create window");
+
+   glfwSetWindowSizeLimits(ctx->window,
+                           resizable ? 1 : width,
+                           resizable ? 1 : height,
+                           resizable ? GLFW_DONT_CARE : width,
+                           resizable ? GLFW_DONT_CARE : height);
 
    VkResult res =
       glfwCreateWindowSurface(ctx->inst, ctx->window, NULL, &ctx->surface);
@@ -302,18 +312,27 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
    }
 
    g_free(formats);
-
-   // Query surface capabilities
-   res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phy_device,
-                                                   ctx->surface,
-                                                   &ctx->surface_caps);
-   if (res != VK_SUCCESS)
-      vkdf_fatal("Failed to query surface capabilities");
 }
 
 static void
-init_swap_chain(VkdfContext *ctx)
+destroy_swap_chain(VkdfContext *ctx)
 {
+   for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
+      vkDestroySemaphore(ctx->device, ctx->acquired_sem[i], NULL);
+      vkDestroySemaphore(ctx->device, ctx->draw_sem[i], NULL);
+      vkDestroyImageView(ctx->device, ctx->swap_chain_images[i].view, NULL);
+   }
+   g_free(ctx->acquired_sem);
+   g_free(ctx->draw_sem);
+   vkDestroySwapchainKHR(ctx->device, ctx->swap_chain, NULL);
+}
+
+void
+_init_swap_chain(VkdfContext *ctx)
+{
+   if (ctx->swap_chain_length > 0)
+      destroy_swap_chain(ctx);
+
    // Query available presentation modes
    uint32_t present_mode_count;
    VkResult res;
@@ -332,11 +351,18 @@ init_swap_chain(VkdfContext *ctx)
    if (res != VK_SUCCESS)
       vkdf_fatal("Failed to query surface surface presentation modes");
 
-   VkExtent2D swap_chain_ext;
+   // Query surface capabilities
+   res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phy_device,
+                                                   ctx->surface,
+                                                   &ctx->surface_caps);
+   if (res != VK_SUCCESS)
+      vkdf_fatal("Failed to query surface capabilities");
+
    VkSurfaceCapabilitiesKHR caps = ctx->surface_caps;
 
+   VkExtent2D swap_chain_ext;
    if (caps.currentExtent.width == 0xFFFFFFFF) {
-      // Undefined surface size, use window dimensions
+      // Undefined surface size, use context dimensions
       swap_chain_ext.width = ctx->width;
       swap_chain_ext.height = ctx->height;
 
@@ -478,6 +504,7 @@ vkdf_init(VkdfContext *ctx,
           uint32_t width,
           uint32_t height,
           bool fullscreen,
+          bool resizable,
           bool enable_validation)
 {
    memset(ctx, 0, sizeof(VkdfContext));
@@ -490,23 +517,10 @@ vkdf_init(VkdfContext *ctx,
 
    init_instance(ctx, enable_validation);
    init_physical_device(ctx);
-   init_window_surface(ctx, width, height, fullscreen);
+   init_window_surface(ctx, width, height, fullscreen, resizable);
    init_queues(ctx);
    init_logical_device(ctx);
-   init_swap_chain(ctx);
-}
-
-static void
-destroy_swap_chain(VkdfContext *ctx)
-{
-   for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
-      vkDestroySemaphore(ctx->device, ctx->acquired_sem[i], NULL);
-      vkDestroySemaphore(ctx->device, ctx->draw_sem[i], NULL);
-      vkDestroyImageView(ctx->device, ctx->swap_chain_images[i].view, NULL);
-   }
-   g_free(ctx->acquired_sem);
-   g_free(ctx->draw_sem);
-   vkDestroySwapchainKHR(ctx->device, ctx->swap_chain, NULL);
+   _init_swap_chain(ctx);
 }
 
 static void

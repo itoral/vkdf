@@ -608,7 +608,7 @@ main()
 
    srandom(time(NULL));
 
-   vkdf_init(&ctx, 800, 600, false, ENABLE_DEBUG);
+   vkdf_init(&ctx, 800, 600, false, false, ENABLE_DEBUG);
    init_resources(&ctx, &resources);
 
    vkdf_event_loop_run(&ctx, scene_update, scene_render, &resources);

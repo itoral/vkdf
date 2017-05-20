@@ -37,7 +37,13 @@ typedef struct {
    VkImageView view;
 } VkdfSwapChainImage;
 
-typedef struct {
+
+struct _VkdfContext;
+
+typedef void (*VkdfRebuildSwapChainCB)(struct _VkdfContext *ctx,
+                                       void *user_data);
+
+struct _VkdfContext {
    // Vulkan instance
    VkInstance inst;
    uint32_t inst_extension_count;
@@ -77,7 +83,14 @@ typedef struct {
    VkSemaphore *acquired_sem;
    VkSemaphore *draw_sem;
    uint32_t swap_chain_index;
-} VkdfContext;
+
+   // Swap chain rebuild callbacks
+   VkdfRebuildSwapChainCB before_rebuild_swap_chain_cb;
+   VkdfRebuildSwapChainCB after_rebuild_swap_chain_cb;
+   void *rebuild_swap_chain_cb_data;
+};
+
+typedef struct _VkdfContext VkdfContext;
 
 #include "vkdf-error.hpp"
 #include "vkdf-init.hpp"
