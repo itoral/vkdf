@@ -477,6 +477,7 @@ void
 vkdf_init(VkdfContext *ctx,
           uint32_t width,
           uint32_t height,
+          bool fullscreen,
           bool enable_validation)
 {
    memset(ctx, 0, sizeof(VkdfContext));
@@ -489,7 +490,7 @@ vkdf_init(VkdfContext *ctx,
 
    init_instance(ctx, enable_validation);
    init_physical_device(ctx);
-   init_window_surface(ctx, width, height, false);
+   init_window_surface(ctx, width, height, fullscreen);
    init_queues(ctx);
    init_logical_device(ctx);
    init_swap_chain(ctx);

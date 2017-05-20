@@ -5,6 +5,7 @@ void
 vkdf_init(VkdfContext *ctx,
           uint32_t widht,
           uint32_t height,
+          bool fullscreen,
           bool enable_validation);
 
 void
