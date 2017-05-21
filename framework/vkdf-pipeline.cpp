@@ -17,18 +17,6 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
 {
    VkPipeline pipeline;
 
-   // Pipeline cache
-   if (pipeline_cache) {
-      VkPipelineCacheCreateInfo info;
-      info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-      info.pNext = NULL;
-      info.initialDataSize = 0;
-      info.pInitialData = NULL;
-      info.flags = 0;
-
-      VK_CHECK(vkCreatePipelineCache(ctx->device, &info, NULL, pipeline_cache));
-   }
-
    // Vertex input
    VkPipelineVertexInputStateCreateInfo vi;
    vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -188,8 +176,12 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    pipeline_info.renderPass = render_pass;
    pipeline_info.subpass = 0;
 
-   VK_CHECK(vkCreateGraphicsPipelines(ctx->device, *pipeline_cache, 1,
-                                      &pipeline_info, NULL, &pipeline));
+   VK_CHECK(vkCreateGraphicsPipelines(ctx->device,
+                                      pipeline_cache ? *pipeline_cache : NULL,
+                                      1,
+                                      &pipeline_info,
+                                      NULL,
+                                      &pipeline));
 
    return pipeline;
 }

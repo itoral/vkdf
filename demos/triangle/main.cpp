@@ -10,7 +10,6 @@ typedef struct {
    VkdfBuffer vertex_buf;
    VkdfBuffer ubo;
    VkRenderPass render_pass;
-   VkPipelineCache pipeline_cache;
    VkDescriptorSetLayout set_layout;
    VkPipelineLayout pipeline_layout;
    VkPipeline pipeline;
@@ -306,7 +305,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    vi_attribs[0].offset = 0;
 
    res->pipeline = vkdf_create_gfx_pipeline(ctx,
-                                            &res->pipeline_cache,
+                                            NULL,
                                             1,
                                             &vi_binding,
                                             1,
@@ -386,7 +385,6 @@ static void
 destroy_pipeline_resources(VkdfContext *ctx, DemoResources *res)
 {
    vkDestroyPipeline(ctx->device, res->pipeline, NULL);
-   vkDestroyPipelineCache(ctx->device, res->pipeline_cache, NULL);
    vkDestroyPipelineLayout(ctx->device, res->pipeline_layout, NULL);
 }
 

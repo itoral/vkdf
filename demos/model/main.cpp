@@ -21,7 +21,6 @@ typedef struct {
    VkCommandPool cmd_pool;
    VkCommandBuffer *cmd_bufs;
    VkRenderPass render_pass;
-   VkPipelineCache pipeline_cache;
    VkPipelineLayout pipeline_layout;
    VkPipeline pipeline;
    VkShaderModule vs_module;
@@ -532,7 +531,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    vi_attribs[2].offset = 0;
 
    res->pipeline = vkdf_create_gfx_pipeline(ctx,
-                                            &res->pipeline_cache,
+                                            NULL,
                                             2,
                                             vi_bindings,
                                             3,
@@ -588,7 +587,6 @@ static void
 destroy_pipeline_resources(VkdfContext *ctx, DemoResources *res)
 {
    vkDestroyPipeline(ctx->device, res->pipeline, NULL);
-   vkDestroyPipelineCache(ctx->device, res->pipeline_cache, NULL);
    vkDestroyPipelineLayout(ctx->device, res->pipeline_layout, NULL);
 }
 
