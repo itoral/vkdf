@@ -56,6 +56,14 @@ variable:
 
 $ export VK_ICD_FILENAMES="<path-to-mesa-install-dir>/intel_icd.x86_64.json"
 
+The build will produce a shared library that demos will dynamically link
+against at run-time. Unless you install the library to a path visible to
+the dynamic linker you will need to include it in the LD_LIBRARY_PATH. For
+example, to run the demos without installing at all, from the root of the
+repository execute the following:
+
+$ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD/framework/.libs
+
 All the demos are under the demos/ directory. For example, to execute the
 'triangle' demo:
 
