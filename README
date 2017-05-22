@@ -25,14 +25,13 @@ library).
 The Vulkan SDK can be obtained from the LunarG website [2].
 
 The glslangValidator binary for Linux is included under external/glslang/
-for convenience. A more up-to-date binary can be obtained from the Khronos
-website [3] or by building it from source code [4], but this version is
-sufficient to compile the shaders included in this repository.
+for convenience. A more up-to-date binary can be obtained by building it
+from source code [3], but this version is sufficient to compile the shaders
+included in this repository.
 
 [1] http://www.glfw.org/download.html
 [2] https://www.lunarg.com/vulkan-sdk/
-[3] https://www.khronos.org/opengles/sdk/tools/Reference-Compiler/
-[4] https://github.com/KhronosGroup/glslang
+[3] https://github.com/KhronosGroup/glslang
 
 
 Bulding and executing
