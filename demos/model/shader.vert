@@ -17,10 +17,6 @@ layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in uint in_material_idx;
 
-out gl_PerVertex {
-    vec4 gl_Position;
-};
-
 layout(location = 0) out vec3 out_normal;
 layout(location = 1) flat out uint out_material_idx;
 

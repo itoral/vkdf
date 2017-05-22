@@ -15,10 +15,6 @@ layout(std140, set = 0, binding = 1) uniform m_ubo {
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 
-out gl_PerVertex {
-    vec4 gl_Position;
-};
-
 layout(location = 0) out vec3 out_normal;
 
 void main()
