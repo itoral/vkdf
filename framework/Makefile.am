@@ -20,7 +20,8 @@ libvkdf_la_SOURCES = \
     vkdf-mesh.hpp vkdf-mesh.cpp \
     vkdf-model.hpp vkdf-model.cpp \
     vkdf-object.hpp vkdf-object.cpp \
-    vkdf-light.hpp vkdf-light.cpp
+    vkdf-light.hpp vkdf-light.cpp \
+    vkdf-camera.hpp vkdf-camera.cpp
 
 libvkdf_la_CXXFLAGS = \
     -DPREFIX=$(prefix) \
