@@ -252,11 +252,17 @@ create_descriptor_set(VkdfContext *ctx,
 static void
 init_matrices(DemoResources *res)
 {
-   res->projection = glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
+   glm::mat4 clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
+                              0.0f,-1.0f, 0.0f, 0.0f,
+                              0.0f, 0.0f, 0.5f, 0.0f,
+                              0.0f, 0.0f, 0.5f, 1.0f);
+
+   res->projection =
+      clip * glm::perspective(glm::radians(45.0f), 1.0f, 0.1f, 100.0f);
 
    res->view = glm::lookAt(glm::vec3( 0,  0, -15),  // Camera position
                            glm::vec3( 0,  0,  0),   // Looking at origin
-                           glm::vec3( 0, -1,  0));  // Up/Down is reversed in Vulkan
+                           glm::vec3( 0,  1,  0));  // Up direction
 }
 
 static void
