@@ -19,7 +19,8 @@ libvkdf_la_SOURCES = \
     vkdf-semaphore.hpp vkdf-semaphore.cpp \
     vkdf-mesh.hpp vkdf-mesh.cpp \
     vkdf-model.hpp vkdf-model.cpp \
-    vkdf-object.hpp vkdf-object.cpp
+    vkdf-object.hpp vkdf-object.cpp \
+    vkdf-light.hpp vkdf-light.cpp
 
 libvkdf_la_CXXFLAGS = \
     -DPREFIX=$(prefix) \

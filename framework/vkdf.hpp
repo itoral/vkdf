@@ -108,5 +108,6 @@ typedef struct _VkdfContext VkdfContext;
 #include "vkdf-mesh.hpp"
 #include "vkdf-model.hpp"
 #include "vkdf-object.hpp"
+#include "vkdf-light.hpp"
 
 #endif
