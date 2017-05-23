@@ -70,6 +70,7 @@ AC_CONFIG_FILES([
    demos/depth/Makefile
    demos/mesh/Makefile
    demos/model/Makefile
+   demos/light/Makefile
 ])
 
 AC_OUTPUT

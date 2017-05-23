@@ -3,7 +3,8 @@ SUBDIRS = triangle \
           texture \
           depth \
           mesh \
-          model
+          model \
+          light
 
 MAINTAINERCLEANFILES = \
         *.in \
