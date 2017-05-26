@@ -29,3 +29,4 @@ demos/texture/texture
 demos/triangle/triangle
 demos/light/light
 demos/shadow/shadow
+demos/ssbo/ssbo
