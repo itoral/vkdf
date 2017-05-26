@@ -71,6 +71,38 @@ vkdf_buffer_map_and_fill(VkdfContext *ctx,
 }
 
 void
+vkdf_buffer_map_and_get(VkdfContext *ctx,
+                        VkdfBuffer buf,
+                        VkDeviceSize offset,
+                        VkDeviceSize size,
+                        void *data)
+{
+   assert(buf.mem_props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   //Note: this is needed. It is debatable if we should call it here or
+   //      let the application do that before calling this method.
+   VK_CHECK(vkDeviceWaitIdle(ctx->device));
+
+   void *mapped_memory;
+   VK_CHECK(vkMapMemory(ctx->device, buf.mem, offset, size, 0, &mapped_memory));
+
+   assert(buf.mem_reqs.size >= size);
+
+   if (!(buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+      VkMappedMemoryRange range;
+      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+      range.pNext = NULL;
+      range.memory = buf.mem;
+      range.offset = offset;
+      range.size = size;
+      VK_CHECK(vkFlushMappedMemoryRanges(ctx->device, 1, &range));
+   }
+
+   memcpy(data, mapped_memory, size);
+   vkUnmapMemory(ctx->device, buf.mem);
+}
+
+void
 vkdf_destroy_buffer(VkdfContext *ctx, VkdfBuffer *buf)
 {
    vkDestroyBuffer(ctx->device, buf->buf, NULL);
