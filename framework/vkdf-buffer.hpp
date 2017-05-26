@@ -33,6 +33,12 @@ vkdf_buffer_map_and_fill_elements(VkdfContext *ctx,
                                   const void *data);
 
 void
+vkdf_buffer_map_and_get(VkdfContext *ctx,
+                        VkdfBuffer buf,
+                        VkDeviceSize offset,
+                        VkDeviceSize size,
+                        void *data);
+void
 vkdf_destroy_buffer(VkdfContext *ctx, VkdfBuffer *buf);
 
 #endif
