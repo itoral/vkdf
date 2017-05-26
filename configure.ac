@@ -71,6 +71,7 @@ AC_CONFIG_FILES([
    demos/mesh/Makefile
    demos/model/Makefile
    demos/light/Makefile
+   demos/ssbo/Makefile
 ])
 
 AC_OUTPUT

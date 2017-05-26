@@ -4,7 +4,8 @@ SUBDIRS = triangle \
           depth \
           mesh \
           model \
-          light
+          light \
+          ssbo
 
 MAINTAINERCLEANFILES = \
         *.in \
