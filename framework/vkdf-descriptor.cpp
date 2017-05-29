@@ -23,21 +23,34 @@ vkdf_create_descriptor_pool(VkdfContext *ctx,
    return pool;
 }
 
+static bool
+is_descriptor_buffer(VkDescriptorType type)
+{
+   switch (type) {
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+   case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+   case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
+      return true;
+   default:
+      return false;
+   }
+}
+
 VkDescriptorSetLayout
-vkdf_create_ubo_descriptor_set_layout(VkdfContext *ctx,
-                                      uint32_t binding,
-                                      uint32_t count,
-                                      VkShaderStageFlags stages,
-                                      bool is_dynamic)
+vkdf_create_buffer_descriptor_set_layout(VkdfContext *ctx,
+                                         uint32_t binding,
+                                         uint32_t count,
+                                         VkShaderStageFlags stages,
+                                         VkDescriptorType type)
 {
    assert(count < 16);
+   assert(is_descriptor_buffer(type));
 
    VkDescriptorSetLayoutBinding set_layout_binding[16];
    for (uint32_t i = 0; i < count; i++) {
       set_layout_binding[i].binding = binding + i;
-      set_layout_binding[i].descriptorType = is_dynamic ?
-         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC :
-         VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+      set_layout_binding[i].descriptorType = type;
       set_layout_binding[i].descriptorCount = 1;
       set_layout_binding[i].stageFlags = stages;
       set_layout_binding[i].pImmutableSamplers = NULL;
@@ -98,9 +111,10 @@ vkdf_descriptor_set_buffer_update(VkdfContext *ctx,
                                   uint32_t count,
                                   VkDeviceSize *offsets,
                                   VkDeviceSize *ranges,
-                                  bool is_dynamic)
+                                  VkDescriptorType type)
 {
    assert(count < 16);
+   assert(is_descriptor_buffer(type));
 
    VkDescriptorBufferInfo buffer_info[16];
    for (uint32_t i = 0; i < count; i++) {
@@ -116,9 +130,7 @@ vkdf_descriptor_set_buffer_update(VkdfContext *ctx,
    writes.dstBinding = binding;
    writes.dstArrayElement = 0;
    writes.descriptorCount = count;
-   writes.descriptorType = is_dynamic ?
-      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC :
-      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   writes.descriptorType = type;
    writes.pBufferInfo = buffer_info;
    writes.pImageInfo = NULL;
    writes.pTexelBufferView = NULL;

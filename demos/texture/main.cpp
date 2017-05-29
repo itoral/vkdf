@@ -522,8 +522,9 @@ init_resources(VkdfContext *ctx, DemoResources *res)
 
    // Descriptor set (UBO)
    res->set_layout_ubo =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 1,
-                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 1,
+                                               VK_SHADER_STAGE_VERTEX_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    res->descriptor_set_ubo =
       create_descriptor_set(ctx, res->descriptor_pool_ubo, res->set_layout_ubo);
@@ -531,7 +532,8 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    VkDeviceSize ubo_offset = 0;
    VkDeviceSize ubo_size = sizeof(res->mvp);
    vkdf_descriptor_set_buffer_update(ctx, res->descriptor_set_ubo, res->ubo.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
+                                     0, 1, &ubo_offset, &ubo_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Descriptor set (Sampler)
    res->set_layout_sampler =
