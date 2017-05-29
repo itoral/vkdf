@@ -472,10 +472,10 @@ init_resources(VkdfContext *ctx, DemoResources *res)
 
    // Descriptor set for UBO
    res->set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 3,
-                                            VK_SHADER_STAGE_VERTEX_BIT |
-                                            VK_SHADER_STAGE_FRAGMENT_BIT,
-                                            false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 3,
+                                               VK_SHADER_STAGE_VERTEX_BIT |
+                                               VK_SHADER_STAGE_FRAGMENT_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    res->descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->set_layout);
@@ -485,14 +485,16 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    VkDeviceSize VP_size = 2 * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->descriptor_set,
                                      res->VP_ubo.buf,
-                                     0, 1, &VP_offset, &VP_size, false);
+                                     0, 1, &VP_offset, &VP_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Map Model UBO to set binding 1
    VkDeviceSize M_offset = 0;
    VkDeviceSize M_size = NUM_OBJECTS * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->descriptor_set,
                                      res->M_ubo.buf,
-                                     1, 1, &M_offset, &M_size, false);
+                                     1, 1, &M_offset, &M_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Map model material UBOs to set binding 2
    VkDeviceSize material_offset = 0;
@@ -500,7 +502,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    vkdf_descriptor_set_buffer_update(ctx, res->descriptor_set,
                                      res->material_ubo.buf,
                                      2, 1, &material_offset, &material_size,
-                                     false);
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Pipeline
    res->pipeline_layout = create_pipeline_layout(ctx, res->set_layout);
