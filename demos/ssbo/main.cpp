@@ -8,6 +8,10 @@
 // There is a more "pure SSBO" alternative: the SSBO as input and output (and even
 // move to use a compute shader). But this demo should be a valuable just SSBO
 // demo too.
+//
+// 16-bit note: we pass a pointer to ushort, and receive it. We are not interested
+// on the real half-float value, but about knowing if what we send through the
+// vertex input attribute is what we received through the 16-bit ssbo
 
 #define DEFAULT_NUM_VERTICES 3
 #define DEFAULT_NUM_COMPONENTS 2
@@ -20,7 +24,7 @@ typedef struct {
    VkCommandPool cmd_pool;
    VkCommandBuffer render_cmd_buf;
    VkdfBuffer vertex_buf;
-   float *vertex_data;
+   ushort *vertex_data;
    VkRenderPass render_pass;
    VkPipelineLayout pipeline_layout;
    VkPipeline pipeline;
@@ -33,25 +37,26 @@ typedef struct {
 
    int num_vertices;
    int num_components;
-   int num_elements;
+   int component_size;
+   int num_elements; //Represent the number of individual values, so on this example 16-bit elements
    int vertex_size;
    int vbo_size;
 
    int num_ssbo_components; //In case there are padding
-   int num_ssbo_elements; //dito
+   int num_ssbo_elements; //Represents the number of individual values. So on this example 16-bit elements
    int ssbo_size;
 
 } DemoResources;
 
-static float*
+static ushort*
 create_vertex_data(VkdfContext *ctx, DemoResources *res)
 {
-   float *vertex_data;
+   ushort *vertex_data;
 
-   vertex_data = (float*) malloc(res->vbo_size);
-   for (int i = 0; i < res->num_elements; i++)
-      vertex_data[i] = i + 1 + LSB;
-
+   vertex_data = (ushort*) malloc(res->vbo_size);
+   for (int i = 0; i < res->num_elements; i++) {
+      vertex_data[i] = i;
+   }
    return vertex_data;
 }
 
@@ -74,7 +79,7 @@ create_vertex_buffer(VkdfContext *ctx, DemoResources *res)
 static VkdfBuffer
 create_ssbo(VkdfContext *ctx, DemoResources *res)
 {
-   float initial_values[res->num_ssbo_elements];
+   ushort initial_values[res->num_ssbo_elements];
 
    VkdfBuffer buf =
       vkdf_create_buffer(ctx,
@@ -85,7 +90,7 @@ create_ssbo(VkdfContext *ctx, DemoResources *res)
 
    // we set some initial values just to confirm if it is properly updated
    for (int i = 0; i < res->num_ssbo_elements; i++) {
-      initial_values[i] = 666.0f;
+      initial_values[i] = 0x6666;
    }
    vkdf_buffer_map_and_fill(ctx, buf, 0, res->ssbo_size, &initial_values);
 
@@ -238,13 +243,13 @@ format_from_num_components(int num_components)
    assert(num_components >= 1);
 
    switch (num_components) {
-   case 1: return VK_FORMAT_R32_SFLOAT;
-   case 2: return VK_FORMAT_R32G32_SFLOAT;
-   case 3: return VK_FORMAT_R32G32B32_SFLOAT;
-   case 4: return VK_FORMAT_R32G32B32A32_SFLOAT;
+   case 1: return VK_FORMAT_R16_SFLOAT;
+   case 2: return VK_FORMAT_R16G16_SFLOAT;
+   case 3: return VK_FORMAT_R16G16B16_SFLOAT;
+   case 4: return VK_FORMAT_R16G16B16A16_SFLOAT;
    default:
       //unreachable
-      return VK_FORMAT_R32G32B32A32_SFLOAT;
+      return VK_FORMAT_R16G16B16A16_SFLOAT;
    }
 }
 
@@ -265,12 +270,12 @@ init_resources(VkdfContext *ctx,
    res->num_vertices = num_vertices;
    res->num_components = num_components;
    res->num_elements = num_vertices * num_components;
-   res->vbo_size = res->num_elements * sizeof(float);
-   res->vertex_size = num_components * sizeof(float);
+   res->vbo_size = res->num_elements * sizeof(ushort);
+   res->vertex_size = num_components * sizeof(ushort);
 
    res->num_ssbo_components = res->num_components == 3 ? 4 : res->num_components;
    res->num_ssbo_elements = res->num_ssbo_components * num_vertices;
-   res->ssbo_size = res->num_ssbo_elements * sizeof(float);
+   res->ssbo_size = res->num_ssbo_elements * sizeof(ushort);
 
    // Vertex buffer
    res->vertex_data = create_vertex_data(ctx, res);
@@ -367,25 +372,11 @@ print_component(int c)
    }
 }
 
-static const
-char *float_to_hex(float f)
-{
-        union {
-                float f;
-                unsigned i;
-        } b;
-
-        b.f = f;
-        char *s = (char *) malloc(100);
-        sprintf(s, "0x%08X", b.i);
-        return s;
-}
-
 //fetch ssbo, compare with expected, and print content
 static void
 check_ssbo_values(VkdfContext *ctx, DemoResources *res)
 {
-   float feedback[res->num_ssbo_elements];
+   ushort feedback[res->num_ssbo_elements];
    int index = 0;
    int index_ssbo = 0;
    bool result = true;
@@ -400,9 +391,8 @@ check_ssbo_values(VkdfContext *ctx, DemoResources *res)
 
       for (int c = 0; c < res->num_components; c++) {
          if (res->num_components > 1) print_component(c);
-         fprintf(stdout, "Original = %.14g[%s] Fetched = %.14g[%s]",
-                 res->vertex_data[index], float_to_hex(res->vertex_data[index]),
-                 feedback[index_ssbo], float_to_hex(feedback[index_ssbo]));
+         fprintf(stdout, "Original = 0x%04X Fetched = 0x%04X",
+                 res->vertex_data[index], feedback[index_ssbo]);
 
          if (res->vertex_data[index] == feedback[index_ssbo]) {
             fprintf(stdout, "\tequal\n");

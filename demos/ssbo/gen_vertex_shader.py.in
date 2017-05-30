@@ -15,10 +15,10 @@ OUT_FILE = 'shader_'
 COMMAND='@top_srcdir@/@GLSLANG@'
 
 def main():
-    types = [['1', 'float'],
-             ['2', 'vec2'],
-             ['3', 'vec3'],
-             ['4', 'vec4']]
+    types = [['1', 'float16_t'],
+             ['2', 'f16vec2'],
+             ['3', 'f16vec3'],
+             ['4', 'f16vec4']]
 
     template_filepath = os.path.join(os.path.dirname(__file__), VERT_TEMPLATE)
     template = Template(filename=template_filepath,
