@@ -7,13 +7,32 @@ AM_CPPFLAGS = @DEMO_DEPS_CFLAGS@
 # ------------------------------
 
 BUILT_SOURCES = \
-    shader.vert.spv
+    shader_1.vert \
+    shader_2.vert \
+    shader_3.vert \
+    shader_4.vert \
+    shader_1.vert.spv \
+    shader_2.vert.spv \
+    shader_3.vert.spv \
+    shader_4.vert.spv
 
 CLEANFILES = \
     $(BUILT_SOURCES)
 
-shader.vert.spv: shader.vert
-	$(top_srcdir)/$(GLSLANG) -V shader.vert -o shader.vert.spv
+shader_1.vert shader_2.vert shader_3.vert shader_4.vert: shader.vert.mako
+	python gen_vertex_shader.py
+
+shader_1.vert.spv: shader_1.vert
+	$(top_srcdir)/$(GLSLANG) -V shader_1.vert -o shader_1.vert.spv
+
+shader_2.vert.spv: shader_2.vert
+	$(top_srcdir)/$(GLSLANG) -V shader_2.vert -o shader_2.vert.spv
+
+shader_3.vert.spv: shader_3.vert
+	$(top_srcdir)/$(GLSLANG) -V shader_3.vert -o shader_3.vert.spv
+
+shader_4.vert.spv: shader_4.vert
+	$(top_srcdir)/$(GLSLANG) -V shader_4.vert -o shader_4.vert.spv
 
 ssbo_SOURCES = \
     main.cpp
