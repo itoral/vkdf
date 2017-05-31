@@ -477,12 +477,31 @@ cleanup_resources(VkdfContext *ctx, DemoResources *res)
 }
 
 int
-main()
+main(int argc, char *argv[])
 {
    VkdfContext ctx;
    DemoResources resources;
    int num_vertices = DEFAULT_NUM_VERTICES;
    int num_components = DEFAULT_NUM_COMPONENTS;
+
+   if (argc > 3) {
+      fprintf(stdout, "Usage: ./ssbo [num_components] [num_samples]\n");
+      fprintf(stdout, "\tnum_components needs to be on the range [1..4]\n");
+      fprintf(stdout, "\tnum_samples needs to be on the range [1..20]\n");
+      fprintf(stdout, "\tWrong values will be defaulted\n");
+   }
+   if (argc > 1) {
+      num_components = atoi(argv[1]);
+      if (num_components < 1 || num_components > 4)
+         num_components = DEFAULT_NUM_COMPONENTS;
+   }
+   if (argc > 2) {
+      num_vertices = atoi(argv[2]);
+      if (num_vertices < 1 || num_vertices > 20)
+         num_vertices = DEFAULT_NUM_VERTICES;
+   }
+   fprintf(stdout, "Running ssbo test with params (num_components, num_samples) = (%i, %i)\n",
+           num_components, num_vertices);
 
    //Although we don't need a full window initialization, it is easier to just
    //use the vanilla _init
