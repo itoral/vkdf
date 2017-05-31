@@ -254,6 +254,8 @@ init_resources(VkdfContext *ctx,
                int num_vertices,
                int num_components)
 {
+   char filename[100];
+
    assert(num_vertices > 0);
    assert(num_components >= 1 && num_components <= 4);
 
@@ -278,7 +280,8 @@ init_resources(VkdfContext *ctx,
    res->ssbo = create_ssbo(ctx, res);
 
    // Shaders
-   res->vs_module = vkdf_create_shader_module(ctx, "shader.vert.spv");
+   snprintf(filename, 100, "shader_%i.vert.spv", res->num_components);
+   res->vs_module = vkdf_create_shader_module(ctx, filename);
 
    // Render pass
    res->render_pass = create_render_pass(ctx);
