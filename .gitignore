@@ -30,3 +30,5 @@ demos/triangle/triangle
 demos/light/light
 demos/shadow/shadow
 demos/ssbo/ssbo
+demos/ssbo/gen_vertex_shader.py
+shader_*.vert

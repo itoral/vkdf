@@ -6,14 +6,27 @@ AM_CPPFLAGS = @DEMO_DEPS_CFLAGS@
 # Triangle
 # ------------------------------
 
+GLSL_GENERATED_FILES = \
+    shader_1.vert \
+    shader_2.vert \
+    shader_3.vert \
+    shader_4.vert
+
+SPIRV_GENERATED_FILES = \
+    shader_1.vert.spv \
+    shader_2.vert.spv \
+    shader_3.vert.spv \
+    shader_4.vert.spv
+
 BUILT_SOURCES = \
-    shader.vert.spv
+	$(GLSL_GENERATED_FILES) \
+	$(SPIRV_GENERATED_FILES)
 
 CLEANFILES = \
-    $(BUILT_SOURCES)
+	$(BUILT_SOURCES)
 
-shader.vert.spv: shader.vert
-	$(top_srcdir)/$(GLSLANG) -V shader.vert -o shader.vert.spv
+$(GLSL_GENERATED_FILES): shader.vert.mako
+	python gen_vertex_shader.py
 
 ssbo_SOURCES = \
     main.cpp
