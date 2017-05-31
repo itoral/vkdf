@@ -34,8 +34,13 @@ typedef struct {
    int num_vertices;
    int num_components;
    int num_elements;
-   int buffer_size; //for both vertex_data and ssbo
    int vertex_size;
+   int vbo_size;
+
+   int num_ssbo_components; //In case there are padding
+   int num_ssbo_elements; //dito
+   int ssbo_size;
+
 } DemoResources;
 
 static float*
@@ -43,7 +48,7 @@ create_vertex_data(VkdfContext *ctx, DemoResources *res)
 {
    float *vertex_data;
 
-   vertex_data = (float*) malloc(res->buffer_size);
+   vertex_data = (float*) malloc(res->vbo_size);
    for (int i = 0; i < res->num_elements; i++)
       vertex_data[i] = i + 1 + LSB;
 
@@ -56,12 +61,12 @@ create_vertex_buffer(VkdfContext *ctx, DemoResources *res)
    VkdfBuffer buf =
       vkdf_create_buffer(ctx,
                          0,                                    // flag
-                         res->buffer_size,                  // size
+                         res->vbo_size,                  // size
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,    // usage
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT); // memory type
 
 
-   vkdf_buffer_map_and_fill(ctx, buf, 0, res->buffer_size, res->vertex_data);
+   vkdf_buffer_map_and_fill(ctx, buf, 0, res->vbo_size, res->vertex_data);
 
    return buf;
 }
@@ -69,20 +74,20 @@ create_vertex_buffer(VkdfContext *ctx, DemoResources *res)
 static VkdfBuffer
 create_ssbo(VkdfContext *ctx, DemoResources *res)
 {
-   float initial_values[res->num_elements];
+   float initial_values[res->num_ssbo_elements];
 
    VkdfBuffer buf =
       vkdf_create_buffer(ctx,
                          0,                                    // flags
-                         res->buffer_size,                     // size
+                         res->ssbo_size,                     // size
                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,   // usage
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT); // memory type
 
    // we set some initial values just to confirm if it is properly updated
-   for (int i = 0; i < res->num_elements; i++) {
+   for (int i = 0; i < res->num_ssbo_elements; i++) {
       initial_values[i] = 666.0f;
    }
-   vkdf_buffer_map_and_fill(ctx, buf, 0, res->buffer_size, &initial_values);
+   vkdf_buffer_map_and_fill(ctx, buf, 0, res->ssbo_size, &initial_values);
 
    return buf;
 }
@@ -258,8 +263,12 @@ init_resources(VkdfContext *ctx,
    res->num_vertices = num_vertices;
    res->num_components = num_components;
    res->num_elements = num_vertices * num_components;
-   res->buffer_size = res->num_elements * sizeof(float);
+   res->vbo_size = res->num_elements * sizeof(float);
    res->vertex_size = num_components * sizeof(float);
+
+   res->num_ssbo_components = res->num_components == 3 ? 4 : res->num_components;
+   res->num_ssbo_elements = res->num_ssbo_components * num_vertices;
+   res->ssbo_size = res->num_ssbo_elements * sizeof(float);
 
    // Vertex buffer
    res->vertex_data = create_vertex_data(ctx, res);
@@ -288,7 +297,7 @@ init_resources(VkdfContext *ctx,
       create_descriptor_set(ctx, res->descriptor_pool_ssbo, res->set_layout_ssbo);
 
    VkDeviceSize ssbo_offset = 0;
-   VkDeviceSize ssbo_size = res->buffer_size;
+   VkDeviceSize ssbo_size = res->ssbo_size;
    vkdf_descriptor_set_buffer_update(ctx, res->descriptor_set_ssbo, res->ssbo.buf,
                                      SSBO_BINDING, 1, &ssbo_offset, &ssbo_size,
                                      VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
@@ -373,11 +382,12 @@ char *float_to_hex(float f)
 static void
 check_ssbo_values(VkdfContext *ctx, DemoResources *res)
 {
-   float feedback[res->num_elements];
+   float feedback[res->num_ssbo_elements];
    int index = 0;
+   int index_ssbo = 0;
 
    vkdf_buffer_map_and_get(ctx,
-                           res->ssbo, 0, sizeof(feedback), feedback);
+                           res->ssbo, 0, res->ssbo_size, feedback);
 
    for (int vertex = 0; vertex < res->num_vertices; vertex++) {
       fprintf(stdout, "Sample%i:", vertex + 1);
@@ -388,15 +398,20 @@ check_ssbo_values(VkdfContext *ctx, DemoResources *res)
          if (res->num_components > 1) print_component(c);
          fprintf(stdout, "Original = %.14g[%s] Fetched = %.14g[%s]",
                  res->vertex_data[index], float_to_hex(res->vertex_data[index]),
-                 feedback[index], float_to_hex(feedback[index]));
+                 feedback[index_ssbo], float_to_hex(feedback[index_ssbo]));
 
-         if (res->vertex_data[index] == feedback[index])
+         if (res->vertex_data[index] == feedback[index_ssbo])
             fprintf(stdout, "\tequal\n");
          else
             fprintf(stdout, "\tWRONG\n");
 
          index++;
+         index_ssbo++;
       }
+      //vec3 needs a vec4 alignment
+      if (res->num_components == 3)
+         index_ssbo++;
+
       fprintf(stdout, "\n");
    }
 }
