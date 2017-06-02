@@ -9,6 +9,7 @@ You need the following dependencies installed on your system:
 - Glib
 - GLFW3 (with Vulkan support)
 - glm
+- Assimp
 - Vulkan SDK (Vulkan headers and loader)
 - glslangValidator
 
@@ -16,10 +17,11 @@ In Ubuntu, these are provided by the following packages:
 
 - Glib:             libglib2.0-dev
 - glm:              libglm-dev
+- Assimp:           libassimp-dev
 
 You need a version of GLFW3 that supports Vulkan. It may be possible that
-your distro doesn't provide it yt, in that case you will need to build it
-from sources [1] (be sure to configure th build so it produces a shared
+your distro doesn't provide it yet, in that case you will need to build it
+from sources [1] (be sure to configure the build so it produces a shared
 library).
 
 The Vulkan SDK can be obtained from the LunarG website [2].
@@ -27,7 +29,9 @@ The Vulkan SDK can be obtained from the LunarG website [2].
 The glslangValidator binary for Linux is included under external/glslang/
 for convenience. A more up-to-date binary can be obtained by building it
 from source code [3], but this version is sufficient to compile the shaders
-included in this repository.
+included in this repository. Notice that the provided binary may not be
+valid for your environment, in which case building it from sources is
+the only option.
 
 [1] http://www.glfw.org/download.html
 [2] https://www.lunarg.com/vulkan-sdk/
