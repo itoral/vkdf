@@ -328,7 +328,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    // Framebuffers
    res->framebuffers =
       vkdf_create_framebuffers_for_swap_chain(ctx, res->render_pass,
-                                              &res->depth_image);
+                                              1, &res->depth_image);
 
    // Descriptor pool
    res->descriptor_pool =

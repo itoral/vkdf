@@ -7,10 +7,12 @@ vkdf_create_framebuffer(VkdfContext *ctx,
                         VkImageView image,
                         uint32_t width,
                         uint32_t height,
-                        VkdfImage *depth_image);
+                        uint32_t num_extra_attachments,
+                        VkdfImage *extra_attachments);
 VkFramebuffer *
 vkdf_create_framebuffers_for_swap_chain(VkdfContext *ctx,
                                         VkRenderPass render_pass,
-                                        VkdfImage *depth_image);
+                                        uint32_t num_extra_attachments,
+                                        VkdfImage *extra_attachments);
 
 #endif

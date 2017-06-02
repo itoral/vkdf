@@ -358,7 +358,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                               res->color_image.view,
                                               ctx->width,
                                               ctx->height,
-                                              NULL);
+                                              0, NULL);
 
    // Descriptor pool
    res->descriptor_pool =

@@ -510,7 +510,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
 
    // Framebuffers
    res->framebuffers =
-      vkdf_create_framebuffers_for_swap_chain(ctx, res->render_pass, NULL);
+      vkdf_create_framebuffers_for_swap_chain(ctx, res->render_pass, 0, NULL);
 
    // Descriptor pool (UBO)
    res->descriptor_pool_ubo =

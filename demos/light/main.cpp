@@ -572,7 +572,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    // Framebuffers
    res->framebuffers =
       vkdf_create_framebuffers_for_swap_chain(ctx, res->render_pass,
-                                              &res->depth_image);
+                                              1, &res->depth_image);
 
    // Descriptor pool
    res->ubo_pool =
@@ -860,7 +860,7 @@ after_rebuild_swap_chain_cb(VkdfContext *ctx, void *user_data)
    res->depth_image = create_depth_image(ctx);
    res->framebuffers =
       vkdf_create_framebuffers_for_swap_chain(ctx, res->render_pass,
-                                              &res->depth_image);
+                                              1, &res->depth_image);
    res->pipeline = create_pipeline(ctx, res, false);
    create_command_buffers(ctx, res);
 }
