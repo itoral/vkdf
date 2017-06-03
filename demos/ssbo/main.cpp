@@ -272,10 +272,14 @@ init_resources(VkdfContext *ctx,
    res->num_elements = num_vertices * num_components;
    res->vbo_size = res->num_elements * sizeof(ushort);
    res->vertex_size = num_components * sizeof(ushort);
+   //buffer size needs to be a multiple of 4
+   res->vbo_size = ((res->vbo_size + 3) / 4) * 4;
 
    res->num_ssbo_components = res->num_components == 3 ? 4 : res->num_components;
    res->num_ssbo_elements = res->num_ssbo_components * num_vertices;
    res->ssbo_size = res->num_ssbo_elements * sizeof(ushort);
+   //buffer size needs to be a multiple of 4
+   res->ssbo_size = ((res->ssbo_size + 3) / 4) * 4;
 
    // Vertex buffer
    res->vertex_data = create_vertex_data(ctx, res);
