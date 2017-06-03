@@ -21,6 +21,9 @@ vkdf_mesh_new();
 VkdfMesh *
 vkdf_cube_mesh_new(VkdfContext *ctx);
 
+VkdfMesh *
+vkdf_2d_tile_mesh_new(VkdfContext *ctx);
+
 void
 vkdf_mesh_free(VkdfContext *ctx, VkdfMesh *mesh);
 
