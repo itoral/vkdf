@@ -548,7 +548,8 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                       res->descriptor_set_sampler,
                                       res->sampler,
                                       res->texture.view,
-                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
 
    // Pipeline
    res->pipeline_layout = create_pipeline_layout(ctx,

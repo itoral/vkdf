@@ -34,6 +34,8 @@ vkdf_descriptor_set_sampler_update(VkdfContext *ctx,
                                    VkDescriptorSet descriptor,
                                    VkSampler sampler,
                                    VkImageView view,
-                                   VkImageLayout layout);
+                                   VkImageLayout layout,
+                                   uint32_t binding,
+                                   uint32_t count);
 
 #endif

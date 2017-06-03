@@ -131,7 +131,9 @@ vkdf_descriptor_set_sampler_update(VkdfContext *ctx,
                                    VkDescriptorSet descriptor,
                                    VkSampler sampler,
                                    VkImageView view,
-                                   VkImageLayout layout)
+                                   VkImageLayout layout,
+                                   uint32_t binding,
+                                   uint32_t count)
 {
    VkDescriptorImageInfo image_info;
    image_info.sampler = sampler;
@@ -142,9 +144,9 @@ vkdf_descriptor_set_sampler_update(VkdfContext *ctx,
    writes.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
    writes.pNext = NULL;
    writes.dstSet = descriptor;
-   writes.dstBinding = 0;
+   writes.dstBinding = binding;
    writes.dstArrayElement = 0;
-   writes.descriptorCount = 1;
+   writes.descriptorCount = count;
    writes.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
    writes.pBufferInfo = NULL;
    writes.pImageInfo = &image_info;
