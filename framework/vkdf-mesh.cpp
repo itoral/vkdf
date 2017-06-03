@@ -145,13 +145,16 @@ static inline VkDeviceSize
 get_vertex_data_size(VkdfMesh *mesh)
 {
    uint32_t vertex_count = mesh->vertices.size();
+   uint32_t normal_count = mesh->normals.size();
    uint32_t uv_count = mesh->uvs.size();
 
-   assert(vertex_count == mesh->normals.size() &&
+   assert(vertex_count > 0 &&
+          (vertex_count == normal_count || normal_count == 0) &&
           (vertex_count == uv_count || uv_count == 0));
 
-   return vertex_count * 2 * sizeof(glm::vec3) + // pos + normal
-          uv_count * sizeof(glm::vec2);          // uv
+   return vertex_count * sizeof(glm::vec3) + // pos
+          normal_count * sizeof(glm::vec3) + // normal
+          uv_count     * sizeof(glm::vec2);  // uv
 }
 
 VkDeviceSize
@@ -180,6 +183,7 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
+   bool has_normals = mesh->normals.size() > 0;
    bool has_uv = mesh->uvs.size() > 0;
 
    uint8_t *map;
@@ -191,9 +195,11 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
       memcpy(map, &mesh->vertices[i], elem_size);
       map += elem_size;
 
-      elem_size = sizeof(mesh->normals[0]);
-      memcpy(map, &mesh->normals[i], elem_size);
-      map += elem_size;
+      if (has_normals) {
+         elem_size = sizeof(mesh->normals[0]);
+         memcpy(map, &mesh->normals[i], elem_size);
+         map += elem_size;
+      }
 
       if (has_uv) {
          elem_size = sizeof(mesh->uvs[0]);

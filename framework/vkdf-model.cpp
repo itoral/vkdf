@@ -178,6 +178,7 @@ model_fill_vertex_buffer(VkdfContext *ctx, VkdfModel *model)
    VkDeviceSize byte_offset = 0;
    for (uint32_t m = 0; m < model->meshes.size(); m++) {
       VkdfMesh *mesh = model->meshes[m];
+      bool has_normals = mesh->normals.size() > 0;
       bool has_uv = mesh->uvs.size() > 0;
 
       model->vertex_buf_offsets.push_back(byte_offset);
@@ -187,9 +188,11 @@ model_fill_vertex_buffer(VkdfContext *ctx, VkdfModel *model)
          memcpy(map + byte_offset, &mesh->vertices[i], elem_size);
          byte_offset += elem_size;
 
-         elem_size = sizeof(mesh->normals[0]);
-         memcpy(map + byte_offset, &mesh->normals[i], elem_size);
-         byte_offset += elem_size;
+         if (has_normals) {
+            elem_size = sizeof(mesh->normals[0]);
+            memcpy(map + byte_offset, &mesh->normals[i], elem_size);
+            byte_offset += elem_size;
+         }
 
          if (has_uv) {
             elem_size = sizeof(mesh->uvs[0]);
