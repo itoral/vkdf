@@ -15,6 +15,7 @@ libvkdf_la_SOURCES = \
     vkdf-framebuffer.hpp vkdf-framebuffer.cpp \
     vkdf-descriptor.hpp vkdf-descriptor.cpp \
     vkdf-image.hpp vkdf-image.cpp \
+    vkdf-sampler.hpp vkdf-sampler.cpp \
     vkdf-barrier.hpp vkdf-barrier.cpp \
     vkdf-semaphore.hpp vkdf-semaphore.cpp \
     vkdf-mesh.hpp vkdf-mesh.cpp \

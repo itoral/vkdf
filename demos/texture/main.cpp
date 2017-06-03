@@ -7,7 +7,6 @@
 // ----------------------------------------------------------------------------
 
 static uint32_t TEX_SIZE = 512;
-const VkSamplerMipmapMode MIPMAP_MODE = VK_SAMPLER_MIPMAP_MODE_NEAREST;
 
 typedef struct {
    VkCommandPool cmd_pool;
@@ -449,37 +448,6 @@ create_texture(VkdfContext *ctx, DemoResources *res)
    return image;
 }
 
-static VkSampler
-create_sampler(VkdfContext *ctx, DemoResources *res)
-{
-   VkSampler sampler;
-   VkResult result;
-
-   VkSamplerCreateInfo sampler_info = {};
-   sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-   sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-   sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-   sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-   sampler_info.anisotropyEnable = false;
-   sampler_info.maxAnisotropy = 1.0f;
-   sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-   sampler_info.unnormalizedCoordinates = false;
-   sampler_info.compareEnable = false;
-   sampler_info.compareOp = VK_COMPARE_OP_ALWAYS;
-   sampler_info.magFilter = VK_FILTER_NEAREST;
-   sampler_info.minFilter = VK_FILTER_NEAREST;
-   sampler_info.mipmapMode = MIPMAP_MODE;
-   sampler_info.mipLodBias = 0.0f;
-   sampler_info.minLod = 0.0f;
-   sampler_info.maxLod = 100.0f;
-
-   result = vkCreateSampler(ctx->device, &sampler_info, NULL, &sampler);
-   if (result != VK_SUCCESS)
-      vkdf_fatal("Failed to create sampler");
-
-   return sampler;
-}
-
 static void
 init_resources(VkdfContext *ctx, DemoResources *res)
 {
@@ -503,7 +471,10 @@ init_resources(VkdfContext *ctx, DemoResources *res)
 
    // Texture & Sampler
    res->texture = create_texture(ctx, res);
-   res->sampler = create_sampler(ctx, res);
+   res->sampler = vkdf_create_sampler(ctx,
+                                      VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                      VK_FILTER_NEAREST,
+                                      VK_SAMPLER_MIPMAP_MODE_NEAREST);
 
    // Render pass
    res->render_pass = create_render_pass(ctx);
