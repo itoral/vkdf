@@ -11,6 +11,7 @@ You need the following dependencies installed on your system:
 - glm
 - Assimp
 - Vulkan SDK (Vulkan headers and loader)
+- assimp
 - glslangValidator
 
 In Ubuntu, these are provided by the following packages:
