@@ -388,6 +388,7 @@ check_ssbo_values(VkdfContext *ctx, DemoResources *res)
    float feedback[res->num_ssbo_elements];
    int index = 0;
    int index_ssbo = 0;
+   bool result = true;
 
    vkdf_buffer_map_and_get(ctx,
                            res->ssbo, 0, res->ssbo_size, feedback);
@@ -403,10 +404,12 @@ check_ssbo_values(VkdfContext *ctx, DemoResources *res)
                  res->vertex_data[index], float_to_hex(res->vertex_data[index]),
                  feedback[index_ssbo], float_to_hex(feedback[index_ssbo]));
 
-         if (res->vertex_data[index] == feedback[index_ssbo])
+         if (res->vertex_data[index] == feedback[index_ssbo]) {
             fprintf(stdout, "\tequal\n");
-         else
+         } else {
             fprintf(stdout, "\tWRONG\n");
+            result = false;
+         }
 
          index++;
          index_ssbo++;
@@ -417,6 +420,11 @@ check_ssbo_values(VkdfContext *ctx, DemoResources *res)
 
       fprintf(stdout, "\n");
    }
+
+   if (result)
+      fprintf(stdout, "Correct: all values equal.\n");
+   else
+      fprintf(stdout, "WRONG: at least one value different.\n");
 }
 
 static void
