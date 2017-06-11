@@ -22,6 +22,9 @@ VkdfMesh *
 vkdf_cube_mesh_new(VkdfContext *ctx);
 
 VkdfMesh *
+vkdf_tile_mesh_new(VkdfContext *ctx);
+
+VkdfMesh *
 vkdf_2d_tile_mesh_new(VkdfContext *ctx);
 
 void

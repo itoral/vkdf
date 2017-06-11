@@ -88,6 +88,27 @@ vkdf_cube_mesh_new(VkdfContext *ctx)
 }
 
 VkdfMesh *
+vkdf_tile_mesh_new(VkdfContext *ctx)
+{
+   static glm::vec3 vertices[] = {
+      glm::vec3(-1.0f,  0.0f,  1.0f),
+      glm::vec3( 1.0f,  0.0f,  1.0f),
+      glm::vec3(-1.0f,  0.0f, -1.0f),
+      glm::vec3(-1.0f,  0.0f, -1.0f),
+      glm::vec3( 1.0f,  0.0f,  1.0f),
+      glm::vec3( 1.0f,  0.0f, -1.0f),
+   };
+
+   VkdfMesh *mesh = vkdf_mesh_new();
+   for (uint32_t i = 0; i < 6; i++) {
+      mesh->vertices.push_back(vertices[i]);
+      mesh->normals.push_back(glm::vec3(0.0f, 1.0f, 0.0f));
+   }
+
+   return mesh;
+}
+
+VkdfMesh *
 vkdf_2d_tile_mesh_new(VkdfContext *ctx)
 {
    static glm::vec3 vertices[] = {
