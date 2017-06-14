@@ -92,6 +92,7 @@ struct _VkdfContext {
 
 typedef struct _VkdfContext VkdfContext;
 
+#include "vkdf-util.hpp"
 #include "vkdf-error.hpp"
 #include "vkdf-init.hpp"
 #include "vkdf-event-loop.hpp"

@@ -143,43 +143,13 @@ vkdf_camera_strafe(VkdfCamera *cam, float d)
    cam->dirty = true;
 }
 
-static inline float
-vec3_module(glm::vec3 p, int xaxis, int yaxis, int zaxis)
-{
-   return sqrtf(p.x * p.x * xaxis + p.y * p.y * yaxis + p.z * p.z * zaxis);
-}
-
 /**
  * Sets the camera to look at a specific point in space
  */
 void
 vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z)
 {
-   glm::vec3 target;
-   float dist;
-   float cosAngle, sinAngle, angle;
-
-   target.x = x - cam->pos.x;
-   target.y = y - cam->pos.y;
-   target.z = z - cam->pos.z;
-
-   /* Compute rotation on Y-asis */
-   dist = vec3_module(target, 1, 0, 1);
-   cosAngle = target.x / dist;
-   angle = acos(cosAngle);
-   angle = RAD_TO_DEG(angle) - 90.0f;
-   if (target.z > 0.0f)
-     angle += (90.0f - angle) * 2.0f;
-   cam->rot.y = angle;
-
-   /* Compute rotation on X-axis */
-   dist = vec3_module(target, 1, 1, 1);
-   sinAngle = target.y / dist;
-   angle = asin(sinAngle);
-   angle = RAD_TO_DEG(angle);
-   cam->rot.x = angle;
-
-   cam->rot.z = 0.0f;
+   cam->rot = vkdf_compute_view_rotation(cam->pos, glm::vec3(x, y, z));
    cam->dirty = true;
 }
 
