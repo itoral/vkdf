@@ -23,6 +23,16 @@ vkdf_buffer_map_and_fill(VkdfContext *ctx,
                          const void *data);
 
 void
+vkdf_buffer_map_and_fill_elements(VkdfContext *ctx,
+                                  VkdfBuffer buf,
+                                  VkDeviceSize offset,
+                                  uint32_t num_elements,
+                                  uint32_t element_size,
+                                  uint32_t src_stride,
+                                  uint32_t dst_stride,
+                                  const void *data);
+
+void
 vkdf_destroy_buffer(VkdfContext *ctx, VkdfBuffer *buf);
 
 #endif
