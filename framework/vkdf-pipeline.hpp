@@ -16,4 +16,18 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          VkShaderModule vs_module,
                          VkShaderModule fs_module);
 
+static inline void
+vkdf_pipeline_fill_shader_stage_info(VkPipelineShaderStageCreateInfo *info,
+                                     VkShaderStageFlagBits stage,
+                                     VkShaderModule module)
+{
+   info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+   info->pNext = NULL;
+   info->pSpecializationInfo = NULL;
+   info->flags = 0;
+   info->stage = stage;
+   info->pName = "main";
+   info->module = module;
+}
+
 #endif

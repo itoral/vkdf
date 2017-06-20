@@ -137,22 +137,12 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
 
    // Shader stages
    VkPipelineShaderStageCreateInfo shader_stages[2];
-
-   shader_stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-   shader_stages[0].pNext = NULL;
-   shader_stages[0].pSpecializationInfo = NULL;
-   shader_stages[0].flags = 0;
-   shader_stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-   shader_stages[0].pName = "main";
-   shader_stages[0].module = vs_module;
-
-   shader_stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-   shader_stages[1].pNext = NULL;
-   shader_stages[1].pSpecializationInfo = NULL;
-   shader_stages[1].flags = 0;
-   shader_stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-   shader_stages[1].pName = "main";
-   shader_stages[1].module = fs_module;
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        vs_module);
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        fs_module);
 
    // Create pipeline
    VkGraphicsPipelineCreateInfo pipeline_info;
@@ -185,4 +175,3 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
 
    return pipeline;
 }
-
