@@ -39,6 +39,12 @@ vkdf_model_add_mesh(VkdfModel *model, VkdfMesh *mesh)
    model->meshes.push_back(mesh);
 }
 
+inline void
+vkdf_model_add_material(VkdfModel *model, VkdfMaterial *material)
+{
+   model->materials.push_back(*material);
+}
+
 void
 vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
                                VkdfModel *model,

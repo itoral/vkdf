@@ -22,6 +22,19 @@ vkdf_object_new_from_mesh(const glm::vec3 &pos, VkdfMesh *mesh)
 }
 
 VkdfObject *
+vkdf_object_new_from_model(const glm::vec3 &pos,
+                           VkdfModel *model)
+{
+   VkdfObject *obj = g_new0(VkdfObject, 1);
+
+   init_object(obj, pos);
+
+   obj->model = model;
+
+   return obj;
+}
+
+VkdfObject *
 vkdf_object_new(const glm::vec3 &pos, VkdfModel *model)
 {
    VkdfObject *obj = g_new0(VkdfObject, 1);

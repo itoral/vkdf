@@ -21,6 +21,9 @@ VkdfObject *
 vkdf_object_new_from_mesh(const glm::vec3 &pos, VkdfMesh *mesh);
 
 VkdfObject *
+vkdf_object_new_from_model(const glm::vec3 &pos, VkdfModel *model);
+
+VkdfObject *
 vkdf_object_new(const glm::vec3 &pos, VkdfModel *model);
 
 void
@@ -42,6 +45,12 @@ inline void
 vkdf_object_set_scale(VkdfObject *obj, const glm::vec3 &scale)
 {
    obj->scale = scale;
+}
+
+inline void
+vkdf_object_set_material_idx_base(VkdfObject *obj, uint32_t material_idx_base)
+{
+   obj->material_idx_base = material_idx_base;
 }
 
 glm::mat4
