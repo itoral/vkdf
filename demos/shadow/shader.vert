@@ -12,7 +12,7 @@ layout(std140, set = 0, binding = 1) uniform m_ubo {
     mat4 Model[501];
 } M;
 
-layout(std140, set = 2, binding = 0) uniform light_vp_ubo {
+layout(std140, set = 1, binding = 1) uniform light_vp_ubo {
      mat4 ViewProjection;
 } LVP;
 

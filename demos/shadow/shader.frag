@@ -18,7 +18,7 @@ layout(std140, set = 1, binding = 0) uniform light_ubo {
      Light light;
 } L;
 
-layout (set = 3, binding = 0) uniform sampler2D shadow_map;
+layout (set = 2, binding = 0) uniform sampler2D shadow_map;
 
 struct Material {
   vec4 diffuse;
@@ -27,7 +27,7 @@ struct Material {
   vec4 shininess;
 };
 
-layout(std140, set = 4, binding = 0) uniform material_ubo {
+layout(std140, set = 3, binding = 0) uniform material_ubo {
      Material materials[16];
 } Mat;
 

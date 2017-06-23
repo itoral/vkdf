@@ -113,8 +113,6 @@ typedef struct {
    // Scene descriptors for the light source
    VkDescriptorSetLayout Light_set_layout;
    VkDescriptorSet Light_descriptor_set;
-   VkDescriptorSetLayout Light_VP_set_layout;
-   VkDescriptorSet Light_VP_descriptor_set;
 
    // Camera
    VkdfCamera *camera;
@@ -448,23 +446,23 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
    vkCmdBindPipeline(res->cmd_bufs[index], VK_PIPELINE_BIND_POINT_GRAPHICS,
                      res->pipeline);
 
-   // Bind descriptor sets
+   // Bind static descriptor sets for tiles and cubes (light and shadow map)
    VkDescriptorSet descriptor_sets[] = {
       res->Light_descriptor_set,
-      res->Light_VP_descriptor_set,
       res->shadow_sampler_descriptor_set
    };
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            1,                        // First decriptor set
-                           3,                        // Descriptor set count
+                           2,                        // Descriptor set count
                            descriptor_sets,          // Descriptor sets
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
    // --- Render scene cubes
 
+   // Bind descriptor sets with cube data (Model matrices and materials)
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
@@ -474,11 +472,10 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
-   // Bind materials
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
-                           4,                        // First decriptor set
+                           3,                        // First decriptor set
                            1,                        // Descriptor set count
                            &res->cube_materials_descriptor_set, // Descriptor sets
                            0,                        // Dynamic offset count
@@ -510,6 +507,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
 
    // --- Render scene tiles
 
+   // Bind descriptor sets with tile data (Model matrices and materials)
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
@@ -519,11 +517,10 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
-   // Bind materials
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
-                           4,                        // First decriptor set
+                           3,                        // First decriptor set
                            1,                        // Descriptor set count
                            &res->tile_materials_descriptor_set, // Descriptor sets
                            0,                        // Dynamic offset count
@@ -722,7 +719,6 @@ create_pipeline_layout(VkdfContext *ctx, SceneResources *res)
    VkDescriptorSetLayout layouts[] = {
       res->MVP_set_layout,
       res->Light_set_layout,
-      res->Light_VP_set_layout,
       res->shadow_sampler_set_layout,
       res->Materials_set_layout
    };
@@ -732,7 +728,7 @@ create_pipeline_layout(VkdfContext *ctx, SceneResources *res)
    pipeline_layout_info.pNext = NULL;
    pipeline_layout_info.pushConstantRangeCount = 0;
    pipeline_layout_info.pPushConstantRanges = NULL;
-   pipeline_layout_info.setLayoutCount = 5;
+   pipeline_layout_info.setLayoutCount = 4;
    pipeline_layout_info.pSetLayouts = layouts;
    pipeline_layout_info.flags = 0;
 
@@ -1479,39 +1475,32 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                      res->cube_materials_ubo.buf,
                                      0, 1, &Mat_offset, &Mat_size, false);
 
-   // Descriptor sets for light. We have 2 separate sets, each with a single
-   // binding. The first descriptor set contains the light description, the
-   // second set contains the View/Projection matrix of the light which we
-   // need for rendering the shadows
-   //
-   // We use these when rendering the scene
+   // Descriptor set for light data. We have 2 separate bindings.
+   // The first binding contains the light description, the
+   // second contains the View/Projection matrix of the light which we
+   // need for rendering shadows in the scene.
 
-   // Light data
    res->Light_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 1,
-                                            VK_SHADER_STAGE_FRAGMENT_BIT, false);
+      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 2,
+                                            VK_SHADER_STAGE_VERTEX_BIT |
+                                            VK_SHADER_STAGE_FRAGMENT_BIT,
+                                            false);
 
    res->Light_descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->Light_set_layout);
 
+   // Light description
    VkDeviceSize Light_offset = 0;
    VkDeviceSize Light_size = sizeof(VkdfLight);
    vkdf_descriptor_set_buffer_update(ctx, res->Light_descriptor_set,
                                      res->Light_ubo.buf,
                                      0, 1, &Light_offset, &Light_size, false);
    // Light View/Projection
-   res->Light_VP_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 1,
-                                            VK_SHADER_STAGE_VERTEX_BIT, false);
-
-   res->Light_VP_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->Light_VP_set_layout);
-
    VkDeviceSize Light_VP_offset = 0;
    VkDeviceSize Light_VP_size = sizeof(glm::mat4);
-   vkdf_descriptor_set_buffer_update(ctx, res->Light_VP_descriptor_set,
+   vkdf_descriptor_set_buffer_update(ctx, res->Light_descriptor_set,
                                      res->Light_VP_ubo.buf,
-                                     0, 1, &Light_VP_offset, &Light_VP_size,
+                                     1, 1, &Light_VP_offset, &Light_VP_size,
                                      false);
 
    // Descriptor sets for shadow map rendering. For this we need a layout set
@@ -1965,10 +1954,6 @@ destroy_descriptor_resources(VkdfContext *ctx, SceneResources *res)
    vkFreeDescriptorSets(ctx->device,
                         res->ubo_pool, 1, &res->Light_descriptor_set);
    vkDestroyDescriptorSetLayout(ctx->device, res->Light_set_layout, NULL);
-
-   vkFreeDescriptorSets(ctx->device,
-                        res->ubo_pool, 1, &res->Light_VP_descriptor_set);
-   vkDestroyDescriptorSetLayout(ctx->device, res->Light_VP_set_layout, NULL);
 
    vkFreeDescriptorSets(ctx->device,
                         res->ubo_pool, 1, &res->shadow_map_mvp_descriptor_set);
