@@ -23,8 +23,9 @@ layout (set = 3, binding = 0) uniform sampler2D shadow_map;
 layout(location = 0) in vec3 in_normal;
 layout(location = 1) in vec4 in_color;
 layout(location = 2) in vec4 in_world_pos;
-layout(location = 3) in float in_cam_dist; 
-layout(location = 4) in vec4 in_shadow_map_coord;
+layout(location = 3) in vec3 in_view_dir;
+layout(location = 4) in float in_cam_dist;
+layout(location = 5) in vec4 in_shadow_map_coord;
 
 layout(location = 0) out vec4 out_color;
 
@@ -75,16 +76,23 @@ void main()
    float shadow_factor =
       compute_shadow_factor(dp_reflection, dp_angle_with_light, cutoff);
 
-   // Compute light contributions to the fragment
+   // Compute light contributions to the fragment. Do not attenuate
+   // ambient light to make it constant across the scene.
    vec3 diffuse = in_color.xyz * l.diffuse.xyz * att_factor *
                   dp_reflection * shadow_factor;
-   vec3 ambient = in_color.xyz * l.ambient.xyz * att_factor;
+   vec3 ambient = in_color.xyz * l.ambient.xyz;
 
-   // FIXME: add specular
+   vec3 specular = vec3(0);
+   if (dot(normal, -light_dir_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_dir_norm, normal);
+      float shine_factor = dot(reflection_dir, in_view_dir);
+      // Here we assume that all materials have a fixed specular
+      // reflection of (0.5, 0.5, 0.5) and a shininess of 64.0
+      specular =
+           att_factor * l.specular.xyz * vec3(0.5, 0.5, 0.5) *
+            pow(max(0.0, shine_factor), 64.0) * shadow_factor;
+   }
 
    // Acumulate this light's contribution
-   out_color.xyz += diffuse + ambient;
-
-   // Add the scene base ambient light
-   out_color.xyz += in_color.xyz * 0.025f;
+   out_color.xyz += diffuse + ambient + specular;
 }

@@ -1279,7 +1279,7 @@ init_light_sources(VkdfContext *ctx, SceneResources *res)
 {
    res->light.origin = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
    res->light.diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-   res->light.ambient = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+   res->light.ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
    res->light.specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    res->light.attenuation = glm::vec4(0.1f, 0.05f, 0.01f, 0.0f);
 

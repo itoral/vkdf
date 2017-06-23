@@ -24,8 +24,9 @@ layout(location = 2) in vec4 in_color;
 layout(location = 0) out vec3 out_normal;
 layout(location = 1) out vec4 out_color;
 layout(location = 2) out vec4 out_world_pos;
-layout(location = 3) out float out_cam_dist;
-layout(location = 4) out vec4 out_shadow_map_coord;
+layout(location = 3) out vec3 out_view_dir;
+layout(location = 4) out float out_cam_dist;
+layout(location = 5) out vec4 out_shadow_map_coord;
 
 void main()
 {
@@ -37,6 +38,15 @@ void main()
    out_normal = in_normal;
    out_color = in_color;
    out_world_pos = world_pos;
+
+   // Compute view vector from the vertex to the camera in world space.
+   // We need this to compute specular reflection in the fragment shader.
+   // To do this, we need to use the inverse of the View matrix in order
+   // to compute world space position of the camera (which is always
+   // at (0,0,0)). This could actually be computed in the CPU...
+   mat4 ViewInv = inverse(VP.View);
+   out_view_dir =
+      normalize(vec3(ViewInv * vec4(0.0, 0.0, 0.0, 1.0) - out_world_pos));
 
    out_cam_dist = length(camera_space_pos.xyz);
 
