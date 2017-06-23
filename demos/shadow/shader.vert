@@ -9,9 +9,8 @@ layout(std140, set = 0, binding = 0) uniform vp_ubo {
 } VP;
 
 layout(std140, set = 0, binding = 1) uniform m_ubo {
-     mat4 Model[501];
+    mat4 Model[501];
 } M;
-
 
 layout(std140, set = 2, binding = 0) uniform light_vp_ubo {
      mat4 ViewProjection;
@@ -19,10 +18,10 @@ layout(std140, set = 2, binding = 0) uniform light_vp_ubo {
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
-layout(location = 2) in vec4 in_color;
+layout(location = 2) in uint in_material_idx;
 
 layout(location = 0) out vec3 out_normal;
-layout(location = 1) out vec4 out_color;
+layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec4 out_world_pos;
 layout(location = 3) out vec3 out_view_dir;
 layout(location = 4) out float out_cam_dist;
@@ -36,7 +35,7 @@ void main()
 
    gl_Position = VP.Projection * camera_space_pos;
    out_normal = in_normal;
-   out_color = in_color;
+   out_material_idx = in_material_idx;
    out_world_pos = world_pos;
 
    // Compute view vector from the vertex to the camera in world space.

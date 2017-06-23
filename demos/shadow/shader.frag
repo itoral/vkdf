@@ -20,8 +20,19 @@ layout(std140, set = 1, binding = 0) uniform light_ubo {
 
 layout (set = 3, binding = 0) uniform sampler2D shadow_map;
 
+struct Material {
+  vec4 diffuse;
+  vec4 ambient;
+  vec4 specular;
+  vec4 shininess;
+};
+
+layout(std140, set = 4, binding = 0) uniform material_ubo {
+     Material materials[16];
+} Mat;
+
 layout(location = 0) in vec3 in_normal;
-layout(location = 1) in vec4 in_color;
+layout(location = 1) flat in uint in_material_idx;
 layout(location = 2) in vec4 in_world_pos;
 layout(location = 3) in vec3 in_view_dir;
 layout(location = 4) in float in_cam_dist;
@@ -78,19 +89,18 @@ void main()
 
    // Compute light contributions to the fragment. Do not attenuate
    // ambient light to make it constant across the scene.
-   vec3 diffuse = in_color.xyz * l.diffuse.xyz * att_factor *
+   Material mat = Mat.materials[in_material_idx];
+   vec3 diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
                   dp_reflection * shadow_factor;
-   vec3 ambient = in_color.xyz * l.ambient.xyz;
+   vec3 ambient = mat.ambient.xyz * l.ambient.xyz;
 
    vec3 specular = vec3(0);
    if (dot(normal, -light_dir_norm) >= 0.0) {
       vec3 reflection_dir = reflect(light_dir_norm, normal);
       float shine_factor = dot(reflection_dir, in_view_dir);
-      // Here we assume that all materials have a fixed specular
-      // reflection of (0.5, 0.5, 0.5) and a shininess of 64.0
       specular =
-           att_factor * l.specular.xyz * vec3(0.5, 0.5, 0.5) *
-            pow(max(0.0, shine_factor), 64.0) * shadow_factor;
+           att_factor * l.specular.xyz * mat.specular.xyz *
+            pow(max(0.0, shine_factor), mat.shininess.x) * shadow_factor;
    }
 
    // Acumulate this light's contribution

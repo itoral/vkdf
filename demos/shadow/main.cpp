@@ -49,11 +49,6 @@ const uint32_t SHADOW_MAP_TILE_HEIGHT = 150;
 const bool enable_dynamic_lights = true;
 
 typedef struct {
-   VkdfObject *obj;
-   glm::vec4 color;
-} SceneObject;
-
-typedef struct {
    VkCommandPool cmd_pool;
    VkCommandBuffer *cmd_bufs;
    VkRenderPass render_pass;
@@ -86,14 +81,25 @@ typedef struct {
    glm::mat4 projection;
 
    // Objects (cubes and tiles)
+   VkdfModel *cube_model;
+   VkdfModel *tile_model;
    VkdfMesh *cube_mesh;
    VkdfMesh *tile_mesh;
-   SceneObject cubes[NUM_CUBES];
-   SceneObject tiles[NUM_TILES];
+   VkdfObject *cubes[NUM_CUBES];
+   VkdfObject *tiles[NUM_TILES];
 
-   // Vertex buffer with colors for each object
-   VkdfBuffer cube_color_buf;
-   VkdfBuffer tile_color_buf;
+   // Vertex buffer with material indices for each object
+   VkdfBuffer cube_material_buf;
+   VkdfBuffer tile_material_buf;
+
+   // Materials UBOs
+   VkdfBuffer tile_materials_ubo;
+   VkdfBuffer cube_materials_ubo;
+
+   // Scene descriptors for materials
+   VkDescriptorSetLayout Materials_set_layout;
+   VkDescriptorSet tile_materials_descriptor_set;
+   VkDescriptorSet cube_materials_descriptor_set;
 
    // Light source
    VkdfLight light;
@@ -163,39 +169,41 @@ create_ubo(VkdfContext *ctx, uint32_t size, uint32_t mem_props)
 }
 
 static void
-create_and_fill_color_buffers(VkdfContext *ctx, SceneResources *res)
+create_and_fill_material_buffers(VkdfContext *ctx, SceneResources *res)
 {
-   res->tile_color_buf =
+   res->tile_material_buf =
       vkdf_create_buffer(ctx,
                          0,                                    // flag
-                         NUM_TILES * sizeof(glm::vec4),        // size
+                         NUM_TILES * sizeof(uint32_t),         // size
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,    // usage
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT); // memory type
 
-   vkdf_buffer_map_and_fill_elements(ctx,
-                                     res->tile_color_buf,
-                                     0,
-                                     NUM_TILES,
-                                     sizeof(glm::vec4),
-                                     sizeof(SceneObject),
-                                     sizeof(glm::vec4),
-                                     &res->tiles[0].color);
+   uint32_t tile_materials[NUM_TILES];
+   for (uint32_t i = 0; i < NUM_TILES; i++)
+      tile_materials[i] = res->tiles[i]->material_idx_base;
 
-   res->cube_color_buf =
+   vkdf_buffer_map_and_fill(ctx,
+                            res->tile_material_buf,
+                            0,
+                            NUM_TILES * sizeof(uint32_t),
+                            tile_materials);
+
+   res->cube_material_buf =
       vkdf_create_buffer(ctx,
                          0,                                    // flag
-                         NUM_TILES * sizeof(glm::vec4),        // size
+                         NUM_CUBES * sizeof(uint32_t),         // size
                          VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,    // usage
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT); // memory type
 
-   vkdf_buffer_map_and_fill_elements(ctx,
-                                     res->cube_color_buf,
-                                     0,
-                                     NUM_CUBES,
-                                     sizeof(glm::vec4),
-                                     sizeof(SceneObject),
-                                     sizeof(glm::vec4),
-                                     &res->cubes[0].color);
+   uint32_t cube_materials[NUM_CUBES];
+   for (uint32_t i = 0; i < NUM_CUBES; i++)
+      cube_materials[i] = res->cubes[i]->material_idx_base;
+
+   vkdf_buffer_map_and_fill(ctx,
+                            res->cube_material_buf,
+                            0,
+                            NUM_CUBES * sizeof(uint32_t),
+                            cube_materials);
 }
 
 static void
@@ -414,8 +422,8 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_INLINE);
 
-   const VkdfMesh *cube_mesh = res->cubes[0].obj->model->meshes[0];
-   const VkdfMesh *tile_mesh = res->tiles[0].obj->model->meshes[0];
+   const VkdfMesh *cube_mesh = res->cubes[0]->model->meshes[0];
+   const VkdfMesh *tile_mesh = res->tiles[0]->model->meshes[0];
 
    // ------------------- Subpass 0: scene rendering ------------------- 
 
@@ -456,12 +464,23 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                            NULL);                    // Dynamic offsets
 
    // --- Render scene cubes
+
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            0,                        // First decriptor set
                            1,                        // Descriptor set count
                            &res->MVP_cubes_descriptor_set,          // Descriptor sets
+                           0,                        // Dynamic offset count
+                           NULL);                    // Dynamic offsets
+
+   // Bind materials
+   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           res->pipeline_layout,
+                           4,                        // First decriptor set
+                           1,                        // Descriptor set count
+                           &res->cube_materials_descriptor_set, // Descriptor sets
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
@@ -474,11 +493,11 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                           offsets);                    // Offsets
 
 
-   // Vertex buffer: color
+   // Vertex buffer: material indices
    vkCmdBindVertexBuffers(res->cmd_bufs[index],
                           1,                            // Start Binding
                           1,                            // Binding Count
-                          &res->cube_color_buf.buf,     // Buffers
+                          &res->cube_material_buf.buf,  // Buffers
                           offsets);                     // Offsets
 
 
@@ -490,12 +509,23 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
              0);                                   // first instance
 
    // --- Render scene tiles
+
    vkCmdBindDescriptorSets(res->cmd_bufs[index],
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            0,                        // First decriptor set
                            1,                        // Descriptor set count
                            &res->MVP_tiles_descriptor_set,          // Descriptor sets
+                           0,                        // Dynamic offset count
+                           NULL);                    // Dynamic offsets
+
+   // Bind materials
+   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           res->pipeline_layout,
+                           4,                        // First decriptor set
+                           1,                        // Descriptor set count
+                           &res->tile_materials_descriptor_set, // Descriptor sets
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
@@ -507,13 +537,12 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                           offsets);                    // Offsets
 
 
-   // Vertex buffer: color
+   // Vertex buffer: material indices
    vkCmdBindVertexBuffers(res->cmd_bufs[index],
                           1,                            // Start Binding
                           1,                            // Binding Count
-                          &res->tile_color_buf.buf,     // Buffers
+                          &res->tile_material_buf.buf,  // Buffers
                           offsets);                     // Offsets
-
 
    // Draw
    vkCmdDraw(res->cmd_bufs[index],
@@ -549,7 +578,7 @@ shadow_render_pass_commands(VkdfContext *ctx, SceneResources *res)
                         VK_SUBPASS_CONTENTS_INLINE);
 
    /* No need to render tiles to the shadow map */
-   const VkdfMesh *mesh = res->cubes[0].obj->model->meshes[0];
+   const VkdfMesh *mesh = res->cubes[0]->model->meshes[0];
 
    // ------------------- Subpass 0: scene rendering ------------------- 
 
@@ -690,11 +719,12 @@ ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res,
 static VkPipelineLayout
 create_pipeline_layout(VkdfContext *ctx, SceneResources *res)
 {
-   VkDescriptorSetLayout layouts[4] = {
+   VkDescriptorSetLayout layouts[] = {
       res->MVP_set_layout,
       res->Light_set_layout,
       res->Light_VP_set_layout,
-      res->shadow_sampler_set_layout
+      res->shadow_sampler_set_layout,
+      res->Materials_set_layout
    };
 
    VkPipelineLayoutCreateInfo pipeline_layout_info;
@@ -702,7 +732,7 @@ create_pipeline_layout(VkdfContext *ctx, SceneResources *res)
    pipeline_layout_info.pNext = NULL;
    pipeline_layout_info.pushConstantRangeCount = 0;
    pipeline_layout_info.pPushConstantRanges = NULL;
-   pipeline_layout_info.setLayoutCount = 4;
+   pipeline_layout_info.setLayoutCount = 5;
    pipeline_layout_info.pSetLayouts = layouts;
    pipeline_layout_info.flags = 0;
 
@@ -883,18 +913,56 @@ init_meshes(VkdfContext *ctx, SceneResources *res)
    res->cube_mesh = vkdf_cube_mesh_new(ctx);
    vkdf_mesh_fill_vertex_buffer(ctx, res->cube_mesh);
 
+   res->cube_model = vkdf_model_new();
+
+   VkdfMaterial red;
+   red.diffuse = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
+   red.ambient = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
+   red.specular = glm::vec4(1.0f, 0.75f, 0.75f, 1.0f);
+   red.shininess = 48.0f;
+
+   VkdfMaterial green;
+   green.diffuse = glm::vec4(0.0f, 0.5f, 0.0f, 1.0f);
+   green.ambient = glm::vec4(0.0f, 0.5f, 0.0f, 1.0f);
+   green.specular = glm::vec4(0.75f, 1.0f, 0.75f, 1.0f);
+   green.shininess = 48.0f;
+
+   VkdfMaterial blue;
+   blue.diffuse = glm::vec4(0.0f, 0.0f, 0.5f, 1.0f);
+   blue.ambient = glm::vec4(0.0f, 0.0f, 0.5f, 1.0f);
+   blue.specular = glm::vec4(0.75f, 0.75f, 1.0f, 1.0f);
+   blue.shininess = 48.0f;
+
+   vkdf_model_add_mesh(res->cube_model, res->cube_mesh);
+   vkdf_model_add_material(res->cube_model, &red);
+   vkdf_model_add_material(res->cube_model, &green);
+   vkdf_model_add_material(res->cube_model, &blue);
+
    res->tile_mesh = vkdf_tile_mesh_new(ctx);
    vkdf_mesh_fill_vertex_buffer(ctx, res->tile_mesh);
+
+   res->tile_model = vkdf_model_new();
+
+   VkdfMaterial white;
+   white.diffuse = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+   white.ambient = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+   white.specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+   white.shininess = 24.0f;
+
+   VkdfMaterial black;
+   black.diffuse = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+   black.ambient = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+   black.specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+   black.shininess = 24.0f;
+
+   vkdf_model_add_mesh(res->tile_model, res->tile_mesh);
+   vkdf_model_add_material(res->tile_model, &white);
+   vkdf_model_add_material(res->tile_model, &black);
 }
 
 static void
 init_objects(VkdfContext *ctx, SceneResources *res)
 {
-   glm::vec4 tile_colors[2] = {
-      glm::vec4(0.50f, 0.50f, 0.50f, 1.0f),
-      glm::vec4(0.2f, 0.2f, 0.2f, 1.0f)
-   };
-
    // Create room tiles
    for (uint32_t x = 0; x < ROOM_WIDTH; x++) {
       uint32_t color_idx = x % 2;
@@ -907,39 +975,39 @@ init_objects(VkdfContext *ctx, SceneResources *res)
                     TILE_DEPTH * z;
          glm::vec3 pos = glm::vec3(tx, 0.0f, tz);
 
-         res->tiles[idx].obj = vkdf_object_new_from_mesh(pos, res->tile_mesh);
-         vkdf_object_set_scale(res->tiles[idx].obj,
-                              glm::vec3(TILE_WIDTH / 2.0f,
-                                        1.0f,
-                                        TILE_DEPTH / 2.0f));
-         res->tiles[idx].color = tile_colors[(color_idx + z) % 2];
+         res->tiles[idx] = vkdf_object_new_from_model(pos, res->tile_model);
+         vkdf_object_set_material_idx_base(res->tiles[idx],
+                                           (color_idx + z) % 2);
+         vkdf_object_set_scale(res->tiles[idx],
+                               glm::vec3(TILE_WIDTH / 2.0f,
+                                         1.0f,
+                                         TILE_DEPTH / 2.0f));
       }
    }
 
    // Create scene cubes
    uint32_t idx = 0;
-   res->cubes[idx].obj = vkdf_object_new_from_mesh(glm::vec3(0.0f, 2.0f, 0.0f),
-                                                   res->cube_mesh);
-   vkdf_object_set_scale(res->cubes[idx].obj,
+   res->cubes[idx] =
+      vkdf_object_new_from_model(glm::vec3(0.0f, 2.0f, 0.0f), res->cube_model);
+   vkdf_object_set_material_idx_base(res->cubes[idx],  idx % 3);
+   vkdf_object_set_scale(res->cubes[idx],
                          glm::vec3(1.0f, 3.0f, 1.0f));
-   res->cubes[idx].color = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
-
 
    idx++;
-   res->cubes[idx].obj = vkdf_object_new_from_mesh(glm::vec3(5.0f, 2.0f, -5.0f),
-                                                   res->cube_mesh);
-   vkdf_object_set_scale(res->cubes[idx].obj,
+   res->cubes[idx] =
+      vkdf_object_new_from_model(glm::vec3(5.0f, 2.0f, -5.0f), res->cube_model);
+   vkdf_object_set_material_idx_base(res->cubes[idx], idx % 3);
+   vkdf_object_set_scale(res->cubes[idx],
                          glm::vec3(1.0f, 6.0f, 1.0f));
-   res->cubes[idx].obj->rot = glm::vec3(-25.0f, 35.0f, 0.0f);
-   res->cubes[idx].color = glm::vec4(0.0f, 0.5f, 0.0f, 1.0f);
+   res->cubes[idx]->rot = glm::vec3(-25.0f, 35.0f, 0.0f);
 
    idx++;
-   res->cubes[idx].obj = vkdf_object_new_from_mesh(glm::vec3(-9.0f, 2.0f, -9.0f),
-                                                   res->cube_mesh);
-   vkdf_object_set_scale(res->cubes[idx].obj,
+   res->cubes[idx] =
+      vkdf_object_new_from_model(glm::vec3(-9.0f, 2.0f, -9.0f), res->cube_model);
+   vkdf_object_set_material_idx_base(res->cubes[idx], idx % 3);
+   vkdf_object_set_scale(res->cubes[idx],
                          glm::vec3(1.0f, 4.0f, 1.0f));
-   res->cubes[idx].obj->rot = glm::vec3(0.0f, 0.0f, 30.0f);
-   res->cubes[idx].color = glm::vec4(0.0f, 0.0f, 0.5f, 1.0f);
+   res->cubes[idx]->rot = glm::vec3(0.0f, 0.0f, 30.0f);
 
    assert(++idx == NUM_CUBES);
 }
@@ -1038,7 +1106,7 @@ default_pipeline_blend_state(VkPipelineColorBlendStateCreateInfo *cb)
    cb->sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
    cb->flags = 0;
    cb->pNext = NULL;
-   cb->attachmentCount = 1;
+   cb->attachmentCount = 0;
    cb->pAttachments = att_state;
    cb->logicOpEnable = VK_FALSE;
    cb->logicOp = VK_LOGIC_OP_COPY;
@@ -1088,10 +1156,10 @@ create_pipeline(VkdfContext *ctx, SceneResources *res, bool init_cache)
    vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
    vi_binding[0].stride = 2 * sizeof(glm::vec3);
 
-   // Vertex attribute binding 1: color
+   // Vertex attribute binding 1: material index
    vi_binding[1].binding = 1;
    vi_binding[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-   vi_binding[1].stride = sizeof(glm::vec4);
+   vi_binding[1].stride = sizeof(uint32_t);
 
    // binding 0, location 0: position
    vi_attribs[0].binding = 0;
@@ -1105,10 +1173,10 @@ create_pipeline(VkdfContext *ctx, SceneResources *res, bool init_cache)
    vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
    vi_attribs[1].offset = 12;
 
-   // binding 1, location 2: color
+   // binding 1, location 2: material index
    vi_attribs[2].binding = 1;
    vi_attribs[2].location = 2;
-   vi_attribs[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+   vi_attribs[2].format = VK_FORMAT_R32_UINT;
    vi_attribs[2].offset = 0;
 
    return vkdf_create_gfx_pipeline(ctx,
@@ -1387,6 +1455,30 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                      res->M_tiles_ubo.buf,
                                      1, 1, &M_offset, &M_size, false);
 
+   // Descriptor sets for materials. We have two descriptors, one with
+   // the tile materials and another with the cube materials.
+   res->Materials_set_layout =
+      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 1,
+                                            VK_SHADER_STAGE_FRAGMENT_BIT,
+                                            false);
+   res->tile_materials_descriptor_set =
+      create_descriptor_set(ctx, res->ubo_pool, res->Materials_set_layout);
+
+   VkDeviceSize Mat_offset = 0;
+   VkDeviceSize Mat_size = 2 * sizeof(VkdfMaterial);
+   vkdf_descriptor_set_buffer_update(ctx, res->tile_materials_descriptor_set,
+                                     res->tile_materials_ubo.buf,
+                                     0, 1, &Mat_offset, &Mat_size, false);
+
+   res->cube_materials_descriptor_set =
+      create_descriptor_set(ctx, res->ubo_pool, res->Materials_set_layout);
+
+   Mat_offset = 0;
+   Mat_size = NUM_CUBES * sizeof(VkdfMaterial);
+   vkdf_descriptor_set_buffer_update(ctx, res->cube_materials_descriptor_set,
+                                     res->cube_materials_ubo.buf,
+                                     0, 1, &Mat_offset, &Mat_size, false);
+
    // Descriptor sets for light. We have 2 separate sets, each with a single
    // binding. The first descriptor set contains the light description, the
    // second set contains the View/Projection matrix of the light which we
@@ -1492,7 +1584,7 @@ fill_model_matrices_ubos(VkdfContext *ctx, SceneResources *res)
    // Fill cubes
    glm::mat4 ModelCubes[NUM_CUBES];
    for (uint32_t i = 0; i < NUM_CUBES; i++)
-      ModelCubes[i] = vkdf_object_get_model_matrix(res->cubes[i].obj);
+      ModelCubes[i] = vkdf_object_get_model_matrix(res->cubes[i]);
 
    vkdf_buffer_map_and_fill(ctx,
                             res->M_cubes_ubo,
@@ -1503,13 +1595,29 @@ fill_model_matrices_ubos(VkdfContext *ctx, SceneResources *res)
    // Fill tiles
    glm::mat4 ModelTiles[NUM_TILES];
    for (uint32_t i = 0; i < NUM_TILES; i++)
-      ModelTiles[i] = vkdf_object_get_model_matrix(res->tiles[i].obj);
+      ModelTiles[i] = vkdf_object_get_model_matrix(res->tiles[i]);
 
    vkdf_buffer_map_and_fill(ctx,
                             res->M_tiles_ubo,
                             0,
                             NUM_TILES * sizeof(glm::mat4),
                             &ModelTiles[0][0][0]);
+}
+
+static void
+fill_material_ubos(VkdfContext *ctx, SceneResources *res)
+{
+   vkdf_buffer_map_and_fill(ctx,
+                            res->tile_materials_ubo,
+                            0,
+                            res->tile_model->materials.size() * sizeof(VkdfMaterial),
+                            &res->tile_model->materials[0]);
+
+   vkdf_buffer_map_and_fill(ctx,
+                            res->cube_materials_ubo,
+                            0,
+                            res->cube_model->materials.size() * sizeof(VkdfMaterial),
+                            &res->cube_model->materials[0]);
 }
 
 static void
@@ -1529,8 +1637,8 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    // Create the object and its mesh
    init_objects(ctx, res);
 
-   // Fill vertex buffers with color data for scene cubes and tiles
-   create_and_fill_color_buffers(ctx, res);
+   // Fill vertex buffers with material index data for scene cubes and tiles
+   create_and_fill_material_buffers(ctx, res);
 
    // Setup lights
    init_light_sources(ctx, res);
@@ -1558,6 +1666,15 @@ init_resources(VkdfContext *ctx, SceneResources *res)
                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    fill_model_matrices_ubos(ctx, res);
+
+   // Create UBOs for materials
+   res->tile_materials_ubo = create_ubo(ctx, 2 * sizeof(VkdfMaterial),
+                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   res->cube_materials_ubo = create_ubo(ctx, NUM_CUBES * sizeof(VkdfMaterial),
+                                        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   fill_material_ubos(ctx, res);
 
    // Create UBO for light description
    res->Light_ubo = create_ubo(ctx, sizeof(VkdfLight),
@@ -1694,7 +1811,7 @@ update_lights(SceneResources *res)
 
    glm::mat4 model(1.0f);
    model = glm::rotate(model, rotY, glm::vec3(0, 1, 0));
-   res->light.origin = model * glm::vec4(-15.0f, 3.0f, -15.0f, 1.0f);
+   res->light.origin = model * glm::vec4(-15.0f, 2.0f, -15.0f, 1.0f);
    res->light.direction = -res->light.origin;
 
    rotY += 0.01f;
@@ -1840,6 +1957,12 @@ destroy_descriptor_resources(VkdfContext *ctx, SceneResources *res)
    vkDestroyDescriptorSetLayout(ctx->device, res->MVP_set_layout, NULL);
 
    vkFreeDescriptorSets(ctx->device,
+                        res->ubo_pool, 1, &res->tile_materials_descriptor_set);
+   vkFreeDescriptorSets(ctx->device,
+                        res->ubo_pool, 1, &res->cube_materials_descriptor_set);
+   vkDestroyDescriptorSetLayout(ctx->device, res->Materials_set_layout, NULL);
+
+   vkFreeDescriptorSets(ctx->device,
                         res->ubo_pool, 1, &res->Light_descriptor_set);
    vkDestroyDescriptorSetLayout(ctx->device, res->Light_set_layout, NULL);
 
@@ -1874,6 +1997,12 @@ destroy_ubo_resources(VkdfContext *ctx, SceneResources *res)
    vkDestroyBuffer(ctx->device, res->M_tiles_ubo.buf, NULL);
    vkFreeMemory(ctx->device, res->M_tiles_ubo.mem, NULL);
 
+   vkDestroyBuffer(ctx->device, res->tile_materials_ubo.buf, NULL);
+   vkFreeMemory(ctx->device, res->tile_materials_ubo.mem, NULL);
+
+   vkDestroyBuffer(ctx->device, res->cube_materials_ubo.buf, NULL);
+   vkFreeMemory(ctx->device, res->cube_materials_ubo.mem, NULL);
+
    vkDestroyBuffer(ctx->device, res->Light_ubo.buf, NULL);
    vkFreeMemory(ctx->device, res->Light_ubo.mem, NULL);
 
@@ -1897,12 +2026,14 @@ cleanup_resources(VkdfContext *ctx, SceneResources *res)
 {
    vkdf_camera_free(res->camera);
    for (uint32_t i = 0; i < ROOM_WIDTH * ROOM_DEPTH; i++)
-      vkdf_object_free(res->cubes[i].obj);
+      vkdf_object_free(res->tiles[i]);
+   for (uint32_t i = 0; i < NUM_CUBES; i++)
+      vkdf_object_free(res->cubes[i]);
    vkdf_mesh_free(ctx, res->cube_mesh);
    vkdf_mesh_free(ctx, res->tile_mesh);
    vkdf_mesh_free(ctx, res->ui_tile_mesh);
-   vkdf_destroy_buffer(ctx, &res->cube_color_buf);
-   vkdf_destroy_buffer(ctx, &res->tile_color_buf);
+   vkdf_destroy_buffer(ctx, &res->cube_material_buf);
+   vkdf_destroy_buffer(ctx, &res->tile_material_buf);
    destroy_pipeline_resources(ctx, res, true);
    vkDestroyRenderPass(ctx->device, res->render_pass, NULL);
    vkDestroyRenderPass(ctx->device, res->shadow_render_pass, NULL);
