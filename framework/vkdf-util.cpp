@@ -53,3 +53,47 @@ vkdf_compute_view_matrix(glm::vec3 origin, glm::vec3 target)
 
    return mat;
 }
+
+/**
+ * Computes the view matrix for origin viewng in the direction
+ * specified by rotation angles on each axis
+ */
+glm::mat4
+vkdf_compute_view_matrix_for_rotation(glm::vec3 origin, glm::vec3 rot)
+{
+   glm::mat4 mat(1.0);
+   float rx = DEG_TO_RAD(rot.x);
+   float ry = DEG_TO_RAD(rot.y);
+   float rz = DEG_TO_RAD(rot.z);
+   mat = glm::rotate(mat, -rx, glm::vec3(1, 0, 0));
+   mat = glm::rotate(mat, -ry, glm::vec3(0, 1, 0));
+   mat = glm::rotate(mat, -rz, glm::vec3(0, 0, 1));
+   mat = glm::translate(mat, -origin);
+   return mat;
+}
+
+/**
+ * Compute view vector from rotation angles
+ */
+glm::vec3
+vkdf_compute_viewdir(glm::vec3 rot)
+{
+   glm::vec3 v1, v2;
+
+   /* Rotate around Y-axis */
+   float angle = DEG_TO_RAD(rot.y + 90.0);
+   v1.x =  cos(angle);
+   v1.z = -sin(angle);
+
+   /* Rotate around X-axis */
+   angle = DEG_TO_RAD(rot.x);
+   float cosX = cos(angle);
+   v2.x = v1.x * cosX;
+   v2.z = v1.z * cosX;
+   v2.y = sin(angle);
+
+   /* FIXME: Rotate around Z-axis (not supportted!) */
+   assert(rot.z == 0.0f);
+
+   return v2;
+}
