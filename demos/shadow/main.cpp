@@ -47,15 +47,17 @@ const bool enable_dynamic_lights = true;
 
 typedef struct {
    VkCommandPool cmd_pool;
-   VkCommandBuffer *cmd_bufs;
+   VkCommandBuffer cmd_buf;
    VkRenderPass render_pass;
    VkPipelineLayout pipeline_layout;
    VkPipeline pipeline;
    VkPipelineCache pipeline_cache;
    VkShaderModule vs_module;
    VkShaderModule fs_module;
-   VkFramebuffer *framebuffers;
+   VkFramebuffer framebuffer;
+   VkdfImage color_image;
    VkdfImage depth_image;
+   VkCommandBuffer *present_cmd_bufs;
 
    // Pool for UBO descriptor
    VkDescriptorPool ubo_pool;
@@ -70,8 +72,9 @@ typedef struct {
    VkDescriptorSet MVP_cubes_descriptor_set;
    VkDescriptorSet MVP_tiles_descriptor_set;
 
-   // Scene draw semaphore
-   VkSemaphore *scene_draw_sem;
+   // Main scene draw semaphore
+   VkSemaphore scene_draw_sem;
+   VkSemaphore scene_complete_sem;
 
    // View/Projection matrices
    glm::mat4 view;
@@ -148,7 +151,7 @@ typedef struct {
    VkShaderModule ui_tile_vs_module;
    VkShaderModule ui_tile_fs_module;
    VkRenderPass ui_tile_render_pass;
-   VkCommandBuffer *ui_tile_cmd_bufs;
+   VkCommandBuffer ui_tile_cmd_buf;
 } SceneResources;
 
 static VkdfBuffer
@@ -221,7 +224,7 @@ create_render_pass(VkdfContext *ctx, SceneResources *res)
    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
    attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-   attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+   attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
    attachments[0].flags = 0;
 
    // Depth attachment
@@ -339,8 +342,8 @@ create_ui_tile_render_pass(VkdfContext *ctx, SceneResources *res)
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-   attachments[0].initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-   attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+   attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+   attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
    attachments[0].flags = 0;
 
    // Depth attachment (unused)
@@ -391,7 +394,7 @@ create_ui_tile_render_pass(VkdfContext *ctx, SceneResources *res)
 }
 
 static void
-render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
+render_pass_commands(VkdfContext *ctx, SceneResources *res)
 {
    VkClearValue clear_values[2];
    clear_values[0].color.float32[0] = 0.0f;
@@ -405,7 +408,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
    rp_begin.pNext = NULL;
    rp_begin.renderPass = res->render_pass;
-   rp_begin.framebuffer = res->framebuffers[index];
+   rp_begin.framebuffer = res->framebuffer;
    rp_begin.renderArea.offset.x = 0;
    rp_begin.renderArea.offset.y = 0;
    rp_begin.renderArea.extent.width = ctx->width;
@@ -413,7 +416,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
    rp_begin.clearValueCount = 2;
    rp_begin.pClearValues = clear_values;
 
-   vkCmdBeginRenderPass(res->cmd_bufs[index],
+   vkCmdBeginRenderPass(res->cmd_buf,
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_INLINE);
 
@@ -430,17 +433,17 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
    viewport.maxDepth = 1.0f;
    viewport.x = 0;
    viewport.y = 0;
-   vkCmdSetViewport(res->cmd_bufs[index], 0, 1, &viewport);
+   vkCmdSetViewport(res->cmd_buf, 0, 1, &viewport);
 
    VkRect2D scissor;
    scissor.extent.width = ctx->width;
    scissor.extent.height = ctx->height;
    scissor.offset.x = 0;
    scissor.offset.y = 0;
-   vkCmdSetScissor(res->cmd_bufs[index], 0, 1, &scissor);
+   vkCmdSetScissor(res->cmd_buf, 0, 1, &scissor);
 
    // Pipeline
-   vkCmdBindPipeline(res->cmd_bufs[index], VK_PIPELINE_BIND_POINT_GRAPHICS,
+   vkCmdBindPipeline(res->cmd_buf, VK_PIPELINE_BIND_POINT_GRAPHICS,
                      res->pipeline);
 
    // Bind static descriptor sets for tiles and cubes (light and shadow map)
@@ -448,7 +451,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
       res->Light_descriptor_set,
       res->shadow_sampler_descriptor_set
    };
-   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            1,                        // First decriptor set
@@ -460,7 +463,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
    // --- Render scene cubes
 
    // Bind descriptor sets with cube data (Model matrices and materials)
-   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            0,                        // First decriptor set
@@ -469,7 +472,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
-   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            3,                        // First decriptor set
@@ -480,7 +483,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
 
    // Vertex buffer: position, normal
    const VkDeviceSize offsets[1] = { 0 };
-   vkCmdBindVertexBuffers(res->cmd_bufs[index],
+   vkCmdBindVertexBuffers(res->cmd_buf,
                           0,                           // Start Binding
                           1,                           // Binding Count
                           &cube_mesh->vertex_buf.buf,  // Buffers
@@ -488,7 +491,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
 
 
    // Vertex buffer: material indices
-   vkCmdBindVertexBuffers(res->cmd_bufs[index],
+   vkCmdBindVertexBuffers(res->cmd_buf,
                           1,                            // Start Binding
                           1,                            // Binding Count
                           &res->cube_material_buf.buf,  // Buffers
@@ -496,7 +499,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
 
 
    // Draw
-   vkCmdDraw(res->cmd_bufs[index],
+   vkCmdDraw(res->cmd_buf,
              cube_mesh->vertices.size(),           // vertex count
              NUM_CUBES,                            // instance count
              0,                                    // first vertex
@@ -505,7 +508,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
    // --- Render scene tiles
 
    // Bind descriptor sets with tile data (Model matrices and materials)
-   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            0,                        // First decriptor set
@@ -514,7 +517,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
-   vkCmdBindDescriptorSets(res->cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipeline_layout,
                            3,                        // First decriptor set
@@ -524,7 +527,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
                            NULL);                    // Dynamic offsets
 
    // Vertex buffer: position, normal
-   vkCmdBindVertexBuffers(res->cmd_bufs[index],
+   vkCmdBindVertexBuffers(res->cmd_buf,
                           0,                           // Start Binding
                           1,                           // Binding Count
                           &tile_mesh->vertex_buf.buf,  // Buffers
@@ -532,20 +535,20 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
 
 
    // Vertex buffer: material indices
-   vkCmdBindVertexBuffers(res->cmd_bufs[index],
+   vkCmdBindVertexBuffers(res->cmd_buf,
                           1,                            // Start Binding
                           1,                            // Binding Count
                           &res->tile_material_buf.buf,  // Buffers
                           offsets);                     // Offsets
 
    // Draw
-   vkCmdDraw(res->cmd_bufs[index],
+   vkCmdDraw(res->cmd_buf,
              tile_mesh->vertices.size(),           // vertex count
              NUM_TILES,                            // instance count
              0,                                    // first vertex
              0);                                   // first instance
 
-   vkCmdEndRenderPass(res->cmd_bufs[index]);
+   vkCmdEndRenderPass(res->cmd_buf);
 }
 
 static void
@@ -626,14 +629,13 @@ shadow_render_pass_commands(VkdfContext *ctx, SceneResources *res)
 }
 
 static void
-ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res,
-                             uint32_t index)
+ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res)
 {
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
    rp_begin.pNext = NULL;
    rp_begin.renderPass = res->ui_tile_render_pass;
-   rp_begin.framebuffer = res->framebuffers[index];
+   rp_begin.framebuffer = res->framebuffer;
    rp_begin.renderArea.offset.x = 0;
    rp_begin.renderArea.offset.y = 0;
    rp_begin.renderArea.extent.width = SHADOW_MAP_TILE_WIDTH;
@@ -641,7 +643,7 @@ ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res,
    rp_begin.clearValueCount = 0;
    rp_begin.pClearValues = NULL;
 
-   vkCmdBeginRenderPass(res->ui_tile_cmd_bufs[index],
+   vkCmdBeginRenderPass(res->ui_tile_cmd_buf,
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_INLINE);
 
@@ -657,30 +659,30 @@ ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res,
    viewport.maxDepth = 1.0f;
    viewport.x = 0;
    viewport.y = 0;
-   vkCmdSetViewport(res->ui_tile_cmd_bufs[index], 0, 1, &viewport);
+   vkCmdSetViewport(res->ui_tile_cmd_buf, 0, 1, &viewport);
 
    VkRect2D scissor;
    scissor.extent.width = SHADOW_MAP_TILE_WIDTH;
    scissor.extent.height = SHADOW_MAP_TILE_HEIGHT;
    scissor.offset.x = 0;
    scissor.offset.y = 0;
-   vkCmdSetScissor(res->ui_tile_cmd_bufs[index], 0, 1, &scissor);
+   vkCmdSetScissor(res->ui_tile_cmd_buf, 0, 1, &scissor);
 
    // Pipeline
-   vkCmdBindPipeline(res->ui_tile_cmd_bufs[index],
+   vkCmdBindPipeline(res->ui_tile_cmd_buf,
                      VK_PIPELINE_BIND_POINT_GRAPHICS,
                      res->ui_tile_pipeline);
 
    // Vertex buffer: position, uv
    const VkDeviceSize offsets[1] = { 0 };
-   vkCmdBindVertexBuffers(res->ui_tile_cmd_bufs[index],
+   vkCmdBindVertexBuffers(res->ui_tile_cmd_buf,
                           0,                       // Start Binding
                           1,                       // Binding Count
                           &mesh->vertex_buf.buf,   // Buffers
                           offsets);                // Offsets
 
    // Bind static MVP descriptor set once
-   vkCmdBindDescriptorSets(res->ui_tile_cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->ui_tile_cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->ui_tile_pipeline_layout,
                            0,                        // First descriptor set
@@ -690,7 +692,7 @@ ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res,
                            NULL);                    // Dynamic offsets
 
    // Bind shadow map sampler
-   vkCmdBindDescriptorSets(res->ui_tile_cmd_bufs[index],
+   vkCmdBindDescriptorSets(res->ui_tile_cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->ui_tile_pipeline_layout,
                            1,                            // Second descriptor set
@@ -700,15 +702,72 @@ ui_tile_render_pass_commands(VkdfContext *ctx, SceneResources *res,
                            NULL);                        // Dynamic offsets
 
    // Draw
-   vkCmdDraw(res->ui_tile_cmd_bufs[index],
+   vkCmdDraw(res->ui_tile_cmd_buf,
              mesh->vertices.size(),                // vertex count
              1,                                    // instance count
              0,                                    // first vertex
              0);                                   // first instance
 
-   vkCmdEndRenderPass(res->ui_tile_cmd_bufs[index]);
+   vkCmdEndRenderPass(res->ui_tile_cmd_buf);
 }
 
+static void
+present_commands(VkdfContext *ctx, SceneResources *res, uint32_t index)
+{
+   // Transition presentation image to transfer destination layout
+   VkImageSubresourceRange subresource_range =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
+
+   VkImageMemoryBarrier barrier =
+      vkdf_create_image_barrier(0,
+                                VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                ctx->swap_chain_images[index].image,
+                                subresource_range);
+
+   vkCmdPipelineBarrier(res->present_cmd_bufs[index],
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        1, &barrier);
+
+   // Copy color image to presentation image
+   VkImageSubresourceLayers subresource_layers =
+      vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1);
+
+   VkImageCopy region =
+      vkdf_create_image_copy_region(subresource_layers, 0, 0, 0,
+                                    subresource_layers, 0, 0, 0,
+                                    ctx->width, ctx->height, 1);
+
+   vkCmdCopyImage(res->present_cmd_bufs[index],
+                  res->color_image.image,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  ctx->swap_chain_images[index].image,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  1,
+                  &region);
+
+   // Transition presentation image to presentation layout
+   barrier =
+      vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_ACCESS_MEMORY_READ_BIT,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                ctx->swap_chain_images[index].image,
+                                subresource_range);
+
+   vkCmdPipelineBarrier(res->present_cmd_bufs[index],
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        1, &barrier);
+}
 
 static VkPipelineLayout
 create_pipeline_layout(VkdfContext *ctx, SceneResources *res)
@@ -835,19 +894,15 @@ init_matrices(SceneResources *res)
 static void inline
 create_command_buffers(VkdfContext *ctx, SceneResources *res)
 {
-   res->cmd_bufs = g_new(VkCommandBuffer, ctx->swap_chain_length);
    vkdf_create_command_buffer(ctx,
                               res->cmd_pool,
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              ctx->swap_chain_length,
-                              res->cmd_bufs);
+                              1, &res->cmd_buf);
 
-   for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
-      vkdf_command_buffer_begin(res->cmd_bufs[i],
-                                VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-      render_pass_commands(ctx, res, i);
-      vkdf_command_buffer_end(res->cmd_bufs[i]);
-   }
+   vkdf_command_buffer_begin(res->cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+   render_pass_commands(ctx, res);
+   vkdf_command_buffer_end(res->cmd_buf);
 }
 
 static void inline
@@ -856,8 +911,7 @@ create_shadow_command_buffers(VkdfContext *ctx, SceneResources *res)
    vkdf_create_command_buffer(ctx,
                               res->cmd_pool,
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1,
-                              &res->shadow_cmd_buf);
+                              1, &res->shadow_cmd_buf);
 
    vkdf_command_buffer_begin(res->shadow_cmd_buf,
                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
@@ -868,19 +922,50 @@ create_shadow_command_buffers(VkdfContext *ctx, SceneResources *res)
 static void inline
 create_ui_tile_command_buffers(VkdfContext *ctx, SceneResources *res)
 {
-   res->ui_tile_cmd_bufs = g_new(VkCommandBuffer, ctx->swap_chain_length);
+   vkdf_create_command_buffer(ctx,
+                              res->cmd_pool,
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &res->ui_tile_cmd_buf);
+
+   vkdf_command_buffer_begin(res->ui_tile_cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+   ui_tile_render_pass_commands(ctx, res);
+   vkdf_command_buffer_end(res->ui_tile_cmd_buf);
+}
+
+static void inline
+create_present_command_buffers(VkdfContext *ctx, SceneResources *res)
+{
+   res->present_cmd_bufs = g_new(VkCommandBuffer, ctx->swap_chain_length);
    vkdf_create_command_buffer(ctx,
                               res->cmd_pool,
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
                               ctx->swap_chain_length,
-                              res->ui_tile_cmd_bufs);
+                              res->present_cmd_bufs);
 
    for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
-      vkdf_command_buffer_begin(res->ui_tile_cmd_bufs[i],
+      vkdf_command_buffer_begin(res->present_cmd_bufs[i],
                                 VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-      ui_tile_render_pass_commands(ctx, res, i);
-      vkdf_command_buffer_end(res->ui_tile_cmd_bufs[i]);
+      present_commands(ctx, res, i);
+      vkdf_command_buffer_end(res->present_cmd_bufs[i]);
    }
+}
+
+static inline VkdfImage
+create_color_image(VkdfContext *ctx, uint32_t width, uint32_t height)
+{
+   return vkdf_create_image(ctx,
+                            ctx->width,
+                            ctx->height,
+                            1,
+                            VK_IMAGE_TYPE_2D,
+                            ctx->surface_format,
+                            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT,
+                            VK_IMAGE_VIEW_TYPE_2D);
 }
 
 static VkdfImage
@@ -1358,15 +1443,13 @@ init_camera(VkdfContext *ctx)
    return camera;
 }
 
-static VkFramebuffer *
-create_framebuffers(VkdfContext *ctx, SceneResources *res)
+static inline VkFramebuffer
+create_framebuffer(VkdfContext *ctx, SceneResources *res)
 {
-   VkdfImage extra_attachments[1] = {
-      res->depth_image,
-   };
-
-   return vkdf_create_framebuffers_for_swap_chain(ctx, res->render_pass,
-                                                  1, extra_attachments);
+   return vkdf_create_framebuffer(ctx, res->render_pass,
+                                  res->color_image.view,
+                                  ctx->width, ctx->height,
+                                  1, &res->depth_image);
 }
 
 static VkFramebuffer
@@ -1389,12 +1472,11 @@ create_shadow_framebuffer(VkdfContext *ctx, SceneResources *res)
    return fb;
 }
 
-static void
+static inline void
 create_scene_semaphores(VkdfContext *ctx, SceneResources *res)
 {
-   res->scene_draw_sem = g_new0(VkSemaphore, ctx->swap_chain_length);
-   for (uint32_t i = 0; i < ctx->swap_chain_length; i++)
-      res->scene_draw_sem[i] = vkdf_create_semaphore(ctx);
+   res->scene_draw_sem = vkdf_create_semaphore(ctx);
+   res->scene_complete_sem = vkdf_create_semaphore(ctx);
 }
 
 static void
@@ -1682,6 +1764,9 @@ init_resources(VkdfContext *ctx, SceneResources *res)
                             0, sizeof(glm::mat4),
                             &res->ui_tile_mvp[0][0]);
 
+   // Create color image
+   res->color_image = create_color_image(ctx, ctx->width, ctx->height);
+
    // Create depth images
    res->depth_image =
       create_depth_image(ctx, ctx->width, ctx->height,
@@ -1720,7 +1805,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    res->ui_tile_render_pass = create_ui_tile_render_pass(ctx, res);
 
    // Framebuffer for scene rendering
-   res->framebuffers = create_framebuffers(ctx, res);
+   res->framebuffer = create_framebuffer(ctx, res);
 
    // Framebuffer for shadow map rendering
    res->shadow_framebuffer = create_shadow_framebuffer(ctx, res);
@@ -1753,6 +1838,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    create_command_buffers(ctx, res);
    create_shadow_command_buffers(ctx, res);
    create_ui_tile_command_buffers(ctx, res);
+   create_present_command_buffers(ctx, res);
 
    // Semaphores
    create_scene_semaphores(ctx, res);
@@ -1853,36 +1939,40 @@ scene_render(VkdfContext *ctx, void *data)
                                1, &res->shadow_draw_sem);
 
    // Render scene
-   VkSemaphore scene_render_wait_sems[2] = {
-      ctx->acquired_sem[ctx->swap_chain_index],
-      res->shadow_draw_sem
-   };
-
-   VkPipelineStageFlags scene_wait_stages[2] = {
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-   };
-
-   VkSemaphore *scene_render_complete_sem =
-      SHOW_SHADOW_MAP_TILE ? &res->scene_draw_sem[ctx->swap_chain_index] :
-                             &ctx->draw_sem[ctx->swap_chain_index];
+   VkPipelineStageFlags scene_wait_stage =
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
    vkdf_command_buffer_execute(ctx,
-                               res->cmd_bufs[ctx->swap_chain_index],
-                               scene_wait_stages,
-                               2, scene_render_wait_sems,
-                               1, scene_render_complete_sem);
+                               res->cmd_buf,
+                               &scene_wait_stage,
+                               1, &res->shadow_draw_sem,
+                               1, SHOW_SHADOW_MAP_TILE ? &res->scene_draw_sem :
+                                                         &res->scene_complete_sem);
 
    // Render UI tile
    if (SHOW_SHADOW_MAP_TILE) {
       VkPipelineStageFlags ui_tile_wait_stages =
          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
       vkdf_command_buffer_execute(ctx,
-                                  res->ui_tile_cmd_bufs[ctx->swap_chain_index],
+                                  res->ui_tile_cmd_buf,
                                   &ui_tile_wait_stages,
-                                  1, &res->scene_draw_sem[ctx->swap_chain_index],
-                                  1, &ctx->draw_sem[ctx->swap_chain_index]);
+                                  1, &res->scene_draw_sem,
+                                  1, &res->scene_complete_sem);
    }
+
+   // Copy to swap chain image
+   VkSemaphore copy_wait_sems[2] = {
+      ctx->acquired_sem[ctx->swap_chain_index],
+      res->scene_complete_sem
+   };
+   VkPipelineStageFlags pipeline_stages_present[2] = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+   };
+   vkdf_command_buffer_execute(ctx,
+                               res->present_cmd_bufs[ctx->swap_chain_index],
+                               pipeline_stages_present,
+                               2, copy_wait_sems,
+                               1, &ctx->draw_sem[ctx->swap_chain_index]);
 }
 
 static void
@@ -1901,12 +1991,10 @@ destroy_pipeline_resources(VkdfContext *ctx, SceneResources *res,
    }
 }
 
-static void
+static inline void
 destroy_framebuffer_resources(VkdfContext *ctx, SceneResources *res)
 {
-   for (uint32_t i = 0; i < ctx->swap_chain_length; i++)
-      vkDestroyFramebuffer(ctx->device, res->framebuffers[i], NULL);
-   g_free(res->framebuffers);
+   vkDestroyFramebuffer(ctx->device, res->framebuffer, NULL);
 }
 
 static void
@@ -1919,18 +2007,13 @@ destroy_shader_resources(VkdfContext *ctx, SceneResources *res)
   vkDestroyShaderModule(ctx->device, res->ui_tile_fs_module, NULL);
 }
 
-static void
+static inline void
 destroy_command_buffer_resources(VkdfContext *ctx, SceneResources *res)
 {
-   vkFreeCommandBuffers(ctx->device,
-                        res->cmd_pool,
-                        ctx->swap_chain_length,
-                        res->cmd_bufs);
-
-   vkFreeCommandBuffers(ctx->device,
-                        res->cmd_pool,
-                        ctx->swap_chain_length,
-                        res->ui_tile_cmd_bufs);
+   vkFreeCommandBuffers(ctx->device, res->cmd_pool, 1, &res->cmd_buf);
+   vkFreeCommandBuffers(ctx->device, res->cmd_pool, 1, &res->ui_tile_cmd_buf);
+   vkFreeCommandBuffers(ctx->device, res->cmd_pool,
+                        ctx->swap_chain_length, res->present_cmd_bufs);
 }
 
 static void
@@ -1998,9 +2081,8 @@ destroy_ubo_resources(VkdfContext *ctx, SceneResources *res)
 static void
 destroy_scene_semaphores(VkdfContext *ctx, SceneResources *res)
 {
-   for (uint32_t i = 0; i < ctx->swap_chain_length; i++)
-      vkDestroySemaphore(ctx->device, res->scene_draw_sem[i], NULL);
-   g_free(res->scene_draw_sem);
+   vkDestroySemaphore(ctx->device, res->scene_draw_sem, NULL);
+   vkDestroySemaphore(ctx->device, res->scene_complete_sem, NULL);
 }
 
 void
@@ -2023,6 +2105,7 @@ cleanup_resources(VkdfContext *ctx, SceneResources *res)
    destroy_descriptor_resources(ctx, res);
    destroy_ubo_resources(ctx, res);
    destroy_framebuffer_resources(ctx, res);
+   vkdf_destroy_image(ctx, &res->color_image);
    vkdf_destroy_image(ctx, &res->depth_image);
    vkdf_destroy_image(ctx, &res->shadow_map);
    vkDestroySampler(ctx->device, res->shadow_map_sampler, NULL);
@@ -2043,6 +2126,7 @@ before_rebuild_swap_chain_cb(VkdfContext *ctx, void *user_data)
    vkDestroyPipeline(ctx->device, res->pipeline, NULL);
    vkDestroyPipeline(ctx->device, res->ui_tile_pipeline, NULL);
    destroy_framebuffer_resources(ctx, res);
+   vkdf_destroy_image(ctx, &res->color_image);
    vkdf_destroy_image(ctx, &res->depth_image);
    destroy_command_buffer_resources(ctx, res);
    destroy_scene_semaphores(ctx, res);
@@ -2054,14 +2138,16 @@ after_rebuild_swap_chain_cb(VkdfContext *ctx, void *user_data)
    SceneResources *res = (SceneResources *) user_data;
    res->render_pass = create_render_pass(ctx, res);
    res->ui_tile_render_pass = create_ui_tile_render_pass(ctx, res);
+   res->color_image = create_color_image(ctx, ctx->width, ctx->height);
    res->depth_image =
       create_depth_image(ctx, ctx->width, ctx->height,
                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-   res->framebuffers = create_framebuffers(ctx, res);
+   res->framebuffer = create_framebuffer(ctx, res);
    res->pipeline = create_pipeline(ctx, res, false);
    res->ui_tile_pipeline = create_ui_tile_pipeline(ctx, res);
    create_command_buffers(ctx, res);
    create_ui_tile_command_buffers(ctx, res);
+   create_present_command_buffers(ctx, res);
    create_scene_semaphores(ctx, res);
 }
 
