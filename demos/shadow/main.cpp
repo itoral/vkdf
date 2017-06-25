@@ -1882,11 +1882,13 @@ update_lights(SceneResources *res)
    static float rotY = 0.0f;
 
    glm::mat4 model(1.0f);
-   model = glm::rotate(model, rotY, glm::vec3(0, 1, 0));
+   model = glm::rotate(model, DEG_TO_RAD(rotY), glm::vec3(0, 1, 0));
    res->light.origin = model * glm::vec4(-15.0f, 2.0f, -15.0f, 1.0f);
    res->light.direction = -res->light.origin;
 
-   rotY += 0.01f;
+   rotY += 0.25f;
+   if (rotY >= 360.0f)
+      rotY -= 360.0f;
 }
 
 static void
