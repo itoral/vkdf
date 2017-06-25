@@ -30,11 +30,21 @@ layout(location = 5) out vec4 out_shadow_map_coord;
 void main()
 {
    vec4 pos = vec4(in_position.x, in_position.y, in_position.z, 1.0);
-   vec4 world_pos = M.Model[gl_InstanceIndex] * pos;
+   mat4 Model = M.Model[gl_InstanceIndex];
+   vec4 world_pos = Model * pos;
    vec4 camera_space_pos = VP.View * world_pos;
 
    gl_Position = VP.Projection * camera_space_pos;
-   out_normal = in_normal;
+
+   // Compute normal matrix to apply rotation / scale transforms
+   // to the normal vectors as well. We need to make sure that
+   // normals are normalized so that interpolation preserves
+   // direction (note that interpolated normals may not be
+   // normalized and additional normalization might be required
+   // in the fragment shader)
+   mat3 Normal = transpose(inverse(mat3(Model)));
+   out_normal = normalize(Normal * in_normal);
+
    out_material_idx = in_material_idx;
    out_world_pos = world_pos;
 
