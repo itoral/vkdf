@@ -29,7 +29,6 @@ vkdf_light_new_positional(glm::vec4 pos,
 
 VkdfLight *
 vkdf_light_new_spotlight(glm::vec4 pos,
-                         glm::vec4 direction,
                          float cutoff_angle,
                          glm::vec4 diffuse,
                          glm::vec4 ambient,
@@ -40,7 +39,8 @@ vkdf_light_new_spotlight(glm::vec4 pos,
    VkdfLight *l = g_new0(VkdfLight, 1);
    init_light(l, diffuse, ambient, specular, attenuation);
    l->origin = pos;
-   l->direction = direction;
+   l->rot = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+   l->dir = glm::vec4(vkdf_compute_viewdir(glm::vec3(l->rot)), 0.0f);
    vkdf_light_set_cutoff_angle(l, cutoff_angle);
    return l;
 }

@@ -1423,13 +1423,13 @@ create_ui_tile_pipeline(VkdfContext *ctx, SceneResources *res)
 static void
 init_light_sources(VkdfContext *ctx, SceneResources *res)
 {
-   res->light.origin = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+   res->light.origin = glm::vec4(-15.0f, 2.0f, -15.0f, 1.0f);
    res->light.diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    res->light.ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
    res->light.specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    res->light.attenuation = glm::vec4(0.1f, 0.05f, 0.01f, 0.0f);
 
-   res->light.direction = -res->light.origin;
+   vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
    vkdf_light_set_cutoff_angle(&res->light, DEG_TO_RAD(45.0f / 2.0f));
 }
 
@@ -1884,7 +1884,7 @@ update_lights(SceneResources *res)
    glm::mat4 model(1.0f);
    model = glm::rotate(model, DEG_TO_RAD(rotY), glm::vec3(0, 1, 0));
    res->light.origin = model * glm::vec4(-15.0f, 2.0f, -15.0f, 1.0f);
-   res->light.direction = -res->light.origin;
+   vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
 
    rotY += 0.25f;
    if (rotY >= 360.0f)
@@ -1907,9 +1907,7 @@ scene_update(VkdfContext *ctx, void *data)
                                0, sizeof(VkdfLight), &res->light);
 
       // Light View/Projection
-      res->light_view =
-         vkdf_compute_view_matrix(glm::vec3(res->light.origin),
-                                  glm::vec3(0.0f, 0.0f, 0.0f));
+      res->light_view = vkdf_light_get_view_matrix(&res->light);
       glm::mat4 vp = res->light_projection * res->light_view;
 
       vkdf_buffer_map_and_fill(ctx, res->Light_VP_ubo,

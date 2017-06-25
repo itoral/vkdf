@@ -9,6 +9,7 @@ struct Light {
   vec4 ambient;
   vec4 specular;
   vec4 attenuation;
+  vec4 rotation;
   vec4 direction;
   float cutoff;
   float pad1, pad2, pad3;
