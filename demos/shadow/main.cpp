@@ -1267,7 +1267,7 @@ create_pipeline(VkdfContext *ctx, SceneResources *res, bool init_cache)
                                    res->render_pass,
                                    res->pipeline_layout,
                                    VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                                   VK_CULL_MODE_NONE,
+                                   VK_CULL_MODE_BACK_BIT,
                                    res->vs_module,
                                    res->fs_module);
 }
