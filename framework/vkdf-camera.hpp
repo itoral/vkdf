@@ -33,8 +33,11 @@ vkdf_camera_move(VkdfCamera *cam, float dx, float dy, float dz);
 void
 vkdf_camera_rotate(VkdfCamera *cam, float rx, float ry, float rz);
 
-glm::vec3
-vkdf_camera_get_viewdir(VkdfCamera *cam);
+inline glm::vec3
+vkdf_camera_get_viewdir(VkdfCamera *cam)
+{
+   return vkdf_compute_viewdir(cam->rot);
+}
 
 void
 vkdf_camera_step(VkdfCamera *cam, float d, int stepX, int stepY, int stepZ);

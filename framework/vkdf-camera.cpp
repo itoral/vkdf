@@ -81,31 +81,6 @@ vkdf_camera_rotate(VkdfCamera *cam, float rx, float ry, float rz)
 }
 
 /**
- * Obtains a normalized vector describing the camera viewing direction
- */
-glm::vec3
-vkdf_camera_get_viewdir(VkdfCamera *cam)
-{
-   glm::vec3 v1, v2;
-
-   /* Rotate around Y-axis */
-   float angle = DEG_TO_RAD(cam->rot.y + 90.0);
-   v1.x =  cos(angle);
-   v1.z = -sin(angle);
-
-   /* Rotate around X-axis */
-   angle = DEG_TO_RAD(cam->rot.x);
-	float cosX = cos(angle);
-	v2.x = v1.x * cosX;
-	v2.z = v1.z * cosX;
-	v2.y = sin(angle);
-
-   /* Rotate around Z-axis (not supportted!) */
-
-   return v2;
-}
-
-/**
  * Move camera along the camera viewing direction
  * StepX, StepY, StepZ enable (1) or disable (0) movement along specific axis.
  */
