@@ -44,8 +44,11 @@ vkdf_camera_strafe(VkdfCamera *cam, float d);
 void
 vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z);
 
-glm::mat4
-vkdf_camera_get_view_matrix(VkdfCamera *cam);
+inline glm::mat4
+vkdf_camera_get_view_matrix(VkdfCamera *cam)
+{
+   return vkdf_compute_view_matrix_for_rotation(cam->pos, cam->rot);
+}
 
 glm::mat4
 vkdf_camera_get_rotation_matrix(VkdfCamera *cam);

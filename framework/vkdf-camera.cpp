@@ -165,17 +165,3 @@ vkdf_camera_get_rotation_matrix(VkdfCamera *cam)
    mat = glm::rotate(mat, rx, glm::vec3(1, 0, 0));
    return mat;
 }
-
-glm::mat4
-vkdf_camera_get_view_matrix(VkdfCamera *cam)
-{
-   glm::mat4 mat(1.0);
-   float rx = DEG_TO_RAD(cam->rot.x);
-   float ry = DEG_TO_RAD(cam->rot.y);
-   float rz = DEG_TO_RAD(cam->rot.z);
-   mat = glm::rotate(mat, -rx, glm::vec3(1, 0, 0));
-   mat = glm::rotate(mat, -ry, glm::vec3(0, 1, 0));
-   mat = glm::rotate(mat, -rz, glm::vec3(0, 0, 1));
-   mat = glm::translate(mat, -cam->pos);
-   return mat;
-}
