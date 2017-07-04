@@ -98,7 +98,7 @@ void main()
    vec3 specular = vec3(0);
    if (dot(normal, -light_dir_norm) >= 0.0) {
       vec3 reflection_dir = reflect(light_dir_norm, normal);
-      float shine_factor = dot(reflection_dir, in_view_dir);
+      float shine_factor = dot(reflection_dir, normalize(in_view_dir));
       specular =
            att_factor * l.specular.xyz * mat.specular.xyz *
             pow(max(0.0, shine_factor), mat.shininess.x) * shadow_factor;
