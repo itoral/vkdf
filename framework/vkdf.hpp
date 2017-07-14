@@ -116,5 +116,6 @@ typedef struct _VkdfContext VkdfContext;
 #include "vkdf-object.hpp"
 #include "vkdf-light.hpp"
 #include "vkdf-camera.hpp"
+#include "vkdf-scene.hpp"
 
 #endif
