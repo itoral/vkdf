@@ -30,7 +30,6 @@ triangle_CXXFLAGS = \
 triangle_LDADD = \
     $(abs_top_builddir)/framework/.libs/libvkdf.so \
     @DEMO_DEPS_LIBS@ \
-    -lvulkan \
     -lm
 
 # -----------------------------
