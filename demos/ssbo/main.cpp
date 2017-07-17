@@ -325,7 +325,7 @@ init_resources(VkdfContext *ctx,
 
    VkVertexInputAttributeDescription vi_attribs[1];
    vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
+   vi_attribs[0].location = 7;
    vi_attribs[0].format = format_from_num_components(res->num_components);
    vi_attribs[0].offset = 0;
 
