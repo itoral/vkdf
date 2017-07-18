@@ -72,6 +72,8 @@ AC_CONFIG_FILES([
    demos/model/Makefile
    demos/light/Makefile
    demos/shadow/Makefile
+   demos/ssbo/Makefile
+   demos/ssbo/gen_vertex_shader.py
 ])
 
 AC_OUTPUT

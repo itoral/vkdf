@@ -1496,8 +1496,9 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
 
    // Set layout
    res->MVP_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 2,
-                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 2,
+                                               VK_SHADER_STAGE_VERTEX_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Cubes descriptor set
    res->MVP_cubes_descriptor_set =
@@ -1507,13 +1508,15 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    VkDeviceSize VP_size = 2 * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->MVP_cubes_descriptor_set,
                                      res->VP_ubo.buf,
-                                     0, 1, &VP_offset, &VP_size, false);
+                                     0, 1, &VP_offset, &VP_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    VkDeviceSize M_offset = 0;
    VkDeviceSize M_size = NUM_CUBES * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->MVP_cubes_descriptor_set,
                                      res->M_cubes_ubo.buf,
-                                     1, 1, &M_offset, &M_size, false);
+                                     1, 1, &M_offset, &M_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Tiles descriptor set
    res->MVP_tiles_descriptor_set =
@@ -1523,19 +1526,21 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    VP_size = 2 * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->MVP_tiles_descriptor_set,
                                      res->VP_ubo.buf,
-                                     0, 1, &VP_offset, &VP_size, false);
+                                     0, 1, &VP_offset, &VP_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
    M_offset = 0;
    M_size = NUM_TILES * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->MVP_tiles_descriptor_set,
                                      res->M_tiles_ubo.buf,
-                                     1, 1, &M_offset, &M_size, false);
+                                     1, 1, &M_offset, &M_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Descriptor sets for materials. We have two descriptors, one with
    // the tile materials and another with the cube materials.
    res->Materials_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 1,
-                                            VK_SHADER_STAGE_FRAGMENT_BIT,
-                                            false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 1,
+                                               VK_SHADER_STAGE_FRAGMENT_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
    res->tile_materials_descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->Materials_set_layout);
 
@@ -1543,7 +1548,8 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    VkDeviceSize Mat_size = 2 * sizeof(VkdfMaterial);
    vkdf_descriptor_set_buffer_update(ctx, res->tile_materials_descriptor_set,
                                      res->tile_materials_ubo.buf,
-                                     0, 1, &Mat_offset, &Mat_size, false);
+                                     0, 1, &Mat_offset, &Mat_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    res->cube_materials_descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->Materials_set_layout);
@@ -1552,7 +1558,8 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    Mat_size = NUM_CUBES * sizeof(VkdfMaterial);
    vkdf_descriptor_set_buffer_update(ctx, res->cube_materials_descriptor_set,
                                      res->cube_materials_ubo.buf,
-                                     0, 1, &Mat_offset, &Mat_size, false);
+                                     0, 1, &Mat_offset, &Mat_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Descriptor set for light data. We have 2 separate bindings.
    // The first binding contains the light description, the
@@ -1560,10 +1567,10 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    // need for rendering shadows in the scene.
 
    res->Light_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 2,
-                                            VK_SHADER_STAGE_VERTEX_BIT |
-                                            VK_SHADER_STAGE_FRAGMENT_BIT,
-                                            false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 2,
+                                               VK_SHADER_STAGE_VERTEX_BIT |
+                                               VK_SHADER_STAGE_FRAGMENT_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    res->Light_descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->Light_set_layout);
@@ -1573,14 +1580,15 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    VkDeviceSize Light_size = sizeof(VkdfLight);
    vkdf_descriptor_set_buffer_update(ctx, res->Light_descriptor_set,
                                      res->Light_ubo.buf,
-                                     0, 1, &Light_offset, &Light_size, false);
+                                     0, 1, &Light_offset, &Light_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
    // Light View/Projection
    VkDeviceSize Light_VP_offset = 0;
    VkDeviceSize Light_VP_size = sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->Light_descriptor_set,
                                      res->Light_VP_ubo.buf,
                                      1, 1, &Light_VP_offset, &Light_VP_size,
-                                     false);
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Descriptor sets for shadow map rendering. For this we need a layout set
    // with 2 bindings
@@ -1588,8 +1596,9 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    // 1: Array of model matrices of the objects rendered to the shadow map
    //    (we only need to render the cubes)
    res->shadow_map_mvp_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 2,
-                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 2,
+                                               VK_SHADER_STAGE_VERTEX_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    res->shadow_map_mvp_descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->shadow_map_mvp_set_layout);
@@ -1598,13 +1607,15 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    VP_size = sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->shadow_map_mvp_descriptor_set,
                                      res->Light_VP_ubo.buf,
-                                     0, 1, &VP_offset, &VP_size, false);
+                                     0, 1, &VP_offset, &VP_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    M_offset = 0;
    M_size = NUM_CUBES * sizeof(glm::mat4);
    vkdf_descriptor_set_buffer_update(ctx, res->shadow_map_mvp_descriptor_set,
                                      res->M_cubes_ubo.buf,
-                                     1, 1, &M_offset, &M_size, false);
+                                     1, 1, &M_offset, &M_size,
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    // Descriptor set for shadow map sampling. A single binding with the
    // sampler object.
@@ -1631,8 +1642,9 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
    // to render the UI tile. We use this when rendering the UI tiles (debugging
    // only)
    res->ui_tile_mvp_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(ctx, 0, 1,
-                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+      vkdf_create_buffer_descriptor_set_layout(ctx, 0, 1,
+                                               VK_SHADER_STAGE_VERTEX_BIT,
+                                               VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 
    res->ui_tile_mvp_descriptor_set =
       create_descriptor_set(ctx, res->ubo_pool, res->ui_tile_mvp_set_layout);
@@ -1643,7 +1655,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                      res->ui_tile_mvp_ubo.buf,
                                      0, 1,
                                      &ui_tile_mvp_offset, &ui_tile_mvp_size,
-                                     false);
+                                     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
 }
 
 static void
