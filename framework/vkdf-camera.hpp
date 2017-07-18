@@ -2,6 +2,13 @@
 #define __VKDF_CAMERA_H__
 
 typedef struct {
+   struct {
+      float fov;
+      float near_plane;
+      float far_plane;
+      float aspect_ratio;
+      glm::mat4 matrix;
+   } proj;
    glm::vec3 pos;
    glm::vec3 rot;
    float dist;
@@ -14,6 +21,19 @@ vkdf_camera_new(float px, float py, float pz,
 
 void
 vkdf_camera_free(VkdfCamera *cam);
+
+void
+vkdf_camera_set_projection(VkdfCamera *cam,
+                           float fov,
+                           float near_plane,
+                           float far_plane,
+                           float aspect_ratio);
+
+inline glm::mat4 *
+vkdf_camera_get_projection_ptr(VkdfCamera *cam)
+{
+   return &cam->proj.matrix;
+}
 
 glm::vec3
 vkdf_camera_get_position(VkdfCamera *cam);

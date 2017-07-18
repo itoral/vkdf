@@ -16,6 +16,30 @@ vkdf_camera_free(VkdfCamera *cam)
    g_free(cam);
 }
 
+void
+vkdf_camera_set_projection(VkdfCamera *cam,
+                           float fov,
+                           float near_plane,
+                           float far_plane,
+                           float aspect_ratio)
+{
+   cam->proj.fov = fov;
+   cam->proj.near_plane = near_plane;
+   cam->proj.far_plane = far_plane;
+   cam->proj.aspect_ratio = aspect_ratio;
+
+   const glm::mat4 clip = glm::mat4(1.0f,  0.0f, 0.0f, 0.0f,
+                                    0.0f, -1.0f, 0.0f, 0.0f,
+                                    0.0f,  0.0f, 0.5f, 0.0f,
+                                    0.0f,  0.0f, 0.5f, 1.0f);
+
+   cam->proj.matrix = clip * glm::perspective(glm::radians(cam->proj.fov),
+                                              cam->proj.aspect_ratio,
+                                              cam->proj.near_plane,
+                                              cam->proj.far_plane);
+   cam->dirty = true;
+}
+
 glm::vec3
 vkdf_camera_get_position(VkdfCamera *cam)
 {
