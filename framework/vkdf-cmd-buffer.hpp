@@ -33,4 +33,9 @@ vkdf_command_buffer_execute_sync(VkdfContext *ctx,
                                  VkCommandBuffer cmd_buf,
                                  VkPipelineStageFlags pipeline_stage_flags);
 
+VkCommandBuffer *
+vkdf_command_buffer_create_for_present(VkdfContext *ctx,
+                                       VkCommandPool cmd_pool,
+                                       VkImage image);
+
 #endif

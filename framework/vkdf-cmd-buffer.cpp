@@ -105,4 +105,88 @@ vkdf_command_buffer_execute_sync(VkdfContext *ctx,
    vkDestroyFence(ctx->device, fence, NULL);
 }
 
+static void
+present_commands(VkdfContext *ctx,
+                 VkImage image,
+                 VkCommandBuffer *cmd_bufs,
+                 uint32_t index)
+{
+   // Transition presentation image to transfer destination layout
+   VkImageSubresourceRange subresource_range =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
 
+   VkImageMemoryBarrier barrier =
+      vkdf_create_image_barrier(0,
+                                VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                ctx->swap_chain_images[index].image,
+                                subresource_range);
+
+   vkCmdPipelineBarrier(cmd_bufs[index],
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        1, &barrier);
+
+   // Copy color image to presentation image
+   VkImageSubresourceLayers subresource_layers =
+      vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1);
+
+   VkImageCopy region =
+      vkdf_create_image_copy_region(subresource_layers, 0, 0, 0,
+                                    subresource_layers, 0, 0, 0,
+                                    ctx->width, ctx->height, 1);
+
+   vkCmdCopyImage(cmd_bufs[index],
+                  image,
+                  VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                  ctx->swap_chain_images[index].image,
+                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                  1,
+                  &region);
+
+   // Transition presentation image to presentation layout
+   barrier =
+      vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_ACCESS_MEMORY_READ_BIT,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                                ctx->swap_chain_images[index].image,
+                                subresource_range);
+
+   vkCmdPipelineBarrier(cmd_bufs[index],
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        1, &barrier);
+}
+
+/**
+ * Creates required command buffers to present an image
+ */
+VkCommandBuffer *
+vkdf_command_buffer_create_for_present(VkdfContext *ctx,
+                                       VkCommandPool cmd_pool,
+                                       VkImage image)
+{
+   VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, ctx->swap_chain_length);
+   vkdf_create_command_buffer(ctx,
+                              cmd_pool,
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              ctx->swap_chain_length,
+                              cmd_bufs);
+
+   for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
+      vkdf_command_buffer_begin(cmd_bufs[i],
+                                VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+      present_commands(ctx, image, cmd_bufs, i);
+      vkdf_command_buffer_end(cmd_bufs[i]);
+   }
+
+   return cmd_bufs;
+}
