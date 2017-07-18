@@ -72,6 +72,7 @@ AC_CONFIG_FILES([
    demos/model/Makefile
    demos/light/Makefile
    demos/shadow/Makefile
+   demos/scene/Makefile
 ])
 
 AC_OUTPUT
