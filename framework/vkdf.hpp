@@ -104,6 +104,7 @@ typedef struct _VkdfContext VkdfContext;
 #include "vkdf-image.hpp"
 #include "vkdf-sampler.hpp"
 #include "vkdf-framebuffer.hpp"
+#include "vkdf-renderpass.hpp"
 #include "vkdf-descriptor.hpp"
 #include "vkdf-barrier.hpp"
 #include "vkdf-semaphore.hpp"

@@ -14,6 +14,7 @@ libvkdf_la_SOURCES = \
     vkdf-shader.hpp vkdf-shader.cpp \
     vkdf-pipeline.hpp vkdf-pipeline.cpp \
     vkdf-framebuffer.hpp vkdf-framebuffer.cpp \
+    vkdf-renderpass.hpp vkdf-renderpass.cpp \
     vkdf-descriptor.hpp vkdf-descriptor.cpp \
     vkdf-image.hpp vkdf-image.cpp \
     vkdf-sampler.hpp vkdf-sampler.cpp \
