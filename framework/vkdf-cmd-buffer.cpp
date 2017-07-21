@@ -48,6 +48,20 @@ vkdf_command_buffer_begin(VkCommandBuffer cmd_buf,
 }
 
 void
+vkdf_command_buffer_begin_secondary(VkCommandBuffer cmd_buf,
+                                    VkCommandBufferUsageFlags flags,
+                                    VkCommandBufferInheritanceInfo *inheritance)
+{
+   VkCommandBufferBeginInfo cmd_buf_info;
+   cmd_buf_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+   cmd_buf_info.pNext = NULL;
+   cmd_buf_info.flags = flags;
+   cmd_buf_info.pInheritanceInfo = inheritance;
+
+   VK_CHECK(vkBeginCommandBuffer(cmd_buf, &cmd_buf_info));
+}
+
+void
 vkdf_command_buffer_end(VkCommandBuffer cmd_buf)
 {
    VK_CHECK(vkEndCommandBuffer(cmd_buf));

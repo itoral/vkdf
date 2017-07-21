@@ -17,6 +17,11 @@ vkdf_command_buffer_begin(VkCommandBuffer cmd_buf,
                           VkCommandBufferUsageFlags flags);
 
 void
+vkdf_command_buffer_begin_secondary(VkCommandBuffer cmd_buf,
+                                    VkCommandBufferUsageFlags flags,
+                                    VkCommandBufferInheritanceInfo *inheritance);
+
+void
 vkdf_command_buffer_end(VkCommandBuffer cmd_buf);
 
 void
