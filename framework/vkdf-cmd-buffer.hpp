@@ -29,6 +29,16 @@ vkdf_command_buffer_execute(VkdfContext *ctx,
                             VkSemaphore *signal_sem);
 
 void
+vkdf_command_buffer_execute_many(VkdfContext *ctx,
+                                 VkCommandBuffer *cmd_bufs,
+                                 uint32_t count,
+                                 VkPipelineStageFlags *pipeline_stage_flags,
+                                 uint32_t wait_sem_count,
+                                 VkSemaphore *wait_sem,
+                                 uint32_t signal_sem_count,
+                                 VkSemaphore *signal_sem);
+
+void
 vkdf_command_buffer_execute_sync(VkdfContext *ctx,
                                  VkCommandBuffer cmd_buf,
                                  VkPipelineStageFlags pipeline_stage_flags);
