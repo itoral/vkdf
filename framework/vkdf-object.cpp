@@ -17,6 +17,7 @@ vkdf_object_new_from_mesh(const glm::vec3 &pos, VkdfMesh *mesh)
 
    obj->model = vkdf_model_new();
    vkdf_model_add_mesh(obj->model, mesh);
+   vkdf_model_compute_size(obj->model);
 
    return obj;
 }
@@ -73,3 +74,38 @@ vkdf_object_get_model_matrix(VkdfObject *obj)
    return model;
 }
 
+glm::mat4
+vkdf_object_get_model_matrix_for_box(VkdfObject *obj)
+{
+   /* The bounding box's position coordinate is already in world space and
+    * it is already scaled so we only need to apply rotation here (around the
+    * box's center)
+    */
+   glm::mat4 Model(1.0f);
+   Model = glm::translate(Model, obj->pos);
+   if (obj->rot.x)
+      Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
+   if (obj->rot.y)
+      Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.y), glm::vec3(0, 1, 0));
+   if (obj->rot.z)
+      Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.z), glm::vec3(0, 0, 1));
+   Model = glm::translate(Model, -obj->pos);
+
+   return Model;
+}
+
+void
+vkdf_object_compute_box(VkdfObject *obj)
+{
+   assert(obj->model);
+
+   obj->box.w = vkdf_object_width(obj) / 2.0f;
+   obj->box.d = vkdf_object_depth(obj) / 2.0f;
+   obj->box.h = vkdf_object_height(obj) / 2.0f;
+   obj->box.center = obj->pos;
+
+   if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
+      glm::mat4 model = vkdf_object_get_model_matrix_for_box(obj);
+      vkdf_box_transform(&obj->box, &model);
+   }
+}

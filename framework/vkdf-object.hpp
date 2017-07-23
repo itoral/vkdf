@@ -7,6 +7,7 @@ typedef struct {
    glm::vec3 scale;
 
    VkdfModel *model;
+   VkdfBox box;
 
    // In theory each mesh in a model has at most 1 material. However, it is
    // useful to add variants of the materials, for example, to have different
@@ -55,5 +56,32 @@ vkdf_object_set_material_idx_base(VkdfObject *obj, uint32_t material_idx_base)
 
 glm::mat4
 vkdf_object_get_model_matrix(VkdfObject *obj);
+
+inline float
+vkdf_object_width(VkdfObject *obj)
+{
+   return obj->model->size.w * obj->scale.x;
+}
+
+inline float
+vkdf_object_height(VkdfObject *obj)
+{
+   return obj->model->size.h * obj->scale.y;
+}
+
+inline float
+vkdf_object_depth(VkdfObject *obj)
+{
+   return obj->model->size.d * obj->scale.z;
+}
+
+void
+vkdf_object_compute_box(VkdfObject *obj);
+
+inline VkdfBox *
+vkdf_object_get_box(VkdfObject *obj)
+{
+   return &obj->box;
+}
 
 #endif
