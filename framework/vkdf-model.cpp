@@ -45,6 +45,8 @@ process_mesh(const aiScene *scene, const aiMesh *mesh)
    // Material data
    _mesh->material_idx = mesh->mMaterialIndex;
 
+   vkdf_mesh_compute_size(_mesh);
+
    return _mesh;
 }
 
@@ -122,6 +124,8 @@ vkdf_model_load(const char *file)
    VkdfModel *model = create_model_from_scene(scene);
 
    aiReleaseImport(scene);
+
+   vkdf_model_compute_size(model);
 
    return model;
 }
@@ -284,5 +288,37 @@ vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
       model_fill_vertex_buffer(ctx, model);
       model_fill_index_buffer(ctx, model);
    }
+}
+
+void
+vkdf_model_compute_size(VkdfModel *model)
+{
+   model->size.min = glm::vec3(999999999.0f, 999999999.0f, 999999999.0f);
+   model->size.max = glm::vec3(-999999999.0f, -999999999.0f, -999999999.0f);
+
+   for (uint32_t i = 0; i < model->meshes.size(); i++) {
+      VkdfMesh *mesh = model->meshes[i];
+      if (mesh->size.w == 0.0f && mesh->size.h == 0.0f && mesh->size.d == 0.0f)
+         vkdf_mesh_compute_size(mesh);
+
+      if (mesh->size.min.x < model->size.min.x)
+         model->size.min.x = mesh->size.min.x;
+      if (mesh->size.max.x > model->size.max.x)
+         model->size.max.x = mesh->size.max.x;
+
+      if (mesh->size.min.y < model->size.min.y)
+         model->size.min.y = mesh->size.min.y;
+      if (mesh->size.max.y > model->size.max.y)
+         model->size.max.y = mesh->size.max.y;
+
+      if (mesh->size.min.z < model->size.min.z)
+         model->size.min.z = mesh->size.min.z;
+      if (mesh->size.max.z > model->size.max.z)
+         model->size.max.z = mesh->size.max.z;
+   }
+
+   model->size.w = model->size.max.x - model->size.min.x;
+   model->size.h = model->size.max.y - model->size.min.y;
+   model->size.d = model->size.max.z - model->size.min.z;
 }
 

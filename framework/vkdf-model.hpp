@@ -22,6 +22,15 @@ typedef struct {
    // index data for mesh 'm' starts at byte offset 'index_buf_offsets[m]'
    VkdfBuffer index_buf;
    std::vector<VkDeviceSize> index_buf_offsets;
+
+   // Model dimensions
+   struct {
+      float w;
+      float h;
+      float d;
+      glm::vec3 min;
+      glm::vec3 max;
+   } size;
 } VkdfModel;
 
 VkdfModel *
@@ -49,5 +58,8 @@ void
 vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
                                VkdfModel *model,
                                bool per_mesh);
+
+void
+vkdf_model_compute_size(VkdfModel *model);
 
 #endif
