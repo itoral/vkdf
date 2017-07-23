@@ -13,6 +13,14 @@ typedef struct {
    
    VkdfBuffer vertex_buf;
    VkdfBuffer index_buf;
+
+   struct {
+      float w;
+      float h;
+      float d;
+      glm::vec3 min;
+      glm::vec3 max;
+   } size;
 } VkdfMesh;
 
 VkdfMesh *
@@ -61,6 +69,9 @@ vkdf_mesh_get_index_data_size(VkdfMesh *mesh);
 
 void
 vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh);
+
+void
+vkdf_mesh_compute_size(VkdfMesh *mesh);
 
 #endif
 

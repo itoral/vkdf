@@ -84,6 +84,8 @@ vkdf_cube_mesh_new(VkdfContext *ctx)
       mesh->normals.push_back(face_normals[i / 6]);
    }
 
+   vkdf_mesh_compute_size(mesh);
+
    return mesh;
 }
 
@@ -104,6 +106,8 @@ vkdf_tile_mesh_new(VkdfContext *ctx)
       mesh->vertices.push_back(vertices[i]);
       mesh->normals.push_back(glm::vec3(0.0f, 1.0f, 0.0f));
    }
+
+   vkdf_mesh_compute_size(mesh);
 
    return mesh;
 }
@@ -130,6 +134,8 @@ vkdf_2d_tile_mesh_new(VkdfContext *ctx)
       mesh->vertices.push_back(vertices[i]);
       mesh->uvs.push_back(uvs[i]);
    }
+
+   vkdf_mesh_compute_size(mesh);
 
    return mesh;
 }
@@ -286,4 +292,34 @@ vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh)
    VK_CHECK(vkFlushMappedMemoryRanges(ctx->device, 1, &range));
 
    vkUnmapMemory(ctx->device, mesh->index_buf.mem);
+}
+
+void
+vkdf_mesh_compute_size(VkdfMesh *mesh)
+{
+   mesh->size.min = glm::vec3(999999999.0f, 999999999.0f, 999999999.0f);
+   mesh->size.max = glm::vec3(-999999999.0f, -999999999.0f, -999999999.0f);
+
+   for (uint32_t i = 0; i < mesh->vertices.size(); i++) {
+      glm::vec3 *v = &mesh->vertices[i];
+
+      if (v->x < mesh->size.min.x)
+         mesh->size.min.x = v->x;
+      else if (v->x > mesh->size.max.x)
+         mesh->size.max.x = v->x;
+
+      if (v->y < mesh->size.min.y)
+         mesh->size.min.y = v->y;
+      else if (v->y > mesh->size.max.y)
+         mesh->size.max.y = v->y;
+
+      if (v->z < mesh->size.min.z)
+         mesh->size.min.z = v->z;
+      else if (v->z > mesh->size.max.z)
+         mesh->size.max.z = v->z;
+   }
+
+   mesh->size.w = mesh->size.max.x - mesh->size.min.x;
+   mesh->size.h = mesh->size.max.y - mesh->size.min.y;
+   mesh->size.d = mesh->size.max.z - mesh->size.min.z;
 }
