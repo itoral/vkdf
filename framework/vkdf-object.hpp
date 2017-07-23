@@ -16,6 +16,8 @@ typedef struct {
    // particular object. A value of 0 would select the default material,
    // if any, 1 would select the first variant, etc
    uint32_t material_idx_base;
+
+   bool is_dynamic;
 } VkdfObject;
 
 VkdfObject *
@@ -82,6 +84,18 @@ inline VkdfBox *
 vkdf_object_get_box(VkdfObject *obj)
 {
    return &obj->box;
+}
+
+inline void
+vkdf_object_set_dynamic(VkdfObject *obj, bool dynamic)
+{
+   obj->is_dynamic = dynamic;
+}
+
+inline bool
+vkdf_object_is_dynamic(VkdfObject *obj)
+{
+   return obj->is_dynamic;
 }
 
 #endif
