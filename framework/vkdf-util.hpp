@@ -1,6 +1,9 @@
 #ifndef __VKDF_UTIL_H__
 #define __VKDF_UTIL_H__
 
+#define MIN2(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX2(a, b) (((a) > (b)) ? (a) : (b))
+
 inline glm::vec3
 vec3(glm::vec4 v)
 {
