@@ -56,6 +56,12 @@ vkdf_object_set_material_idx_base(VkdfObject *obj, uint32_t material_idx_base)
    obj->material_idx_base = material_idx_base;
 }
 
+inline uint32_t
+vkdf_object_get_material_idx_base(VkdfObject *obj)
+{
+   return obj->material_idx_base;
+}
+
 glm::mat4
 vkdf_object_get_model_matrix(VkdfObject *obj);
 
