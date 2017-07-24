@@ -15,6 +15,17 @@ typedef struct {
    bool dirty;
 } VkdfCamera;
 
+enum {
+  FRUSTUM_FTR = 0,
+  FRUSTUM_FTL,
+  FRUSTUM_FBR,
+  FRUSTUM_FBL,
+  FRUSTUM_NTR,
+  FRUSTUM_NTL,
+  FRUSTUM_NBR,
+  FRUSTUM_NBL,
+};
+
 VkdfCamera *
 vkdf_camera_new(float px, float py, float pz,
                 float rx, float ry, float rz);
@@ -75,5 +86,25 @@ vkdf_camera_get_view_matrix(VkdfCamera *cam)
 
 glm::mat4
 vkdf_camera_get_rotation_matrix(VkdfCamera *cam);
+
+void
+vkdf_camera_get_frustum_vertices_at_distance(VkdfCamera *cam,
+                                             float dist,
+                                             glm::vec3 *f);
+
+inline void
+vkdf_camera_get_frustum_vertices(VkdfCamera *cam, glm::vec3 *f)
+{
+   vkdf_camera_get_frustum_vertices_at_distance(cam, cam->proj.far_plane, f);
+}
+
+void
+vkdf_camera_get_clip_box_at_distance(VkdfCamera *cam, float dist, VkdfBox *box);
+
+inline void
+vkdf_camera_get_clip_box(VkdfCamera *cam, VkdfBox *box)
+{
+   return vkdf_camera_get_clip_box_at_distance(cam, cam->proj.far_plane, box);
+}
 
 #endif
