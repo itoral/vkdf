@@ -19,6 +19,17 @@ vkdf_vec3_module(glm::vec3 p, int xaxis, int yaxis, int zaxis)
    return sqrtf(p.x * p.x * xaxis + p.y * p.y * yaxis + p.z * p.z * zaxis);
 }
 
+static inline void
+vkdf_vec3_normalize(glm::vec3 *p)
+{
+   float m = vkdf_vec3_module(*p, 1, 1, 1);
+   if (m > 0.0f) {
+      p->x /= m;
+      p->y /= m;
+      p->z /= m;
+   }
+}
+
 glm::vec3
 vkdf_compute_view_rotation(glm::vec3 origin, glm::vec3 target);
 
