@@ -4,6 +4,8 @@
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))
 
+#define ALIGN(value, align) (((value) + (align) - 1) & ~((align) - 1))
+
 inline glm::vec3
 vec3(glm::vec4 v)
 {
