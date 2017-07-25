@@ -91,6 +91,30 @@ vkdf_command_buffer_execute(VkdfContext *ctx,
 }
 
 void
+vkdf_command_buffer_execute_with_fence(VkdfContext *ctx,
+                                       VkCommandBuffer cmd_buf,
+                                       VkPipelineStageFlags *pipeline_stage_flags,
+                                       uint32_t wait_sem_count,
+                                       VkSemaphore *wait_sem,
+                                       uint32_t signal_sem_count,
+                                       VkSemaphore *signal_sem,
+                                       VkFence fence)
+{
+   VkSubmitInfo submit_info = { };
+   submit_info.pNext = NULL;
+   submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+   submit_info.waitSemaphoreCount = wait_sem_count;
+   submit_info.pWaitSemaphores = wait_sem;
+   submit_info.signalSemaphoreCount = signal_sem_count;
+   submit_info.pSignalSemaphores = signal_sem;
+   submit_info.pWaitDstStageMask = pipeline_stage_flags;
+   submit_info.commandBufferCount = 1;
+   submit_info.pCommandBuffers = &cmd_buf;
+
+   VK_CHECK(vkQueueSubmit(ctx->gfx_queue, 1, &submit_info, fence));
+}
+
+void
 vkdf_command_buffer_execute_many(VkdfContext *ctx,
                                  VkCommandBuffer *cmd_bufs,
                                  uint32_t count,
