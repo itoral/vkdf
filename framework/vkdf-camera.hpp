@@ -78,6 +78,18 @@ vkdf_camera_strafe(VkdfCamera *cam, float d);
 void
 vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z);
 
+inline bool
+vkdf_camera_is_dirty(VkdfCamera *cam)
+{
+   return cam->dirty;
+}
+
+inline void
+vkdf_camera_set_dirty(VkdfCamera *cam, bool dirty)
+{
+   cam->dirty = dirty;
+}
+
 inline glm::mat4
 vkdf_camera_get_view_matrix(VkdfCamera *cam)
 {
