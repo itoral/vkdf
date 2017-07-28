@@ -1,5 +1,30 @@
 #include "vkdf.hpp"
 
+glm::vec3
+vkdf_box_get_vertex(VkdfBox *box, uint32_t index)
+{
+   switch (index) {
+   case 0:
+      return box->center + glm::vec3(box->w, box->h, box->d);
+   case 1:
+      return box->center + glm::vec3(-box->w, box->h, box->d);
+   case 2:
+      return box->center + glm::vec3(-box->w, -box->h, box->d);
+   case 3:
+      return box->center + glm::vec3(box->w, -box->h, box->d);
+   case 4:
+      return box->center + glm::vec3(box->w, box->h, -box->d);
+   case 5:
+      return box->center + glm::vec3(-box->w, box->h, -box->d);
+   case 6:
+      return box->center + glm::vec3(-box->w, -box->h, -box->d);
+   case 7:
+      return box->center + glm::vec3(box->w, -box->h, -box->d);
+   default:
+      assert(!"invalid box vertex index");
+   }
+}
+
 bool
 vkdf_box_is_inside(VkdfBox *box, glm::vec3 &p)
 {
@@ -92,4 +117,30 @@ vkdf_box_transform(VkdfBox *box, glm::mat4 *transform)
    box->w = (maxX - minX) / 2.0f;
    box->h = (maxY - minY) / 2.0f;
    box->d = (maxZ - minZ) / 2.0f;
+}
+
+uint32_t
+vkdf_box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
+{
+   uint32_t result = INSIDE;
+   uint32_t in, out;
+
+   for (uint32_t pl = 0; pl < 6; pl++) {
+      out = in = 0;
+      for (uint32_t bvi = 0; bvi < 8 && (in == 0 || out == 0); bvi++) {
+         glm::vec3 p = vkdf_box_get_vertex(box, bvi);
+         float dist = vkdf_plane_distance_from_point(&fplanes[pl], p);
+         if (dist < 0)
+            out++;
+         else
+            in++;
+      }
+
+      if (in == 0)
+         return OUTSIDE;
+      else if (out > 0)
+         result = INTERSECT;
+   }
+
+   return result;
 }
