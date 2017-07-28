@@ -6,6 +6,7 @@ libvkdf_la_SOURCES = \
     vkdf.hpp \
     vkdf-util.hpp vkdf-util.cpp \
     vkdf-box.hpp vkdf-box.cpp \
+    vkdf-plane.hpp vkdf-plane.cpp \
     vkdf-error.hpp vkdf-error.cpp \
     vkdf-init.hpp vkdf-init-priv.hpp vkdf-init.cpp \
     vkdf-event-loop.hpp vkdf-event-loop.cpp \
