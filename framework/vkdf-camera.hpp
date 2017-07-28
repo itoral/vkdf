@@ -25,6 +25,15 @@ enum {
   FRUSTUM_NBL,
 };
 
+enum {
+   FRUSTUM_FAR = 0,
+   FRUSTUM_NEAR,
+   FRUSTUM_LEFT,
+   FRUSTUM_RIGHT,
+   FRUSTUM_TOP,
+   FRUSTUM_BOTTOM,
+};
+
 VkdfCamera *
 vkdf_camera_new(float px, float py, float pz,
                 float rx, float ry, float rz);
@@ -116,6 +125,16 @@ inline void
 vkdf_camera_get_clip_box(VkdfCamera *cam, VkdfBox *box)
 {
    return vkdf_camera_get_clip_box_at_distance(cam, cam->proj.far_plane, box);
+}
+
+void
+vkdf_camera_get_frustum_planes_at_distance(VkdfCamera *cam,
+                                           float dist, VkdfPlane *p);
+
+inline void
+vkdf_camera_get_frustum_planes(VkdfCamera *cam, VkdfPlane *p)
+{
+   vkdf_camera_get_frustum_planes_at_distance(cam, cam->proj.far_plane, p);
 }
 
 #endif

@@ -241,3 +241,31 @@ vkdf_camera_get_clip_box_at_distance(VkdfCamera *cam, float dist, VkdfBox *box)
                            box_min.y + box->h,
                            box_min.z + box->d);
 }
+
+void
+vkdf_camera_get_frustum_planes_at_distance(VkdfCamera *cam,
+                                           float dist,
+                                           VkdfPlane *p)
+{
+   glm::vec3 f[8];
+   vkdf_camera_get_frustum_vertices_at_distance(cam, dist, f);
+
+   vkdf_plane_from_points(&p[FRUSTUM_FAR],
+                          f[FRUSTUM_FTL], f[FRUSTUM_FTR], f[FRUSTUM_FBR]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_NEAR],
+                          f[FRUSTUM_NTL], f[FRUSTUM_NBR], f[FRUSTUM_NTR]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_LEFT],
+                          f[FRUSTUM_NTL], f[FRUSTUM_FTL], f[FRUSTUM_FBL]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_RIGHT],
+                          f[FRUSTUM_NTR], f[FRUSTUM_FBR], f[FRUSTUM_FTR]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_TOP],
+                          f[FRUSTUM_NTL], f[FRUSTUM_FTR], f[FRUSTUM_FTL]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_BOTTOM],
+                          f[FRUSTUM_NBL], f[FRUSTUM_FBL], f[FRUSTUM_FBR]);
+}
+
