@@ -11,7 +11,6 @@ typedef struct {
    } proj;
    glm::vec3 pos;
    glm::vec3 rot;
-   float dist;
    bool dirty;
 } VkdfCamera;
 
