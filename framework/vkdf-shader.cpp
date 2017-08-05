@@ -41,6 +41,8 @@ vkdf_create_shader_module(VkdfContext *ctx, const char *path)
    VkShaderModule module;
    VK_CHECK(vkCreateShaderModule(ctx->device, &mod_info, NULL, &module));
 
+   g_free(spirv);
+
    return module;
 }
 
