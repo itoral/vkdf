@@ -147,6 +147,8 @@ vkdf_model_free(VkdfContext *ctx, VkdfModel *model)
       vkDestroyBuffer(ctx->device, model->index_buf.buf, NULL);
       vkFreeMemory(ctx->device, model->index_buf.mem, NULL);
    }
+
+   g_free(model);
 }
 
 static void
