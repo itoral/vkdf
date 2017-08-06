@@ -52,8 +52,8 @@ static void
 process_node(VkdfModel *model, const aiScene *scene, const aiNode *node)
 {
    for (uint32_t i = 0; i < node->mNumMeshes; i++) {
-      aiMesh* mesh = scene->mMeshes[node->mMeshes[i]]; 
-      model->meshes.push_back(process_mesh(scene, mesh));			
+      aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+      model->meshes.push_back(process_mesh(scene, mesh));
    }
 
    for (uint32_t i = 0; i < node->mNumChildren; i++)
@@ -105,7 +105,7 @@ create_model_from_scene(const aiScene *scene)
 VkdfModel *
 vkdf_model_load(const char *file)
 {
-   uint32_t flags = aiProcess_CalcTangentSpace | 
+   uint32_t flags = aiProcess_CalcTangentSpace |
                     aiProcess_Triangulate |
                     aiProcess_JoinIdenticalVertices |
                     aiProcess_SplitLargeMeshes |
