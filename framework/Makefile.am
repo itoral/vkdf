@@ -5,6 +5,7 @@ lib_LTLIBRARIES = libvkdf.la
 libvkdf_la_SOURCES = \
     vkdf.hpp \
     vkdf-util.hpp vkdf-util.cpp \
+    vkdf-thread-pool.hpp vkdf-thread-pool.cpp \
     vkdf-box.hpp vkdf-box.cpp \
     vkdf-plane.hpp vkdf-plane.cpp \
     vkdf-error.hpp vkdf-error.cpp \
