@@ -423,7 +423,7 @@ init_scene(SceneResources *res)
    res->scene = vkdf_scene_new(ctx,
                                res->camera,
                                scene_origin, scene_size, tile_size, 2,
-                               cache_size);
+                               cache_size, 4);
 
    vkdf_scene_set_render_target(res->scene, res->framebuffer, ctx->width, ctx->height);
    vkdf_scene_set_scene_callbacks(res->scene,

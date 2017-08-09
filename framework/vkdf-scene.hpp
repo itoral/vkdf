@@ -8,6 +8,18 @@ typedef struct {
 } VkdfSceneLight;
 
 typedef struct _VkdfSceneTile VkdfSceneTile;
+typedef struct _VkdfScene VkdfScene;
+
+struct ThreadData {
+   uint32_t id;
+   VkdfScene *s;
+   uint32_t first_idx;
+   uint32_t last_idx;
+   VkdfBox *visible_box;
+   VkdfPlane *fplanes;
+   GList *visible;
+   bool cmd_buf_changes;
+};
 
 typedef struct {
    GList *objs;                 // Set list
@@ -38,7 +50,13 @@ struct _dim {
    float d;
 };
 
-typedef struct {
+struct _cache {
+   GList *cached;
+   uint32_t size;
+   uint32_t max_size;
+};
+
+struct _VkdfScene {
    VkdfContext *ctx;
 
    // Scene resources
@@ -72,13 +90,8 @@ typedef struct {
    } num_tiles;
 
    VkdfSceneTile *tiles;
-   GList *visible;
 
-   struct {
-      GList *cached;
-      uint32_t size;
-      uint32_t max_size;
-   } cache;
+   struct _cache *cache;
 
    bool dirty;
    uint32_t obj_count;
@@ -86,11 +99,12 @@ typedef struct {
    /** 
     * active    : list of secondary command buffers that are active (that is,
     *             they are associated with a currently visible tile).
+    *             [one list per thread]
     *
     * free      : list of obsolete (inactive) secondary command buffers that
     *             are still pending execution (in a previous frame). These
     *             commands will be freed when the corresponding fence is
-    *             signaled.
+    *             signaled. [one list per thread]
     *
     * primary   : The current primary command buffer for the visible tiles.
     *
@@ -98,9 +112,9 @@ typedef struct {
     *             resources used for rendering the current frame.
     */
    struct {
-      VkCommandPool pool;
-      GList *active;
-      GList *free;
+      VkCommandPool *pool;
+      GList **active;
+      GList **free;
       VkCommandBuffer primary;
       VkCommandBuffer update_resources;
    } cmd_buf;
@@ -118,7 +132,14 @@ typedef struct {
       VkdfSceneCommandsCB record_commands;
       void *data;
    } callbacks;
-} VkdfScene;
+
+   struct {
+      VkdfThreadPool *pool;
+      uint32_t num_threads;
+      uint32_t work_size;
+      struct ThreadData *data;
+   } thread;
+};
 
 VkdfScene *
 vkdf_scene_new(VkdfContext *ctx,
@@ -127,7 +148,8 @@ vkdf_scene_new(VkdfContext *ctx,
                glm::vec3 scene_size,
                glm::vec3 tile_size,
                uint32_t num_tile_levels,
-               uint32_t cache_size);
+               uint32_t cache_size,
+               uint32_t num_threads);
 
 void
 vkdf_scene_free(VkdfScene *s);

@@ -77,7 +77,8 @@ vkdf_scene_new(VkdfContext *ctx,
                glm::vec3 scene_size,
                glm::vec3 tile_size,
                uint32_t num_tile_levels,
-               uint32_t cache_size)
+               uint32_t cache_size,
+               uint32_t num_threads)
 {
    VkdfScene *s = g_new0(VkdfScene, 1);
 
@@ -92,6 +93,7 @@ vkdf_scene_new(VkdfContext *ctx,
    assert(tile_size.y <= scene_size.y);
    assert(tile_size.z <= scene_size.z);
    assert(num_tile_levels > 0);
+   assert(num_threads > 0);
 
    s->scene_area.origin = scene_origin;
    s->scene_area.w = scene_size.x;
@@ -145,13 +147,45 @@ vkdf_scene_new(VkdfContext *ctx,
       init_subtiles(s, t);
    }
 
-   s->cache.max_size = cache_size;
+   assert(num_threads <= s->num_tiles.total);
+
+   s->thread.num_threads = num_threads;
+   s->thread.work_size =
+      (uint32_t) truncf((float) s->num_tiles.total / num_threads);
+   if (num_threads > 1)
+      s->thread.pool = vkdf_thread_pool_new(num_threads);
+
+   s->cache = (struct _cache *) malloc(sizeof(struct _cache) * num_threads);
+   for (uint32_t thread_idx = 0; thread_idx < num_threads; thread_idx++) {
+      s->cache[thread_idx].max_size = cache_size;
+      s->cache[thread_idx].size = 0;
+      s->cache[thread_idx].cached = NULL;
+   }
+
+   s->cmd_buf.pool = g_new(VkCommandPool, num_threads);
+   s->cmd_buf.active = g_new(GList *, num_threads);
+   s->cmd_buf.free = g_new(GList *, num_threads);
+   for (uint32_t thread_idx = 0; thread_idx < num_threads; thread_idx++) {
+      s->cmd_buf.pool[thread_idx] = vkdf_create_gfx_command_pool(s->ctx, 0);
+      s->cmd_buf.active[thread_idx] = NULL;
+      s->cmd_buf.free[thread_idx] = NULL;
+   }
+
+   s->thread.data = g_new0(struct ThreadData, num_threads);
+   for (uint32_t thread_idx = 0; thread_idx < num_threads; thread_idx++) {
+      s->thread.data[thread_idx].id = thread_idx;
+      s->thread.data[thread_idx].s = s;
+      s->thread.data[thread_idx].first_idx =
+         thread_idx * s->thread.work_size;
+      s->thread.data[thread_idx].last_idx =
+         (thread_idx < num_threads - 1) ?
+            s->thread.data[thread_idx].first_idx + s->thread.work_size - 1 :
+            s->num_tiles.total - 1;
+   }
 
    s->sync.update_resources_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_fence = vkdf_create_fence(s->ctx);
-
-   s->cmd_buf.pool = vkdf_create_gfx_command_pool(s->ctx, 0);
 
    return s;
 }
@@ -209,7 +243,22 @@ free_tile(VkdfSceneTile *t)
 void
 vkdf_scene_free(VkdfScene *s)
 {
-   GList *iter;
+   while (s->sync.draw_fence_active) {
+      VkResult status;
+      do {
+         status = vkWaitForFences(s->ctx->device,
+                                  1, &s->sync.draw_fence,
+                                  true, 1000ull);
+      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
+      vkResetFences(s->ctx->device, 1, &s->sync.draw_fence);
+      s->sync.draw_fence_active = false;
+   }
+
+   if (s->thread.pool) {
+      vkdf_thread_pool_wait(s->thread.pool);
+      g_free(s->thread.data);
+      vkdf_thread_pool_free(s->thread.pool);
+   }
 
    g_list_free_full(s->set_ids, g_free);
    s->set_ids = NULL;
@@ -227,19 +276,17 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.draw_fence, NULL);
 
-   g_list_free(s->visible);
-   g_list_free(s->cache.cached);
-   g_list_free(s->cmd_buf.active);
-
-   iter = s->cmd_buf.free;
-   while (iter) {
-      struct FreeCmdBufInfo *info = (struct FreeCmdBufInfo *) iter->data;
-      vkFreeCommandBuffers(s->ctx->device, s->cmd_buf.pool, 1, &info->cmd_buf);
-      iter = g_list_next(iter);
+   for (uint32_t i = 0; i < s->thread.num_threads; i++) {
+      g_list_free(s->cache[i].cached);
+      g_list_free(s->cmd_buf.active[i]);
+      g_list_free(s->cmd_buf.free[i]);
+      g_list_free(s->cache[i].cached);
+      vkDestroyCommandPool(s->ctx->device, s->cmd_buf.pool[i], NULL);
    }
-   g_list_free(s->cmd_buf.free);
-
-   vkDestroyCommandPool(s->ctx->device, s->cmd_buf.pool, NULL);
+   g_free(s->cache);
+   g_free(s->cmd_buf.active);
+   g_free(s->cmd_buf.free);
+   g_free(s->cmd_buf.pool);
 
    g_free(s->tile_size);
 
@@ -398,23 +445,31 @@ compare_distance(const void *a, const void *b,  void *data)
    return d1 < d2 ? -1 : d1 > d2 ? 1 : 0;
 }
 
-static inline void
-sort_tiles_by_distance(VkdfScene *s)
+static inline GList *
+sort_active_tiles_by_distance(VkdfScene *s)
 {
+   GList *list = NULL;
+   for (uint32_t i = 0; i < s->thread.num_threads; i++) {
+      GList *iter = s->cmd_buf.active[i];
+      while (iter) {
+         list = g_list_prepend(list, iter->data);
+         iter = g_list_next(iter);
+      }
+   }
+
    glm::vec3 cam_pos = vkdf_camera_get_position(s->camera);
-   s->cmd_buf.active =
-      g_list_sort_with_data(s->cmd_buf.active, compare_distance, &cam_pos);
+   return g_list_sort_with_data(list, compare_distance, &cam_pos);
 }
 
 static VkCommandBuffer
 build_primary_cmd_buf(VkdfScene *s)
 {
-   sort_tiles_by_distance(s);
+   GList *active = sort_active_tiles_by_distance(s);
 
    VkCommandBuffer cmd_buf;
 
    vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool,
+                              s->cmd_buf.pool[0],
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
                               1, &cmd_buf);
 
@@ -432,10 +487,10 @@ build_primary_cmd_buf(VkdfScene *s)
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-   uint32_t cmd_buf_count = g_list_length(s->cmd_buf.active);
+   uint32_t cmd_buf_count = g_list_length(active);
    if (cmd_buf_count > 0) {
       VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, cmd_buf_count);
-      GList *iter = s->cmd_buf.active;
+      GList *iter = active;
       for (uint32_t i = 0; i < cmd_buf_count; i++, iter = g_list_next(iter)) {
          VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
          assert(t->cmd_buf != 0);
@@ -449,6 +504,8 @@ build_primary_cmd_buf(VkdfScene *s)
    vkCmdEndRenderPass(cmd_buf);
 
    vkdf_command_buffer_end(cmd_buf);
+
+   g_list_free(active);
 
    return cmd_buf;
 }
@@ -470,81 +527,99 @@ check_fences(VkdfScene *s)
 static void
 free_inactive_command_buffers(VkdfScene *s)
 {
-   GList *iter = s->cmd_buf.free;
-   while (iter) {
-      struct FreeCmdBufInfo *info = (struct FreeCmdBufInfo *) iter->data;
-      vkFreeCommandBuffers(s->ctx->device, s->cmd_buf.pool, 1, &info->cmd_buf);
+   for (uint32_t i = 0; i < s->thread.num_threads; i++) {
+      GList *iter = s->cmd_buf.free[i];
+      while (iter) {
+         struct FreeCmdBufInfo *info = (struct FreeCmdBufInfo *) iter->data;
+         vkFreeCommandBuffers(s->ctx->device,
+                              s->cmd_buf.pool[i], 1, &info->cmd_buf);
 
-      // If this was a tile secondary, mark the tile as not having a command
-      if (info->tile &&
-          info->tile->cmd_buf == info->cmd_buf)
-         info->tile->cmd_buf = 0;
+         // If this was a tile secondary, mark the tile as not having a command
+         if (info->tile &&
+             info->tile->cmd_buf == info->cmd_buf)
+            info->tile->cmd_buf = 0;
 
-      GList *link = iter;
-      iter = g_list_next(iter);
-      s->cmd_buf.free = g_list_delete_link(s->cmd_buf.free, link);
+         GList *link = iter;
+         iter = g_list_next(iter);
+         s->cmd_buf.free[i] = g_list_delete_link(s->cmd_buf.free[i], link);
 
-      g_free(info);
+         g_free(info);
+      }
    }
 }
 
 static inline void
-add_to_cache(VkdfScene *s, VkdfSceneTile *t)
+add_to_cache(struct ThreadData *data, VkdfSceneTile *t)
 {
-   s->cache.cached = g_list_prepend(s->cache.cached, t);
-   s->cache.size++;
+   VkdfScene *s = data->s;
+   uint32_t thread_id = data->id;
+
+   s->cache[thread_id].cached = g_list_prepend(s->cache[thread_id].cached, t);
+   s->cache[thread_id].size++;
 }
 
 static inline void
-remove_from_cache(VkdfScene *s, VkdfSceneTile *t)
+remove_from_cache(struct ThreadData *data, VkdfSceneTile *t)
 {
-   assert(s->cache.size > 0);
-   s->cache.cached = g_list_remove(s->cache.cached, t);
-   s->cache.size--;
+   VkdfScene *s = data->s;
+   uint32_t thread_id = data->id;
+
+   assert(s->cache[thread_id].size > 0);
+   s->cache[thread_id].cached = g_list_remove(s->cache[thread_id].cached, t);
+   s->cache[thread_id].size--;
 }
 
 static void
-new_active_tile(VkdfScene *s, VkdfSceneTile *t)
+new_active_tile(struct ThreadData *data, VkdfSceneTile *t)
 {
+   VkdfScene *s = data->s;
+   uint32_t thread_id = data->id;
+
    assert(t->obj_count > 0);
 
-   if (s->cache.size > 0) {
-      GList *found = g_list_find(s->cache.cached, t);
+   if (s->cache[thread_id].size > 0) {
+      GList *found = g_list_find(s->cache[thread_id].cached, t);
       if (found) {
-         remove_from_cache(s, t);
-         s->cmd_buf.active = g_list_prepend(s->cmd_buf.active, t);
+         remove_from_cache(data, t);
+         s->cmd_buf.active[thread_id] =
+            g_list_prepend(s->cmd_buf.active[thread_id], t);
          return;
       }
    }
 
    VkCommandBuffer cmd_buf =
-      s->callbacks.record_commands(s->ctx, s->cmd_buf.pool,
+      s->callbacks.record_commands(s->ctx, s->cmd_buf.pool[thread_id],
                                    s->framebuffer, s->fb_width, s->fb_height,
                                    t->sets, s->callbacks.data);
    t->cmd_buf = cmd_buf;
-   s->cmd_buf.active = g_list_prepend(s->cmd_buf.active, t);
+   s->cmd_buf.active[thread_id] =
+      g_list_prepend(s->cmd_buf.active[thread_id], t);
 
    t->dirty = false;
 }
 
 static void
-new_inactive_tile(VkdfScene *s, VkdfSceneTile *t)
+new_inactive_tile(struct ThreadData *data, VkdfSceneTile *t)
 {
-   s->cmd_buf.active = g_list_remove(s->cmd_buf.active, t);
+   VkdfScene *s = data->s;
+   uint32_t thread_id = data->id;
+
+   s->cmd_buf.active[thread_id] =
+      g_list_remove(s->cmd_buf.active[thread_id], t);
 
    VkdfSceneTile *expired;
-   if (s->cache.max_size <= 0) {
+   if (s->cache[thread_id].max_size <= 0) {
       expired = t;
    } else {
-      if (s->cache.size >= s->cache.max_size) {
-         GList *last = g_list_last(s->cache.cached);
+      if (s->cache[thread_id].size >= s->cache[thread_id].max_size) {
+         GList *last = g_list_last(s->cache[thread_id].cached);
          expired = (VkdfSceneTile *) last->data;
-         remove_from_cache(s, expired);
+         remove_from_cache(data, expired);
       } else {
          expired = NULL;
       }
 
-      add_to_cache(s, t);
+      add_to_cache(data, t);
    }
 
    if (!expired)
@@ -553,23 +628,28 @@ new_inactive_tile(VkdfScene *s, VkdfSceneTile *t)
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
    info->cmd_buf = expired->cmd_buf;
    info->tile = expired;
-   s->cmd_buf.free = g_list_prepend(s->cmd_buf.free, info);
+   s->cmd_buf.free[thread_id] =
+      g_list_prepend(s->cmd_buf.free[thread_id], info);
 }
 
 static void inline
-new_inactive_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
+new_inactive_cmd_buf(struct ThreadData *data, VkCommandBuffer cmd_buf)
 {
+   VkdfScene *s = data->s;
+   uint32_t thread_id = data->id;
+
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
    info->cmd_buf = cmd_buf;
    info->tile = NULL;
-   s->cmd_buf.free = g_list_prepend(s->cmd_buf.free, info);
+   s->cmd_buf.free[thread_id] =
+      g_list_prepend(s->cmd_buf.free[thread_id], info);
 }
 
 static inline VkCommandBuffer
 record_resource_updates(VkdfScene *s)
 {
    return s->callbacks.update_resources(s->ctx,
-                                        s->cmd_buf.pool,
+                                        s->cmd_buf.pool[0],
                                         s->callbacks.data);
 }
 
@@ -734,8 +814,63 @@ process_partial_tile(VkdfSceneTile *t, VkdfPlane *fplanes, GList *visible)
    return visible;
 }
 
-static GList *
-find_visible_tiles(VkdfScene *s)
+static void
+thread_update_cmd_bufs(void *arg)
+{
+   struct ThreadData *data = (struct ThreadData *) arg;
+
+   VkdfScene *s = data->s;
+
+   VkdfBox *visible_box = data->visible_box;
+   VkdfPlane *fplanes = data->fplanes;
+
+   uint32_t first_idx = data->first_idx;
+   uint32_t last_idx = data->last_idx;
+
+   GList *cur_visible = NULL;
+   GList *prev_visible = data->visible;
+
+   // Find visible tiles
+   for (uint32_t i = first_idx; i <= last_idx; i++) {
+      VkdfSceneTile *t = &s->tiles[i];
+      uint32_t visibility = tile_is_visible(t, visible_box, fplanes);
+      if (visibility == INSIDE) {
+         cur_visible = g_list_prepend(cur_visible, t);
+      } else if (visibility == INTERSECT) {
+         cur_visible = process_partial_tile(t, fplanes, cur_visible);
+      }
+   }
+
+   // Identify new invisible tiles
+   data->cmd_buf_changes = false;
+   GList *iter = prev_visible;
+   while (iter) {
+      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+      if (!g_list_find(cur_visible, t)) {
+         new_inactive_tile(data, t);
+         data->cmd_buf_changes = true;
+      }
+      iter = g_list_next(iter);
+   }
+
+   // Identify new visible tiles
+   iter = cur_visible;
+   while (iter) {
+      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+      if (t->obj_count > 0 && !g_list_find(prev_visible, t)) {
+         new_active_tile(data, t);
+         data->cmd_buf_changes = true;
+      }
+      iter = g_list_next(iter);
+   }
+
+   // Attach the new list of visible tiles
+   g_list_free(data->visible);
+   data->visible = cur_visible;
+}
+
+static bool
+update_cmd_bufs(VkdfScene *s)
 {
    VkdfBox visible_box;
    vkdf_camera_get_clip_box(s->camera, &visible_box);
@@ -743,18 +878,36 @@ find_visible_tiles(VkdfScene *s)
    VkdfPlane fplanes[6];
    vkdf_camera_get_frustum_planes(s->camera, fplanes);
 
-   GList *visible = NULL;
-   for (uint32_t i = 0; i < s->num_tiles.total; i++) {
-      VkdfSceneTile *t = &s->tiles[i];
-      uint32_t visibility = tile_is_visible(t, &visible_box, fplanes);
-      if (visibility == INSIDE) {
-         visible = g_list_prepend(visible, t);
-      } else if (visibility == INTERSECT) {
-         visible = process_partial_tile(t, fplanes, visible);
-      }
+   for (uint32_t thread_idx = 0;
+        thread_idx < s->thread.num_threads;
+        thread_idx++) {
+      s->thread.data[thread_idx].visible_box = &visible_box;
+      s->thread.data[thread_idx].fplanes = fplanes;
+      s->thread.data[thread_idx].cmd_buf_changes = false;
    }
 
-   return visible;
+   if (s->thread.pool) {
+      for (uint32_t thread_idx = 0;
+           thread_idx < s->thread.num_threads;
+           thread_idx++) {
+         vkdf_thread_pool_add_job(s->thread.pool,
+                                  thread_update_cmd_bufs,
+                                  &s->thread.data[thread_idx]);
+      }
+      vkdf_thread_pool_wait(s->thread.pool);
+   } else {
+      thread_update_cmd_bufs(&s->thread.data[0]);
+   }
+
+   bool cmd_buf_changes = s->thread.data[0].cmd_buf_changes;
+   for (uint32_t thread_idx = 1;
+        cmd_buf_changes == false && thread_idx < s->thread.num_threads;
+        thread_idx++) {
+      cmd_buf_changes = cmd_buf_changes ||
+                        s->thread.data[thread_idx].cmd_buf_changes;
+   }
+
+   return cmd_buf_changes;
 }
 
 void
@@ -767,7 +920,7 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
 
    // Record the command buffer that updates rendering resources
    if (s->cmd_buf.update_resources)
-      new_inactive_cmd_buf(s, s->cmd_buf.update_resources);
+      new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.update_resources);
    s->cmd_buf.update_resources = record_resource_updates(s);
 
    // If the camera didn't change there is nothing to update
@@ -775,39 +928,13 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
    if (!vkdf_camera_is_dirty(s->camera))
       return;
 
-   // Update list of visible tiles
-   GList *prev_visible = s->visible;
-   s->visible = find_visible_tiles(s);
-
-   // Identify new invisible tiles
-   bool cmd_buf_changes = false;
-   GList *iter = prev_visible;
-   while (iter) {
-      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-      if (!g_list_find(s->visible, t)) {
-         new_inactive_tile(s, t);
-         cmd_buf_changes = true;
-      }
-      iter = g_list_next(iter);
-   }
-
-   // Identify new visible
-   iter = s->visible;
-   while (iter) {
-      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-      if (t->obj_count > 0 && !g_list_find(prev_visible, t)) {
-         new_active_tile(s, t);
-         cmd_buf_changes = true;
-      }
-      iter = g_list_next(iter);
-   }
-
-   g_list_free(prev_visible);
+   // Update the list of active secondary command buffers
+   bool cmd_buf_changes = update_cmd_bufs(s);
 
    // If any secondary has changed, we need to re-record the primary
    if (cmd_buf_changes || !s->cmd_buf.primary) {
       if (s->cmd_buf.primary)
-         new_inactive_cmd_buf(s, s->cmd_buf.primary);
+         new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.primary);
       s->cmd_buf.primary = build_primary_cmd_buf(s);
    }
 }
