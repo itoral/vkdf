@@ -6,7 +6,8 @@ SUBDIRS = triangle \
           model \
           light \
           shadow \
-          scene
+          scene \
+          scenelight
 
 MAINTAINERCLEANFILES = \
         *.in \
