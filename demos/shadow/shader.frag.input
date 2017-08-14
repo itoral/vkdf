@@ -1,0 +1,35 @@
+#version 400
+
+#extension GL_ARB_separate_shader_objects : enable
+#extension GL_ARB_shading_language_420pack : enable
+
+INCLUDE(../../data/glsl/lighting.glsl)
+
+layout(std140, set = 1, binding = 0) uniform light_ubo {
+     Light light;
+} L;
+
+layout (set = 2, binding = 0) uniform sampler2D shadow_map;
+
+layout(std140, set = 3, binding = 0) uniform material_ubo {
+     Material materials[16];
+} Mat;
+
+layout(location = 0) in vec3 in_normal;
+layout(location = 1) flat in uint in_material_idx;
+layout(location = 2) in vec4 in_world_pos;
+layout(location = 3) in vec3 in_view_dir;
+layout(location = 4) in float in_cam_dist;
+layout(location = 5) in vec4 in_shadow_map_coord;
+
+layout(location = 0) out vec4 out_color;
+
+void main()
+{
+   LightColor color = compute_lighting(L.light,
+                                       in_world_pos.xyz,
+                                       in_normal, in_view_dir,
+                                       Mat.materials[in_material_idx],
+                                       in_shadow_map_coord.xyz, shadow_map);
+   out_color = vec4(color.diffuse + color.ambient + color.specular, 1.0);
+}

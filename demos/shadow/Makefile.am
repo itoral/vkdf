@@ -3,6 +3,7 @@ bin_PROGRAMS = shadow
 AM_CPPFLAGS = @DEMO_DEPS_CFLAGS@ -I$(top_srcdir)/framework
 
 BUILT_SOURCES = \
+    shader.frag \
     shader.vert.spv \
     shader.frag.spv \
     shadow.vert.spv \
@@ -11,6 +12,9 @@ BUILT_SOURCES = \
 
 CLEANFILES = \
     $(BUILT_SOURCES)
+
+shader.frag: shader.frag.input
+	python $(top_srcdir)/scripts/fixup-glsl.py shader.frag.input shader.frag
 
 shader.vert.spv: shader.vert
 	$(top_srcdir)/$(GLSLANG) -V shader.vert -o shader.vert.spv
@@ -26,7 +30,6 @@ ui-tile.vert.spv: ui-tile.vert
 
 ui-tile.frag.spv: ui-tile.frag
 	$(top_srcdir)/$(GLSLANG) -V ui-tile.frag -o ui-tile.frag.spv
-
 
 shadow_SOURCES = \
     main.cpp
