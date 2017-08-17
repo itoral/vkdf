@@ -1423,7 +1423,7 @@ create_ui_tile_pipeline(VkdfContext *ctx, SceneResources *res)
 static void
 init_light_sources(VkdfContext *ctx, SceneResources *res)
 {
-   res->light.origin = glm::vec4(-15.0f, 2.0f, -15.0f, 1.0f);
+   res->light.origin = glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f);
    res->light.diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    res->light.ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
    res->light.specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
@@ -1883,7 +1883,7 @@ update_lights(SceneResources *res)
 
    glm::mat4 model(1.0f);
    model = glm::rotate(model, DEG_TO_RAD(rotY), glm::vec3(0, 1, 0));
-   res->light.origin = model * glm::vec4(-15.0f, 2.0f, -15.0f, 1.0f);
+   res->light.origin = model * glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f);
    vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
 
    rotY += 0.25f;

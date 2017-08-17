@@ -28,17 +28,23 @@ struct LightColor
 };
 
 float
-compute_shadow_factor(float dp_reflection,
-                      float dp_angle_with_light,
-                      float cutoff,
-                      vec3 shadow_map_coord,
-                      sampler2D shadow_map)
+compute_spotlight_cutoff_factor(Light l, vec3 light_to_pos_norm)
 {
-   // If the angle with the light exceeds the light's cutoff angle
-   // then we are in the shadow
-   if (dp_angle_with_light <= cutoff)
+   // Compute angle of this light beam with the spotlight's direction
+   vec3 spotlight_dir_norm = normalize(vec3(l.direction));
+   float dp_angle_with_light = dot(light_to_pos_norm, spotlight_dir_norm);
+
+   // If the angle exceeds the light's cutoff angle then the beam is cutoff
+   if (dp_angle_with_light <= l.cutoff)
       return 0.0;
 
+   return 1.0;
+}
+
+float
+compute_shadow_factor(vec3 shadow_map_coord,
+                      sampler2D shadow_map)
+{
    // Sample shadow map to see if this fragment is visible from the
    // the light source or not. Notice that the shadow map has been
    // recorded with depth bias to prevent self-shadowing artifacts
@@ -58,26 +64,39 @@ compute_lighting(Light l,
                  vec3 shadow_map_coord,
                  sampler2D shadow_map)
 {
-   // Compute distance from this fragment to light source
-   vec3 light_to_pos = world_pos - l.pos.xyz;
-   float dist = length(light_to_pos);
+   vec3 light_to_pos_norm;
+   float att_factor;
+   float cutoff_factor;
 
-   // Compute angle between light direction and world position of
-   // this fragment
-   vec3 light_dir_norm = normalize(vec3(l.direction));
-   vec3 light_to_pos_norm = normalize(light_to_pos);
-   float dp_angle_with_light = dot(light_to_pos_norm, light_dir_norm);
+   if (l.pos.w == 0.0) {
+      // Directional light, no attenuation, no cutoff
+      light_to_pos_norm = normalize(vec3(l.pos));
+      att_factor = 1.0;
+      cutoff_factor = 1.0;
+   } else {
+      // Positional light, compute attenuation
+      vec3 light_to_pos = world_pos - l.pos.xyz;
+      light_to_pos_norm = normalize(light_to_pos);
+      float dist = length(light_to_pos);
+      att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist +
+                          l.attenuation.z * dist * dist);
+
+      if (l.pos.w == 1.0) {
+         // Point light, no cutoff
+         cutoff_factor = 1.0f;
+      } else {
+         // Spotlight
+         cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+      }
+   }
 
    // Compute reflection from light for this fragment
    normal = normalize(normal);
    float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
-   float att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist +
-                             l.attenuation.z * dist * dist);
 
    // Check if the fragment is in the shadow
    float shadow_factor =
-      compute_shadow_factor(dp_reflection, dp_angle_with_light, l.cutoff,
-                            shadow_map_coord, shadow_map);
+      cutoff_factor * compute_shadow_factor(shadow_map_coord, shadow_map);
 
    // Compute light contributions to the fragment. Do not attenuate
    // ambient light to make it constant across the scene.
@@ -87,8 +106,9 @@ compute_lighting(Light l,
    lc.ambient = mat.ambient.xyz * l.ambient.xyz;
 
    lc.specular = vec3(0);
-   if (dot(normal, -light_dir_norm) >= 0.0) {
-      vec3 reflection_dir = reflect(light_dir_norm, normal);
+
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
       float shine_factor = dot(reflection_dir, normalize(view_dir));
       lc.specular =
            att_factor * l.specular.xyz * mat.specular.xyz *
@@ -105,23 +125,38 @@ compute_lighting(Light l,
                  vec3 view_dir,
                  Material mat)
 {
-   // Compute distance from this fragment to light source
-   vec3 light_to_pos = world_pos - l.pos.xyz;
-   float dist = length(light_to_pos);
+   vec3 light_to_pos_norm;
+   float att_factor;
+   float cutoff_factor;
 
-   // Compute angle between light direction and world position of
-   // this fragment
-   vec3 light_dir_norm = normalize(vec3(l.direction));
-   vec3 light_to_pos_norm = normalize(light_to_pos);
+   if (l.pos.w == 0.0) {
+      // Directional light, no attenuation, no cutoff
+      light_to_pos_norm = normalize(vec3(l.pos));
+      att_factor = 1.0;
+      cutoff_factor = 1.0;
+   } else {
+      // Positional light, compute attenuation
+      vec3 light_to_pos = world_pos - l.pos.xyz;
+      light_to_pos_norm = normalize(light_to_pos);
+      float dist = length(light_to_pos);
+      att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist +
+                          l.attenuation.z * dist * dist);
+
+      if (l.pos.w == 1.0) {
+         // Point light, no cutoff
+         cutoff_factor = 1.0f;
+      } else {
+         // Spotlight
+         cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+      }
+   }
 
    // Compute reflection from light for this fragment
    normal = normalize(normal);
    float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
-   float att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist +
-                             l.attenuation.z * dist * dist);
 
    // No shadowing
-   float shadow_factor = 1.0;
+   float shadow_factor = cutoff_factor;
 
    // Compute light contributions to the fragment. Do not attenuate
    // ambient light to make it constant across the scene.
@@ -131,8 +166,8 @@ compute_lighting(Light l,
    lc.ambient = mat.ambient.xyz * l.ambient.xyz;
 
    lc.specular = vec3(0);
-   if (dot(normal, -light_dir_norm) >= 0.0) {
-      vec3 reflection_dir = reflect(light_dir_norm, normal);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
       float shine_factor = dot(reflection_dir, normalize(view_dir));
       lc.specular =
            att_factor * l.specular.xyz * mat.specular.xyz *

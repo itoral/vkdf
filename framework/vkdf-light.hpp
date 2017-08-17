@@ -3,7 +3,7 @@
 
 typedef struct {
    // Common light attributes
-   glm::vec4 origin;
+   glm::vec4 origin;      // .w = light type
    glm::vec4 diffuse;
    glm::vec4 ambient;
    glm::vec4 specular;
@@ -20,6 +20,12 @@ typedef struct {
    } spot;
 
 } VkdfLight;
+
+VkdfLight *
+vkdf_light_new_directional(glm::vec4 dir,
+                           glm::vec4 diffuse,
+                           glm::vec4 ambient,
+                           glm::vec4 specular);
 
 VkdfLight *
 vkdf_light_new_positional(glm::vec4 pos,
