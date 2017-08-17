@@ -17,19 +17,28 @@ vkdf_compute_view_rotation(glm::vec3 origin, glm::vec3 target)
    vt.z = target.z - origin.z;
 
    dist = vkdf_vec3_module(vt, 1, 0, 1);
-   cosAngle = vt.x / dist;
-   angle = acos(cosAngle);
-   angle = RAD_TO_DEG(angle) - 90.0f;
-   if (vt.z > 0.0f)
-     angle += (90.0f - angle) * 2.0f;
-   rot.y = angle;
+   if (dist > 0.0f) {
+      cosAngle = vt.x / dist;
+      angle = acos(cosAngle);
+      angle = RAD_TO_DEG(angle) - 90.0f;
+      if (vt.z > 0.0f)
+        angle += (90.0f - angle) * 2.0f;
+      rot.y = angle;
+   } else {
+      rot.y = 0.0f;
+   }
 
    dist = vkdf_vec3_module(vt, 1, 1, 1);
-   sinAngle = vt.y / dist;
-   angle = asin(sinAngle);
-   angle = RAD_TO_DEG(angle);
-   rot.x = angle;
+   if (dist > 0.0f) {
+      sinAngle = vt.y / dist;
+      angle = asin(sinAngle);
+      angle = RAD_TO_DEG(angle);
+      rot.x = angle;
+   } else {
+      rot.x = 0.0f;
+   }
 
+   // FIXME: support rotation in Z
    rot.z = 0.0f;
    return rot;
 }
