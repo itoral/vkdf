@@ -27,7 +27,7 @@ vkdf_renderpass_simple_new(VkdfContext *ctx,
    }
 
    // Depth attachment
-   if (color_format != VK_FORMAT_UNDEFINED) {
+   if (depth_format != VK_FORMAT_UNDEFINED) {
       atts[idx].format = depth_format;
       atts[idx].samples = VK_SAMPLE_COUNT_1_BIT;
       atts[idx].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
