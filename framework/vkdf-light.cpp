@@ -22,7 +22,7 @@ vkdf_light_new_directional(glm::vec4 dir,
    VkdfLight *l = g_new0(VkdfLight, 1);
    init_light(l, diffuse, ambient, specular, glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
    l->origin = dir;
-   l->origin.w = 0.0f; // Directional
+   l->origin.w = VKDF_LIGHT_DIRECTIONAL;
    return l;
 }
 
@@ -36,7 +36,7 @@ vkdf_light_new_positional(glm::vec4 pos,
    VkdfLight *l = g_new0(VkdfLight, 1);
    init_light(l, diffuse, ambient, specular, attenuation);
    l->origin = pos;
-   l->origin.w = 1.0; // Positional
+   l->origin.w = VKDF_LIGHT_POINT;
    return l;
 }
 
@@ -51,7 +51,7 @@ vkdf_light_new_spotlight(glm::vec4 pos,
    VkdfLight *l = g_new0(VkdfLight, 1);
    init_light(l, diffuse, ambient, specular, attenuation);
    l->origin = pos;
-   l->origin.w = 2.0f; // spotight
+   l->origin.w = VKDF_LIGHT_SPOTLIGHT;
    l->spot.priv.rot = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
    l->spot.priv.dir =
       glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)), 0.0f);

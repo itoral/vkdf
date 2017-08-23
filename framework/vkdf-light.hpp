@@ -1,6 +1,12 @@
 #ifndef __VKDF_LIGHT_H__
 #define __VKDF_LIGHT_H__
 
+enum {
+   VKDF_LIGHT_DIRECTIONAL = 0,
+   VKDF_LIGHT_POINT       = 1,
+   VKDF_LIGHT_SPOTLIGHT   = 2,
+};
+
 typedef struct {
    // Common light attributes
    glm::vec4 origin;      // .w = light type
@@ -41,6 +47,12 @@ vkdf_light_new_spotlight(glm::vec4 pos,
                          glm::vec4 ambient,
                          glm::vec4 specular,
                          glm::vec4 attenuation);
+
+uint32_t inline
+vkdf_light_get_type(VkdfLight *l)
+{
+   return (uint32_t) l->origin.w;
+}
 
 void inline
 vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
