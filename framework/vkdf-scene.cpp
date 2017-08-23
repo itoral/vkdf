@@ -328,6 +328,11 @@ vkdf_scene_free(VkdfScene *s)
       vkFreeMemory(s->ctx->device, s->ubo.obj.buf.mem, NULL);
    }
 
+   if (s->ubo.material.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->ubo.material.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->ubo.material.buf.mem, NULL);
+   }
+
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
 
    g_free(s);
@@ -386,11 +391,15 @@ set_id_is_registered(VkdfScene *s, const char *id)
 void
 vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
 {
+   assert(obj->model);
+
    // FIXME: we don't support dynamic objects yet
    assert(vkdf_object_is_dynamic(obj) == false);
 
-   if (!set_id_is_registered(s, set_id))
+   if (!set_id_is_registered(s, set_id)) {
       s->set_ids = g_list_prepend(s->set_ids, g_strdup(set_id));
+      s->models = g_list_prepend(s->models, obj->model);
+   }
 
    // Find tile this object belongs to
    glm::vec3 tile_coord = tile_coord_from_position(s, obj->pos);
@@ -839,8 +848,9 @@ ensure_set_infos(VkdfSceneTile *t, GList *set_ids)
 static void
 create_static_object_ubo(VkdfScene *s)
 {
+   // Per-instance data: model matrix, base material index
    uint32_t num_objects = vkdf_scene_get_num_objects(s);
-   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4), 16);
+   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + sizeof(uint32_t), 16);
    s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
    s->ubo.obj.buf =
       vkdf_create_buffer(s->ctx, 0,
@@ -852,6 +862,11 @@ create_static_object_ubo(VkdfScene *s)
    VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.obj.buf.mem,
                         0, VK_WHOLE_SIZE, 0, (void **) &mem));
 
+   // NOTE: this assumes that each set-id model has a different set of
+   // materials. In theory, we could have different set-ids share models
+   // though and in that case we would be replicating model data here,
+   // but this makes things easier.
+   uint32_t model_index = 0;
    GList *set_id_iter = s->set_ids;
    while (set_id_iter) {
       for (uint32_t i = 0; i < s->num_tiles.total; i++) {
@@ -868,10 +883,19 @@ create_static_object_ubo(VkdfScene *s)
             while (iter) {
                VkdfObject *obj = (VkdfObject *) iter->data;
 
+               // Model matrix
                glm::mat4 model = vkdf_object_get_model_matrix(obj);
                float *model_data = glm::value_ptr(model);
                memcpy(mem + offset, model_data, sizeof(glm::mat4));
                offset += sizeof(glm::mat4);
+
+               // Base material index
+               memcpy(mem + offset, &obj->material_idx_base, sizeof(uint32_t));
+               offset += sizeof(uint32_t);
+
+               // Model index
+               memcpy(mem + offset, &model_index, sizeof(uint32_t));
+               offset += sizeof(uint32_t);
 
                offset = ALIGN(offset, 16);
 
@@ -880,6 +904,7 @@ create_static_object_ubo(VkdfScene *s)
          }
       }
       set_id_iter = g_list_next(set_id_iter);
+      model_index++;
    }
 
    if (!(s->ubo.obj.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
@@ -895,11 +920,64 @@ create_static_object_ubo(VkdfScene *s)
    vkUnmapMemory(s->ctx->device, s->ubo.obj.buf.mem);
 }
 
+static void
+create_static_material_ubo(VkdfScene *s)
+{
+   // NOTE: this doesn't consider the case where we have repeated models,
+   // which could happen if different set-ids share the same model. It is
+   // fine though, since we don't handle the case of shared models when
+   // we set up the static object ubo either.
+   const uint32_t MAX_MATERIALS_PER_MODEL = 4;
+
+   uint32_t num_models = g_list_length(s->models);
+   s->ubo.material.size = num_models * MAX_MATERIALS_PER_MODEL *
+                          ALIGN(sizeof(VkdfMaterial), 16);
+   s->ubo.material.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->ubo.material.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   uint8_t *mem;
+   VkDeviceSize material_size = sizeof(VkdfMaterial);
+   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.material.buf.mem,
+                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+
+   uint32_t model_idx = 0;
+   GList *model_iter = s->models;
+   while (model_iter) {
+      VkdfModel *model = (VkdfModel *) model_iter->data;
+      VkDeviceSize offset =
+         model_idx * MAX_MATERIALS_PER_MODEL * ALIGN(sizeof(VkdfMaterial), 16);
+      uint32_t num_materials = model->materials.size();
+      assert(num_materials <= MAX_MATERIALS_PER_MODEL);
+      for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
+         VkdfMaterial *m = &model->materials[mat_idx];
+         memcpy(mem + offset, m, material_size);
+         offset += ALIGN(material_size, 16);
+      }
+      model_iter = g_list_next(model_iter);
+      model_idx++;
+   }
+
+   if (!(s->ubo.material.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+      VkMappedMemoryRange range;
+      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+      range.pNext = NULL;
+      range.memory = s->ubo.material.buf.mem;
+      range.offset = 0;
+      range.size = VK_WHOLE_SIZE;
+      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
+   }
+
+   vkUnmapMemory(s->ctx->device, s->ubo.material.buf.mem);
+}
+
 /**
  * - Builds object lists for non-leaf (sub)tiles (making sure object
  *   order is correct)
  * - Computes (sub)tile starting indices
- * - Creates static UBO data for scene objects
+ * - Creates static UBO data for scene objects (model matrix, materials, etc)
  */
 static void
 prepare_scene_objects(VkdfScene *s)
@@ -908,6 +986,7 @@ prepare_scene_objects(VkdfScene *s)
       return;
 
    s->set_ids = g_list_reverse(s->set_ids);
+   s->models = g_list_reverse(s->models);
 
    for (uint32_t i = 0; i < s->num_tiles.total; i++) {
       VkdfSceneTile *t = &s->tiles[i];
@@ -933,6 +1012,7 @@ prepare_scene_objects(VkdfScene *s)
    }
 
    create_static_object_ubo(s);
+   create_static_material_ubo(s);
 
    s->dirty = false;
 }
@@ -1017,8 +1097,6 @@ create_shadow_map_pipeline(VkdfScene *s)
       vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
                                             VK_SHADER_STAGE_VERTEX_BIT, false);
 
-   // FIXME: this should be the same as the app's ubo used for rendering the
-   // scene. We should make the scene own the buffer and share it with the app.
    s->shadows.pipeline.models_set =
       create_descriptor_set(s->ctx, s->ubo.static_pool,
                             s->shadows.pipeline.models_set_layout);

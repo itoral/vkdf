@@ -80,6 +80,7 @@ struct _VkdfScene {
    VkdfCamera *camera;
    std::vector<VkdfSceneLight *> lights;
    GList *set_ids;
+   GList *models;
 
    // Render target
    VkFramebuffer framebuffer;
@@ -179,6 +180,10 @@ struct _VkdfScene {
          VkDeviceSize inst_size;
          VkDeviceSize size;
       } obj;
+      struct {
+         VkdfBuffer buf;
+         VkDeviceSize size;
+      } material;
    } ubo;
 };
 
@@ -228,6 +233,18 @@ inline VkDeviceSize
 vkdf_scene_get_object_ubo_size(VkdfScene *s)
 {
    return s->ubo.obj.size;
+}
+
+inline VkdfBuffer *
+vkdf_scene_get_material_ubo(VkdfScene *s)
+{
+   return &s->ubo.material.buf;
+}
+
+inline VkDeviceSize
+vkdf_scene_get_material_ubo_size(VkdfScene *s)
+{
+   return s->ubo.material.size;
 }
 
 inline uint32_t
