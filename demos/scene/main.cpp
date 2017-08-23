@@ -57,13 +57,6 @@ typedef struct {
          VkdfBuffer buf;
          VkDeviceSize size;
       } camera_view;
-      struct {
-         VkdfBuffer buf;
-         VkDeviceSize inst_size;          // Per-instance data size
-         VkDeviceSize inst_total_size;    // Total instance data size
-         VkDeviceSize mat_size;           // Material data size
-         VkDeviceSize total_size;         // Total buffer size
-      } obj;
    } ubos;
 
    struct {
@@ -72,8 +65,6 @@ typedef struct {
          VkShaderModule fs;
       } obj;
    } shaders;
-
-   VkdfMaterial materials[6];
 
    VkdfMesh *cube_mesh;
    VkdfModel *cube_model;
@@ -111,92 +102,6 @@ create_descriptor_set(VkdfContext *ctx,
 static void
 init_ubos(SceneResources *res)
 {
-   // Instance data is packed in a std140 array so needs to be 16B aligned
-   res->ubos.obj.inst_size = ALIGN(sizeof(glm::mat4) + sizeof(uint32_t), 16);
-   uint32_t num_objects = vkdf_scene_get_num_objects(res->scene);
-   res->ubos.obj.inst_total_size = num_objects * res->ubos.obj.inst_size;
-
-   // Material data is packed in a std140 array so meeds to be 16B aligned
-   res->ubos.obj.mat_size = 6 * sizeof(VkdfMaterial);
-   assert(res->ubos.obj.mat_size % 16 == 0);
-
-   res->ubos.obj.total_size =
-      res->ubos.obj.inst_total_size + res->ubos.obj.mat_size;
-
-   res->ubos.obj.buf = create_ubo(res->ctx,
-                                  res->ubos.obj.total_size,
-                                  0,
-                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-
-
-   // Pre-load instance data
-   uint8_t *mem;
-   VK_CHECK(vkMapMemory(res->ctx->device, res->ubos.obj.buf.mem,
-                        0, VK_WHOLE_SIZE,
-                        0, (void **) &mem));
-
-   VkdfScene *s = res->scene;
-   for (uint32_t i = 0; i < s->num_tiles.total; i++) {
-      VkdfSceneTile *t = &s->tiles[i];
-      if (t->obj_count == 0)
-          continue;
-
-      VkdfSceneSetInfo *info =
-         (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, "cube");
-      if (info && info->count > 0) {
-         VkDeviceSize offset = info->start_index * res->ubos.obj.inst_size;
-         GList *iter = info->objs;
-         while (iter) {
-            VkdfObject *obj = (VkdfObject *) iter->data;
-
-            glm::mat4 model = vkdf_object_get_model_matrix(obj);
-            float *model_data = glm::value_ptr(model);
-            memcpy(mem + offset, model_data, sizeof(glm::mat4));
-            offset += sizeof(glm::mat4);
-
-            memcpy(mem + offset, &obj->material_idx_base, sizeof(uint32_t));
-            offset += sizeof(uint32_t);
-
-            offset = ALIGN(offset, 16);
-
-            iter = g_list_next(iter);
-         }
-      }
-   }
-
-   if (!(res->ubos.obj.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      VkMappedMemoryRange range;
-      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-      range.pNext = NULL;
-      range.memory = res->ubos.obj.buf.mem;
-      range.offset = 0;
-      range.size = VK_WHOLE_SIZE;
-      VK_CHECK(vkFlushMappedMemoryRanges(res->ctx->device, 1, &range));
-   }
-
-   vkUnmapMemory(res->ctx->device, res->ubos.obj.buf.mem);
-
-   // Pre-load material data
-   VkDeviceSize map_offset = res->ubos.obj.inst_total_size;
-   VkDeviceSize map_size = res->ubos.obj.mat_size;
-   VK_CHECK(vkMapMemory(res->ctx->device, res->ubos.obj.buf.mem,
-                        map_offset, map_size,
-                        0, (void **) &mem));
-
-   memcpy(mem, res->materials, map_size);
-
-   if (!(res->ubos.obj.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      VkMappedMemoryRange range;
-      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-      range.pNext = NULL;
-      range.memory = res->ubos.obj.buf.mem;
-      range.offset = map_offset;
-      range.size = map_size;
-      VK_CHECK(vkFlushMappedMemoryRanges(res->ctx->device, 1, &range));
-   }
-
-   vkUnmapMemory(res->ctx->device, res->ubos.obj.buf.mem);
-
    // Camera view
    res->ubos.camera_view.size = sizeof(glm::mat4);
    res->ubos.camera_view.buf = create_ubo(res->ctx,
@@ -493,18 +398,22 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
                                res->descriptor_pool.static_ubo_pool,
                                res->pipelines.obj.descr.obj_layout);
 
+      VkdfBuffer *obj_ubo = vkdf_scene_get_object_ubo(res->scene);
+      VkDeviceSize obj_ubo_size = vkdf_scene_get_object_ubo_size(res->scene);
       ubo_offset = 0;
-      ubo_size = res->ubos.obj.inst_total_size;
+      ubo_size = obj_ubo_size;
       vkdf_descriptor_set_buffer_update(res->ctx,
                                         res->pipelines.obj.descr.obj_set,
-                                        res->ubos.obj.buf.buf,
+                                        obj_ubo->buf,
                                         0, 1, &ubo_offset, &ubo_size, false);
 
-      ubo_offset = res->ubos.obj.inst_total_size;
-      ubo_size = res->ubos.obj.mat_size;
+      VkdfBuffer *material_ubo = vkdf_scene_get_material_ubo(res->scene);
+      VkDeviceSize material_ubo_size = vkdf_scene_get_material_ubo_size(res->scene);
+      ubo_offset = 0;
+      ubo_size = material_ubo_size;
       vkdf_descriptor_set_buffer_update(res->ctx,
                                         res->pipelines.obj.descr.obj_set,
-                                        res->ubos.obj.buf.buf,
+                                        material_ubo->buf,
                                         1, 1, &ubo_offset, &ubo_size, false);
    }
 
@@ -583,8 +492,6 @@ init_pipelines(SceneResources *res)
 static void
 init_meshes(SceneResources *res)
 {
-   VkdfMaterial *m = res->materials;
-
    VkdfMaterial red;
    red.diffuse = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
    red.ambient = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
@@ -609,27 +516,6 @@ init_meshes(SceneResources *res)
    yellow.specular = glm::vec4(1.0f, 1.0f, 0.75f, 1.0f);
    yellow.shininess = 48.0f;
 
-   VkdfMaterial cyan;
-   cyan.diffuse = glm::vec4(0.0f, 0.5f, 0.5f, 1.0f);
-   cyan.ambient = glm::vec4(0.0f, 0.5f, 0.5f, 1.0f);
-   cyan.specular = glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
-   cyan.shininess = 48.0f;
-
-   VkdfMaterial purple;
-   purple.diffuse = glm::vec4(0.5f, 0.0f, 0.5f, 1.0f);
-   purple.ambient = glm::vec4(0.5f, 0.0f, 0.5f, 1.0f);
-   purple.specular = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
-   purple.shininess = 48.0f;
-
-   assert(sizeof(res->materials) / sizeof(VkdfMaterial) == 6);
-
-   m[0] = red;
-   m[1] = green;
-   m[2] = blue;
-   m[3] = yellow;
-   m[4] = cyan;
-   m[5] = purple;
-
    res->cube_mesh = vkdf_cube_mesh_new(res->ctx);
    vkdf_mesh_fill_vertex_buffer(res->ctx, res->cube_mesh);
 
@@ -641,8 +527,6 @@ init_meshes(SceneResources *res)
    vkdf_model_add_material(res->cube_model, &green);
    vkdf_model_add_material(res->cube_model, &blue);
    vkdf_model_add_material(res->cube_model, &yellow);
-   vkdf_model_add_material(res->cube_model, &cyan);
-   vkdf_model_add_material(res->cube_model, &purple);
 }
 
 static void
@@ -662,7 +546,7 @@ init_objects(SceneResources *res)
       vkdf_scene_add_object(res->scene, "cube", obj);
 
       // Assign a different material to objects in adjacent tiles
-      uint32_t mat_idx = random() % 6;
+      uint32_t mat_idx = random() % 4;
       vkdf_object_set_material_idx_base(obj, mat_idx);
    }
 
@@ -836,9 +720,6 @@ destroy_ubos(SceneResources *res)
 {
    vkDestroyBuffer(res->ctx->device, res->ubos.camera_view.buf.buf, NULL);
    vkFreeMemory(res->ctx->device, res->ubos.camera_view.buf.mem, NULL);
-
-   vkDestroyBuffer(res->ctx->device, res->ubos.obj.buf.buf, NULL);
-   vkFreeMemory(res->ctx->device, res->ubos.obj.buf.mem, NULL);
 }
 
 static void
