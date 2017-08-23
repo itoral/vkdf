@@ -24,7 +24,7 @@ layout(location = 0) out vec3 out_normal;
 layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec4 out_world_pos;
 layout(location = 3) out vec3 out_view_dir;
-layout(location = 4) out vec4 out_shadow_map_coord;
+layout(location = 4) out vec4 out_light_space_pos;
 
 void main()
 {
@@ -56,16 +56,6 @@ void main()
    out_view_dir =
       normalize(vec3(ViewInv * vec4(0.0, 0.0, 0.0, 1.0) - out_world_pos));
 
-   // Compute position in shadow map space:
-   //
-   // 1. Compute position in light space
-   // 2. Do perspective division to get light space NDC coordinates
-   // 3. Transform from Light's NDC space to shadow map space (notice
-   //    that Vulkan NDC for Z already is in [0,1])
-   //
-   // Alternatively, we could've made the Light's ViewProjection include this
-   // transformation so we avoid the extra work here.
-   out_shadow_map_coord = LVP.ViewProjection * world_pos;
-   out_shadow_map_coord /= out_shadow_map_coord.w;
-   out_shadow_map_coord.xy = out_shadow_map_coord.xy * 0.5 + 0.5;
+   // Compute position in light space
+   out_light_space_pos = LVP.ViewProjection * out_world_pos;
 }

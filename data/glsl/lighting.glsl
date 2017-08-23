@@ -42,9 +42,16 @@ compute_spotlight_cutoff_factor(Light l, vec3 light_to_pos_norm)
 }
 
 float
-compute_shadow_factor(vec3 shadow_map_coord,
+compute_shadow_factor(vec4 light_space_pos,
                       sampler2D shadow_map)
 {
+   // Convert light space position to NDC
+   vec3 light_space_ndc = light_space_pos.xyz /= light_space_pos.w;
+
+   // Translate from NDC to shadow map space (Vulkan's Z is already in [0..1])
+   vec3 shadow_map_coord =
+      vec3(light_space_ndc.xy * 0.5 + 0.5, light_space_ndc.z);
+
    // Sample shadow map to see if this fragment is visible from the
    // the light source or not. Notice that the shadow map has been
    // recorded with depth bias to prevent self-shadowing artifacts
@@ -61,7 +68,7 @@ compute_lighting(Light l,
                  vec3 normal,
                  vec3 view_dir,
                  Material mat,
-                 vec3 shadow_map_coord,
+                 vec4 light_space_pos,
                  sampler2D shadow_map)
 {
    vec3 light_to_pos_norm;
@@ -96,7 +103,7 @@ compute_lighting(Light l,
 
    // Check if the fragment is in the shadow
    float shadow_factor =
-      cutoff_factor * compute_shadow_factor(shadow_map_coord, shadow_map);
+      cutoff_factor * compute_shadow_factor(light_space_pos, shadow_map);
 
    // Compute light contributions to the fragment. Do not attenuate
    // ambient light to make it constant across the scene.
