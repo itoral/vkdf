@@ -62,6 +62,8 @@ AC_SUBST(GLSLANG)
 
 AC_CONFIG_FILES([
    Makefile
+   data/Makefile
+   data/spirv/Makefile
    framework/Makefile
    demos/Makefile
    demos/triangle/Makefile

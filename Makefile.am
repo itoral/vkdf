@@ -1,4 +1,4 @@
-SUBDIRS = framework demos
+SUBDIRS = data framework demos
 
 MAINTAINERCLEANFILES = \
         aclocal.m4 \
