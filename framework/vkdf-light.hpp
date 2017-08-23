@@ -22,7 +22,8 @@ typedef struct {
          glm::vec4 dir;         // Computed from rotation
       } priv;
       float cutoff;             // cosine of the spotlight's cutoff angle
-      float cutoff_padding[3];  // We want this to be vec4-aligned
+      float cutoff_angle;       // spotlight's cutoff angle
+      float cutoff_padding[2];  // We want this to be vec4-aligned
    } spot;
 
 } VkdfLight;
@@ -57,13 +58,14 @@ vkdf_light_get_type(VkdfLight *l)
 void inline
 vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
 {
-   l->spot.cutoff = cosf(angle);
+   l->spot.cutoff_angle = angle;
+   l->spot.cutoff = cosf(l->spot.cutoff_angle);
 }
 
 float inline
 vkdf_light_get_cutoff_angle(VkdfLight *l)
 {
-   return acosf(l->spot.cutoff);
+   return l->spot.cutoff_angle;
 }
 
 

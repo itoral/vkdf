@@ -1,14 +1,17 @@
 struct Light
 {
-  vec4 pos;
-  vec4 diffuse;
-  vec4 ambient;
-  vec4 specular;
-  vec4 attenuation;
-  vec4 rotation;
-  vec4 direction;
-  float cutoff;
-  float pad1, pad2, pad3;
+   vec4 pos;
+   vec4 diffuse;
+   vec4 ambient;
+   vec4 specular;
+   vec4 attenuation;
+   vec4 rotation;
+   vec4 direction;
+   float cutoff;
+   float cutoff_angle;
+   float cutoff_pad1, cutoff_pad2;
+   bool casts_shadows;
+   float shadows_pad1, shadows_pad2, shadows_pad3;
 };
 
 struct Material
