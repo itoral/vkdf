@@ -2,9 +2,26 @@
 #define __VKDF_SCENE_H__
 
 typedef struct {
+   uint32_t shadow_map_width;
+   uint32_t shadow_map_height;
+   float shadow_map_near;
+   float shadow_map_far;
+   float depth_bias_const_factor;
+   float depth_bias_slope_factor;
+} VkdfSceneShadowSpec;
+
+typedef struct {
    VkdfLight *light;
-   VkdfImage shadow_map;
-   bool has_shadow_map;
+   bool dirty;
+   bool is_dynamic;
+   struct {
+      VkdfSceneShadowSpec spec;
+      glm::mat4 viewproj;
+      VkdfImage shadow_map;
+      VkFramebuffer framebuffer;
+      VkCommandBuffer cmd_buf;
+      GList *visible;
+   } shadow;
 } VkdfSceneLight;
 
 typedef struct _VkdfSceneTile VkdfSceneTile;
@@ -94,6 +111,7 @@ struct _VkdfScene {
    struct _cache *cache;
 
    bool dirty;
+   bool lights_dirty;
    uint32_t obj_count;
 
    /** 
@@ -121,6 +139,7 @@ struct _VkdfScene {
 
    struct {
       VkSemaphore update_resources_sem;
+      VkSemaphore shadow_maps_sem;
       VkSemaphore draw_sem;
       VkFence draw_fence;
       bool draw_fence_active;
@@ -139,6 +158,28 @@ struct _VkdfScene {
       uint32_t work_size;
       struct ThreadData *data;
    } thread;
+
+   struct {
+      VkRenderPass renderpass;
+      struct {
+         VkDescriptorSetLayout models_set_layout;
+         VkDescriptorSet models_set;
+         VkPipelineLayout layout;
+         VkPipeline pipeline;
+      } pipeline;
+      struct {
+         VkShaderModule vs;
+      } shaders;
+   } shadows;
+
+   struct {
+      VkDescriptorPool static_pool;
+      struct {
+         VkdfBuffer buf;
+         VkDeviceSize inst_size;
+         VkDeviceSize size;
+      } obj;
+   } ubo;
 };
 
 VkdfScene *
@@ -177,6 +218,18 @@ vkdf_scene_add_object(VkdfScene *scene, const char *set_id, VkdfObject *obj);
 void
 vkdf_scene_prepare(VkdfScene *scene);
 
+inline VkdfBuffer *
+vkdf_scene_get_object_ubo(VkdfScene *s)
+{
+   return &s->ubo.obj.buf;
+}
+
+inline VkDeviceSize
+vkdf_scene_get_object_ubo_size(VkdfScene *s)
+{
+   return s->ubo.obj.size;
+}
+
 inline uint32_t
 vkdf_scene_get_num_objects(VkdfScene *scene)
 {
@@ -196,7 +249,9 @@ vkdf_scene_get_num_tiles(VkdfScene *s)
 }
 
 void
-vkdf_scene_add_light(VkdfScene *s, VkdfLight *light);
+vkdf_scene_add_light(VkdfScene *s,
+                     VkdfLight *light,
+                     VkdfSceneShadowSpec *shadow_spec);
 
 inline void
 vkdf_scene_set_scene_callbacks(VkdfScene *s,

@@ -1,5 +1,8 @@
 #include "vkdf.hpp"
 
+#define JOIN(a,b) (a b)
+#define SHADOW_MAP_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/shadow-map.vert.spv")
+
 struct FreeCmdBufInfo {
    VkCommandBuffer cmd_buf;
    VkdfSceneTile *tile;
@@ -184,8 +187,12 @@ vkdf_scene_new(VkdfContext *ctx,
    }
 
    s->sync.update_resources_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.shadow_maps_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_fence = vkdf_create_fence(s->ctx);
+
+   s->ubo.static_pool =
+      vkdf_create_descriptor_pool(s->ctx, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8);
 
    return s;
 }
@@ -215,11 +222,18 @@ destroy_set(gpointer key, gpointer value, gpointer data)
 }
 
 static void
-destroy_light(VkdfContext *ctx, VkdfSceneLight *slight)
+destroy_light(VkdfScene *s, VkdfSceneLight *slight)
 {
    vkdf_light_free(slight->light);
-   if (slight->has_shadow_map)
-      vkdf_destroy_image(ctx, &slight->shadow_map);
+   if (slight->shadow.shadow_map.image)
+      vkdf_destroy_image(s->ctx, &slight->shadow.shadow_map);
+   if (slight->shadow.visible)
+      g_list_free(slight->shadow.visible);
+   if (slight->shadow.cmd_buf)
+      vkFreeCommandBuffers(s->ctx->device,
+                           s->cmd_buf.pool[0], 1, &slight->shadow.cmd_buf);
+   if (slight->shadow.framebuffer)
+      vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
    g_free(slight);
 }
 
@@ -268,11 +282,12 @@ vkdf_scene_free(VkdfScene *s)
    g_free(s->tiles);
 
    for (uint32_t i = 0; i < s->lights.size(); i++)
-      destroy_light(s->ctx, s->lights[i]);
+      destroy_light(s, s->lights[i]);
    s->lights.clear();
    std::vector<VkdfSceneLight *>(s->lights).swap(s->lights);
 
    vkDestroySemaphore(s->ctx->device, s->sync.update_resources_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.shadow_maps_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.draw_fence, NULL);
 
@@ -289,6 +304,31 @@ vkdf_scene_free(VkdfScene *s)
    g_free(s->cmd_buf.pool);
 
    g_free(s->tile_size);
+
+   if (s->shadows.renderpass)
+      vkDestroyRenderPass(s->ctx->device, s->shadows.renderpass, NULL);
+
+   if (s->shadows.pipeline.models_set_layout) {
+      vkDestroyDescriptorSetLayout(s->ctx->device,
+                                   s->shadows.pipeline.models_set_layout,
+                                   NULL);
+   }
+
+   if (s->shadows.pipeline.layout)
+      vkDestroyPipelineLayout(s->ctx->device, s->shadows.pipeline.layout, NULL);
+
+   if (s->shadows.pipeline.pipeline)
+      vkDestroyPipeline(s->ctx->device, s->shadows.pipeline.pipeline, NULL);
+
+   if (s->shadows.shaders.vs)
+     vkDestroyShaderModule(s->ctx->device, s->shadows.shaders.vs, NULL);
+
+   if (s->ubo.obj.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->ubo.obj.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->ubo.obj.buf.mem, NULL);
+   }
+
+   vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
 
    g_free(s);
 }
@@ -402,12 +442,71 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    s->dirty = true;   
 }
 
-void
-vkdf_scene_add_light(VkdfScene *s, VkdfLight *light)
+static inline VkdfImage
+create_shadow_map_image(VkdfScene *s, uint32_t width, uint32_t height)
 {
+   const VkImageUsageFlagBits shadow_map_usage =
+   (VkImageUsageFlagBits) (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                           VK_IMAGE_USAGE_SAMPLED_BIT);
+
+   return vkdf_create_image(s->ctx,
+                            width,
+                            height,
+                            1,
+                            VK_IMAGE_TYPE_2D,
+                            VK_FORMAT_D32_SFLOAT,
+                            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                            shadow_map_usage,
+                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                            VK_IMAGE_ASPECT_DEPTH_BIT,
+                            VK_IMAGE_VIEW_TYPE_2D);
+}
+
+static void
+compute_light_view_projection(VkdfSceneLight *sl)
+{
+   const glm::mat4 clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
+                                    0.0f,-1.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 0.5f, 0.0f,
+                                    0.0f, 0.0f, 0.5f, 1.0f);
+
+   // FIXME: this only supports spotlights for now
+   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+
+   VkdfSceneShadowSpec *spec = &sl->shadow.spec;
+
+   float cutoff_angle = vkdf_light_get_cutoff_angle(sl->light);
+   float aspect_ratio = ((float) spec->shadow_map_width) /
+                        ((float) spec->shadow_map_height);
+   glm::mat4 proj = clip * glm::perspective(2.0f * cutoff_angle,
+                                            aspect_ratio,
+                                            spec->shadow_map_near,
+                                            spec->shadow_map_far);
+   glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
+   sl->shadow.viewproj = proj * view;
+}
+
+void
+vkdf_scene_add_light(VkdfScene *s,
+                     VkdfLight *light,
+                     VkdfSceneShadowSpec *spec)
+{
+   assert(light->casts_shadows == (spec != NULL));
+
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
+   if (light->casts_shadows) {
+      slight->shadow.spec = *spec;
+      slight->shadow.shadow_map =
+         create_shadow_map_image(s,
+                                 spec->shadow_map_width,
+                                 spec->shadow_map_height);
+      compute_light_view_projection(slight);
+      slight->dirty = true;
+   }
+
    s->lights.push_back(slight);
+   s->lights_dirty = true;
 }
 
 static inline uint32_t
@@ -737,13 +836,73 @@ ensure_set_infos(VkdfSceneTile *t, GList *set_ids)
    }
 }
 
+static void
+create_static_object_ubo(VkdfScene *s)
+{
+   uint32_t num_objects = vkdf_scene_get_num_objects(s);
+   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4), 16);
+   s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
+   s->ubo.obj.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->ubo.obj.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   uint8_t *mem;
+   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.obj.buf.mem,
+                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+
+   GList *set_id_iter = s->set_ids;
+   while (set_id_iter) {
+      for (uint32_t i = 0; i < s->num_tiles.total; i++) {
+         VkdfSceneTile *t = &s->tiles[i];
+         if (t->obj_count == 0)
+             continue;
+
+         const char *set_id = (const char *) set_id_iter->data;
+         VkdfSceneSetInfo *info =
+            (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, set_id);
+         if (info && info->count > 0) {
+            VkDeviceSize offset = info->start_index * s->ubo.obj.inst_size;
+            GList *iter = info->objs;
+            while (iter) {
+               VkdfObject *obj = (VkdfObject *) iter->data;
+
+               glm::mat4 model = vkdf_object_get_model_matrix(obj);
+               float *model_data = glm::value_ptr(model);
+               memcpy(mem + offset, model_data, sizeof(glm::mat4));
+               offset += sizeof(glm::mat4);
+
+               offset = ALIGN(offset, 16);
+
+               iter = g_list_next(iter);
+            }
+         }
+      }
+      set_id_iter = g_list_next(set_id_iter);
+   }
+
+   if (!(s->ubo.obj.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+      VkMappedMemoryRange range;
+      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+      range.pNext = NULL;
+      range.memory = s->ubo.obj.buf.mem;
+      range.offset = 0;
+      range.size = VK_WHOLE_SIZE;
+      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
+   }
+
+   vkUnmapMemory(s->ctx->device, s->ubo.obj.buf.mem);
+}
+
 /**
  * - Builds object lists for non-leaf (sub)tiles (making sure object
  *   order is correct)
  * - Computes (sub)tile starting indices
+ * - Creates static UBO data for scene objects
  */
-void
-vkdf_scene_prepare(VkdfScene *s)
+static void
+prepare_scene_objects(VkdfScene *s)
 {
    if (!s->dirty)
       return;
@@ -773,7 +932,349 @@ vkdf_scene_prepare(VkdfScene *s)
       iter = g_list_next(iter);
    }
 
+   create_static_object_ubo(s);
+
    s->dirty = false;
+}
+
+static void
+create_shadow_map_renderpass(VkdfScene *s)
+{
+   VkAttachmentDescription attachments[2];
+
+   // Single depth attachment
+   attachments[0].format = VK_FORMAT_D32_SFLOAT;
+   attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+   attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+   attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+   attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+   attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+   attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+   attachments[0].flags = 0;
+
+   // Attachment references from subpasses
+   VkAttachmentReference depth_ref;
+   depth_ref.attachment = 0;
+   depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+   // Single subpass
+   VkSubpassDescription subpass[1];
+   subpass[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+   subpass[0].flags = 0;
+   subpass[0].inputAttachmentCount = 0;
+   subpass[0].pInputAttachments = NULL;
+   subpass[0].colorAttachmentCount = 0;
+   subpass[0].pColorAttachments = NULL;
+   subpass[0].pResolveAttachments = NULL;
+   subpass[0].pDepthStencilAttachment = &depth_ref;
+   subpass[0].preserveAttachmentCount = 0;
+   subpass[0].pPreserveAttachments = NULL;
+
+   // Create render pass
+   VkRenderPassCreateInfo rp_info;
+   rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+   rp_info.pNext = NULL;
+   rp_info.attachmentCount = 1;
+   rp_info.pAttachments = attachments;
+   rp_info.subpassCount = 1;
+   rp_info.pSubpasses = subpass;
+   rp_info.dependencyCount = 0;
+   rp_info.pDependencies = NULL;
+   rp_info.flags = 0;
+
+   VK_CHECK(vkCreateRenderPass(s->ctx->device, &rp_info, NULL,
+                               &s->shadows.renderpass));
+}
+
+struct _shadow_map_pcb {
+   glm::mat4 viewproj;
+};
+
+static VkDescriptorSet
+create_descriptor_set(VkdfContext *ctx,
+                      VkDescriptorPool pool,
+                      VkDescriptorSetLayout layout)
+{
+   VkDescriptorSet set;
+   VkDescriptorSetAllocateInfo alloc_info[1];
+   alloc_info[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+   alloc_info[0].pNext = NULL;
+   alloc_info[0].descriptorPool = pool;
+   alloc_info[0].descriptorSetCount = 1;
+   alloc_info[0].pSetLayouts = &layout;
+   VK_CHECK(vkAllocateDescriptorSets(ctx->device, alloc_info, &set));
+
+   return set;
+}
+
+static void
+create_shadow_map_pipeline(VkdfScene *s)
+{
+   // Set layout with a single binding for the model matrices of
+   // scene objects
+   s->shadows.pipeline.models_set_layout =
+      vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
+                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+
+   // FIXME: this should be the same as the app's ubo used for rendering the
+   // scene. We should make the scene own the buffer and share it with the app.
+   s->shadows.pipeline.models_set =
+      create_descriptor_set(s->ctx, s->ubo.static_pool,
+                            s->shadows.pipeline.models_set_layout);
+
+   VkDeviceSize ubo_offset = 0;
+   VkDeviceSize ubo_size = s->ubo.obj.size;
+   vkdf_descriptor_set_buffer_update(s->ctx,
+                                     s->shadows.pipeline.models_set,
+                                     s->ubo.obj.buf.buf,
+                                     0, 1, &ubo_offset, &ubo_size, false);
+
+   // Pipeline layout: 2 push constant ranges and 1 set layout
+   VkPushConstantRange pcb_ranges[1];
+   pcb_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+   pcb_ranges[0].offset = 0;
+   pcb_ranges[0].size = sizeof(struct _shadow_map_pcb);
+
+   VkDescriptorSetLayout set_layouts[1] = {
+      s->shadows.pipeline.models_set_layout,
+   };
+
+   VkPipelineLayoutCreateInfo pipeline_layout_info;
+   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   pipeline_layout_info.pNext = NULL;
+   pipeline_layout_info.pushConstantRangeCount =
+      sizeof(pcb_ranges) / sizeof(VkPushConstantRange);
+   pipeline_layout_info.pPushConstantRanges = pcb_ranges;
+   pipeline_layout_info.setLayoutCount =
+      sizeof(set_layouts) / sizeof(VkDescriptorSetLayout);
+   pipeline_layout_info.pSetLayouts = set_layouts;
+   pipeline_layout_info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device,
+                                   &pipeline_layout_info,
+                                   NULL,
+                                   &s->shadows.pipeline.layout));
+
+   // Pipeline
+   // FIXME: assumes primitive is always triangle lists
+   VkPipelineInputAssemblyStateCreateInfo ia;
+   ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+   ia.pNext = NULL;
+   ia.flags = 0;
+   ia.primitiveRestartEnable = VK_FALSE;
+   ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+   VkPipelineViewportStateCreateInfo vp;
+   vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+   vp.pNext = NULL;
+   vp.flags = 0;
+   vp.viewportCount = 1;
+   vp.scissorCount = 1;
+   vp.pScissors = NULL;
+   vp.pViewports = NULL;
+
+   VkPipelineMultisampleStateCreateInfo ms;
+   ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+   ms.pNext = NULL;
+   ms.flags = 0;
+   ms.pSampleMask = NULL;
+   ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+   ms.sampleShadingEnable = VK_FALSE;
+   ms.alphaToCoverageEnable = VK_FALSE;
+   ms.alphaToOneEnable = VK_FALSE;
+   ms.minSampleShading = 0.0;
+
+   VkPipelineDepthStencilStateCreateInfo ds;
+   ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+   ds.pNext = NULL;
+   ds.flags = 0;
+   ds.depthTestEnable = VK_TRUE;
+   ds.depthWriteEnable = VK_TRUE;
+   ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+   ds.depthBoundsTestEnable = VK_FALSE;
+   ds.minDepthBounds = 0;
+   ds.maxDepthBounds = 0;
+   ds.stencilTestEnable = VK_FALSE;
+   ds.back.failOp = VK_STENCIL_OP_KEEP;
+   ds.back.passOp = VK_STENCIL_OP_KEEP;
+   ds.back.compareOp = VK_COMPARE_OP_ALWAYS;
+   ds.back.compareMask = 0;
+   ds.back.reference = 0;
+   ds.back.depthFailOp = VK_STENCIL_OP_KEEP;
+   ds.back.writeMask = 0;
+   ds.front = ds.back;
+
+   VkPipelineColorBlendStateCreateInfo cb;
+   VkPipelineColorBlendAttachmentState att_state[1];
+   att_state[0].colorWriteMask = 0xf;
+   att_state[0].blendEnable = VK_FALSE;
+   att_state[0].alphaBlendOp = VK_BLEND_OP_ADD;
+   att_state[0].colorBlendOp = VK_BLEND_OP_ADD;
+   att_state[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+   att_state[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+   att_state[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+   att_state[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+   cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+   cb.flags = 0;
+   cb.pNext = NULL;
+   cb.attachmentCount = 0;
+   cb.pAttachments = att_state;
+   cb.logicOpEnable = VK_FALSE;
+   cb.logicOp = VK_LOGIC_OP_COPY;
+   cb.blendConstants[0] = 1.0f;
+   cb.blendConstants[1] = 1.0f;
+   cb.blendConstants[2] = 1.0f;
+   cb.blendConstants[3] = 1.0f;
+
+   VkPipelineDynamicStateCreateInfo dsi;
+   VkDynamicState ds_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
+   uint32_t ds_count = 0;
+   memset(ds_enables, 0, sizeof(ds_enables));
+   ds_enables[ds_count++] = VK_DYNAMIC_STATE_SCISSOR;
+   ds_enables[ds_count++] = VK_DYNAMIC_STATE_VIEWPORT;
+   ds_enables[ds_count++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
+   dsi.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dsi.pNext = NULL;
+   dsi.flags = 0;
+   dsi.pDynamicStates = ds_enables;
+   dsi.dynamicStateCount = ds_count;
+
+   // Depth bias state is dynamic so we can use different settings per light
+   VkPipelineRasterizationStateCreateInfo rs;
+   rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+   rs.pNext = NULL;
+   rs.flags = 0;
+   rs.polygonMode = VK_POLYGON_MODE_FILL;
+   rs.cullMode = VK_CULL_MODE_BACK_BIT;
+   rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+   rs.depthClampEnable = VK_FALSE;
+   rs.rasterizerDiscardEnable = VK_FALSE;
+   rs.lineWidth = 1.0f;
+   rs.depthBiasEnable = VK_TRUE;
+
+   // FIXME: this assumes a vertex data layout where we have
+   // packed positions and normals per vertex
+   VkPipelineVertexInputStateCreateInfo vi;
+   VkVertexInputBindingDescription vi_binding[1];
+   VkVertexInputAttributeDescription vi_attribs[1];
+   vi_binding[0].binding = 0;
+   vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+   vi_binding[0].stride = 2 * sizeof(glm::vec3);
+   vi_attribs[0].binding = 0;
+   vi_attribs[0].location = 0;
+   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+   vi_attribs[0].offset = 0;
+   vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+   vi.pNext = NULL;
+   vi.flags = 0;
+   vi.vertexBindingDescriptionCount = 1;
+   vi.pVertexBindingDescriptions = vi_binding;
+   vi.vertexAttributeDescriptionCount = 1;
+   vi.pVertexAttributeDescriptions = vi_attribs;
+
+   VkPipelineShaderStageCreateInfo shader_stages[1];
+   s->shadows.shaders.vs =
+      vkdf_create_shader_module(s->ctx, SHADOW_MAP_SHADER_PATH);
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        s->shadows.shaders.vs);
+
+   VkGraphicsPipelineCreateInfo pipeline_info;
+   pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+   pipeline_info.pNext = NULL;
+   pipeline_info.layout = s->shadows.pipeline.layout;
+   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
+   pipeline_info.basePipelineIndex = 0;
+   pipeline_info.flags = 0;
+   pipeline_info.pVertexInputState = &vi;
+   pipeline_info.pInputAssemblyState = &ia;
+   pipeline_info.pTessellationState = NULL;
+   pipeline_info.pViewportState = &vp;
+   pipeline_info.pRasterizationState = &rs;
+   pipeline_info.pMultisampleState = &ms;
+   pipeline_info.pDepthStencilState = &ds;
+   pipeline_info.pColorBlendState = &cb;
+   pipeline_info.pDynamicState = &dsi;
+   pipeline_info.pStages = shader_stages;
+   pipeline_info.stageCount = 1;
+   pipeline_info.renderPass = s->shadows.renderpass;
+   pipeline_info.subpass = 0;
+
+   VK_CHECK(vkCreateGraphicsPipelines(s->ctx->device,
+                                      NULL,
+                                      1,
+                                      &pipeline_info,
+                                      NULL,
+                                      &s->shadows.pipeline.pipeline));
+}
+
+static void
+create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
+{
+   VkFramebufferCreateInfo fb_info;
+   fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+   fb_info.pNext = NULL;
+   fb_info.renderPass = s->shadows.renderpass;
+   fb_info.attachmentCount = 1;
+   fb_info.pAttachments = &sl->shadow.shadow_map.view;
+   fb_info.width = sl->shadow.spec.shadow_map_width;
+   fb_info.height = sl->shadow.spec.shadow_map_height;
+   fb_info.layers = 1;
+   fb_info.flags = 0;
+
+   VK_CHECK(vkCreateFramebuffer(s->ctx->device, &fb_info, NULL,
+                                &sl->shadow.framebuffer));
+}
+
+/**
+ * - Prepares rendering resources for shadow maps
+ * - Computes visible tiles for each static light source that casts shadows
+ */
+static void
+prepare_scene_lights(VkdfScene *s)
+{
+   if (!s->lights_dirty)
+      return;
+
+   // Create rendering resources for shadow maps
+   create_shadow_map_renderpass(s);
+   create_shadow_map_pipeline(s);
+
+   // Find visible tiles for shadow casters, create shadow map framebuffers
+   for (uint32_t i = 0; i < s->lights.size(); i++) {
+      VkdfSceneLight *sl = s->lights[i];
+
+      // We don't support dynamic light sources yet
+      assert(!sl->is_dynamic);
+
+      // Only need to preprocess shadow casters
+      if (!sl->light->casts_shadows)
+         continue;
+      assert(sl->shadow.shadow_map.image);
+
+      // We only support spotlights for now
+      assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+
+      sl->shadow.visible = NULL;
+      for (uint32_t ti = 0; ti < s->num_tiles.total; ti++) {
+         VkdfSceneTile *t = &s->tiles[ti];
+         if (vkdf_light_is_box_visible(sl->light, &t->box))
+            sl->shadow.visible = g_list_prepend(sl->shadow.visible, t);
+      }
+
+      create_shadow_map_framebuffer(s, sl);
+   }
+}
+
+/**
+ * Processess scene contents and sets things up for optimal rendering
+ */
+void
+vkdf_scene_prepare(VkdfScene *s)
+{
+   prepare_scene_objects(s);
+   prepare_scene_lights(s);
 }
 
 static GList *
@@ -910,6 +1411,155 @@ update_cmd_bufs(VkdfScene *s)
    return cmd_buf_changes;
 }
 
+static void
+record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
+{
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &sl->shadow.cmd_buf);
+
+   vkdf_command_buffer_begin(sl->shadow.cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+   VkClearValue clear_values[1];
+   clear_values[0].depthStencil.depth = 1.0f;
+   clear_values[0].depthStencil.stencil = 0;
+
+   uint32_t shadow_map_width = sl->shadow.spec.shadow_map_width;
+   uint32_t shadow_map_height = sl->shadow.spec.shadow_map_height;
+
+   VkRenderPassBeginInfo rp_begin;
+   rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+   rp_begin.pNext = NULL;
+   rp_begin.renderPass = s->shadows.renderpass;
+   rp_begin.framebuffer = sl->shadow.framebuffer;
+   rp_begin.renderArea.offset.x = 0;
+   rp_begin.renderArea.offset.y = 0;
+   rp_begin.renderArea.extent.width = shadow_map_width;
+   rp_begin.renderArea.extent.height = shadow_map_height;
+   rp_begin.clearValueCount = 1;
+   rp_begin.pClearValues = clear_values;
+
+   vkCmdBeginRenderPass(sl->shadow.cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   // Dynamic viewport / scissor / depth bias
+   VkViewport viewport;
+   viewport.width = shadow_map_width;
+   viewport.height = shadow_map_height;
+   viewport.minDepth = 0.0f;
+   viewport.maxDepth = 1.0f;
+   viewport.x = 0;
+   viewport.y = 0;
+   vkCmdSetViewport(sl->shadow.cmd_buf, 0, 1, &viewport);
+
+   VkRect2D scissor;
+   scissor.extent.width = shadow_map_width;
+   scissor.extent.height = shadow_map_height;
+   scissor.offset.x = 0;
+   scissor.offset.y = 0;
+   vkCmdSetScissor(sl->shadow.cmd_buf, 0, 1, &scissor);
+
+   vkCmdSetDepthBias(sl->shadow.cmd_buf,
+                     sl->shadow.spec.depth_bias_const_factor,
+                     0.0f,
+                     sl->shadow.spec.depth_bias_slope_factor);
+
+   // Bind pipeline
+   vkCmdBindPipeline(sl->shadow.cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->shadows.pipeline.pipeline);
+
+   // Push constants (Light View/projection)
+   vkCmdPushConstants(sl->shadow.cmd_buf,
+                      s->shadows.pipeline.layout,
+                      VK_SHADER_STAGE_VERTEX_BIT,
+                      0, sizeof(_shadow_map_pcb), &sl->shadow.viewproj[0][0]);
+
+   // Descriptor sets (UBO with object model matrices)
+   vkCmdBindDescriptorSets(sl->shadow.cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->shadows.pipeline.layout,
+                           0,                               // First decriptor set
+                           1,                               // Descriptor set count
+                           &s->shadows.pipeline.models_set, // Descriptor sets
+                           0,                               // Dynamic offset count
+                           NULL);                           // Dynamic offsets
+
+   // Draw
+   // For each tile visible from this light source...
+   GList *tile_iter = sl->shadow.visible;
+   while (tile_iter) {
+      VkdfSceneTile *tile = (VkdfSceneTile *) tile_iter->data;
+      assert(tile);
+
+      // For each object type in this tile...
+      GList *set_iter = s->set_ids;
+      while (set_iter) {
+         const char *set_id = (const char *) set_iter->data;
+         VkdfSceneSetInfo *set_info =
+            (VkdfSceneSetInfo *) g_hash_table_lookup(tile->sets, set_id);
+
+         // If there are objects of this type...
+         if (set_info->count > 0) {
+            // Grab the model (it is shared across all objects in the same type)
+            VkdfObject *obj = (VkdfObject *) set_info->objs->data;
+            VkdfModel *model = obj->model;
+            assert(model);
+
+            // For each mesh in this model...
+            for (uint32_t i = 0; i < model->meshes.size(); i++) {
+               VkdfMesh *mesh = model->meshes[i];
+
+               // Draw all instances
+               const VkDeviceSize offsets[1] = { 0 };
+               vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
+                                      0,                       // Start Binding
+                                      1,                       // Binding Count
+                                      &mesh->vertex_buf.buf,   // Buffers
+                                      offsets);                // Offsets
+
+               vkCmdDraw(sl->shadow.cmd_buf,
+                         mesh->vertices.size(),                // vertex count
+                         set_info->count,                      // instance count
+                         0,                                    // first vertex
+                         set_info->start_index);               // first instance
+            }
+         }
+         set_iter = g_list_next(set_iter);
+      }
+      tile_iter = g_list_next(tile_iter);
+   }
+
+   vkCmdEndRenderPass(sl->shadow.cmd_buf);
+
+   vkdf_command_buffer_end(sl->shadow.cmd_buf);
+}
+
+/**
+ * Record shadow map command buffer for dirty shadow casting lights
+ */
+static void
+update_shadow_map_cmd_bufs(VkdfScene *s)
+{
+   for (uint32_t i = 0; i < s->lights.size(); i++) {
+      VkdfSceneLight *sl = s->lights[i];
+
+      if (!sl->light->casts_shadows)
+         continue;
+
+      if (!sl->dirty)
+         continue;
+
+      assert(sl->shadow.shadow_map.image);
+      assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+
+      record_shadow_map_cmd_buf(s, sl);
+   }
+}
+
 void
 vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
 {
@@ -922,6 +1572,10 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
    if (s->cmd_buf.update_resources)
       new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.update_resources);
    s->cmd_buf.update_resources = record_resource_updates(s);
+
+   // Record new shadow map command buffers if we have dirty lights
+   if (s->lights_dirty)
+      update_shadow_map_cmd_bufs(s);
 
    // If the camera didn't change there is nothing to update
    // FIXME: once we have dynamic objects, we would need to check for those too
@@ -942,9 +1596,9 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
 VkSemaphore
 vkdf_scene_draw(VkdfScene *s)
 {
-   VkPipelineStageFlags scene_wait_stage;
-   uint32_t scene_wait_sem_count;
-   VkSemaphore *scene_wait_sem;
+   VkPipelineStageFlags wait_stage;
+   uint32_t wait_sem_count;
+   VkSemaphore *wait_sem;
 
    // If we are still rendering the previous frame we have to wait or we
    // might corrupt its rendering
@@ -969,22 +1623,49 @@ vkdf_scene_draw(VkdfScene *s)
                                   0, NULL,
                                   1, &s->sync.update_resources_sem);
 
-
-      scene_wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-      scene_wait_sem_count = 1;
-      scene_wait_sem = &s->sync.update_resources_sem;
+      wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.update_resources_sem;
    } else {
-      scene_wait_stage = 0;
-      scene_wait_sem_count = 0;
-      scene_wait_sem = NULL;
+      wait_stage = 0;
+      wait_sem_count = 0;
+      wait_sem = NULL;
+   }
+
+   // If we have dirty shadow casters, update their shadow maps
+   if (s->lights_dirty) {
+      VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, s->lights.size());
+      uint32_t count = 0;
+      for (uint32_t i = 0; i < s->lights.size(); i++) {
+         VkdfSceneLight *sl = s->lights[i];
+         if (!sl->dirty)
+            continue;
+         cmd_bufs[count++] = sl->shadow.cmd_buf;
+         sl->dirty = false;
+      }
+
+      assert(count > 0);
+      vkdf_command_buffer_execute_many(s->ctx,
+                                       cmd_bufs,
+                                       count,
+                                       &wait_stage,
+                                       wait_sem_count, wait_sem,
+                                       1, &s->sync.shadow_maps_sem);
+
+      g_free(cmd_bufs);
+      s->lights_dirty = false;
+
+      wait_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.shadow_maps_sem;
    }
 
    // Execute scene primary command. Use a fence so we know when the
    // secondaries in the primary are no longer in use
    vkdf_command_buffer_execute_with_fence(s->ctx,
                                           s->cmd_buf.primary,
-                                          &scene_wait_stage,
-                                          scene_wait_sem_count, scene_wait_sem,
+                                          &wait_stage,
+                                          wait_sem_count, wait_sem,
                                           1, &s->sync.draw_sem,
                                           s->sync.draw_fence);
 

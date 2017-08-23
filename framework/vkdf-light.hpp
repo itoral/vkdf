@@ -26,6 +26,8 @@ typedef struct {
       float cutoff_padding[2];  // We want this to be vec4-aligned
    } spot;
 
+   uint32_t casts_shadows;
+   float padding[3];
 } VkdfLight;
 
 VkdfLight *
@@ -80,6 +82,12 @@ vkdf_light_set_rotation(VkdfLight *l, glm::vec3 rot)
 }
 
 void inline
+vkdf_light_enable_shadows(VkdfLight *l, bool enable)
+{
+   l->casts_shadows = (uint32_t) enable;
+}
+
+void inline
 vkdf_light_look_at(VkdfLight *l, glm::vec3 target)
 {
    glm::vec3 rot = vkdf_compute_view_rotation(glm::vec3(l->origin), target);
@@ -92,6 +100,9 @@ vkdf_light_get_view_matrix(VkdfLight *l)
    return vkdf_compute_view_matrix_for_rotation(glm::vec3(l->origin),
                                                 glm::vec3(l->spot.priv.rot));
 }
+
+bool
+vkdf_light_is_box_visible(VkdfLight *l, VkdfBox *box);
 
 void
 vkdf_light_free(VkdfLight *light);
