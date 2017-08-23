@@ -19,8 +19,7 @@ layout(location = 0) in vec3 in_normal;
 layout(location = 1) flat in uint in_material_idx;
 layout(location = 2) in vec4 in_world_pos;
 layout(location = 3) in vec3 in_view_dir;
-layout(location = 4) in float in_cam_dist;
-layout(location = 5) in vec4 in_shadow_map_coord;
+layout(location = 4) in vec4 in_shadow_map_coord;
 
 layout(location = 0) out vec4 out_color;
 

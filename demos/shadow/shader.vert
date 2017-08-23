@@ -24,8 +24,7 @@ layout(location = 0) out vec3 out_normal;
 layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec4 out_world_pos;
 layout(location = 3) out vec3 out_view_dir;
-layout(location = 4) out float out_cam_dist;
-layout(location = 5) out vec4 out_shadow_map_coord;
+layout(location = 4) out vec4 out_shadow_map_coord;
 
 void main()
 {
@@ -56,8 +55,6 @@ void main()
    mat4 ViewInv = inverse(VP.View);
    out_view_dir =
       normalize(vec3(ViewInv * vec4(0.0, 0.0, 0.0, 1.0) - out_world_pos));
-
-   out_cam_dist = length(camera_space_pos.xyz);
 
    // Compute position in shadow map space:
    //
