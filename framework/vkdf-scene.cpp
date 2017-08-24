@@ -1504,11 +1504,14 @@ thread_update_cmd_bufs(void *arg)
 static bool
 update_cmd_bufs(VkdfScene *s)
 {
+   glm::vec3 f[8];
+   vkdf_camera_get_frustum_vertices(s->camera, f);
+
    VkdfBox visible_box;
-   vkdf_camera_get_clip_box(s->camera, &visible_box);
+   vkdf_compute_frustum_clip_box(f, &visible_box);
 
    VkdfPlane fplanes[6];
-   vkdf_camera_get_frustum_planes(s->camera, fplanes);
+   vkdf_compute_frustum_planes(f, fplanes);
 
    for (uint32_t thread_idx = 0;
         thread_idx < s->thread.num_threads;
