@@ -14,6 +14,8 @@ typedef struct {
    VkdfBuffer vertex_buf;
    VkdfBuffer index_buf;
 
+   VkPrimitiveTopology primitive;
+
    struct {
       float w;
       float h;
@@ -24,7 +26,7 @@ typedef struct {
 } VkdfMesh;
 
 VkdfMesh *
-vkdf_mesh_new();
+vkdf_mesh_new(VkPrimitiveTopology primitive);
 
 VkdfMesh *
 vkdf_cube_mesh_new(VkdfContext *ctx);
@@ -56,6 +58,12 @@ vkdf_mesh_add_textured_vertex(VkdfMesh *mesh,
    mesh->vertices.push_back(pos);
    mesh->normals.push_back(normal);
    mesh->uvs.push_back(uv);
+}
+
+inline VkPrimitiveTopology
+vkdf_mesh_get_primitive(VkdfMesh *mesh)
+{
+   return mesh->primitive;
 }
 
 VkDeviceSize

@@ -539,6 +539,7 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
    vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
    vi_attribs[1].offset = 12;
 
+   VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(res->cube_mesh);
    res->pipelines.obj.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
                                &res->pipelines.obj.cache,
@@ -549,7 +550,7 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
                                true,
                                res->render_pass,
                                res->pipelines.obj.layout,
-                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                               primitive,
                                VK_CULL_MODE_BACK_BIT,
                                res->shaders.obj.vs,
                                res->shaders.obj.fs);

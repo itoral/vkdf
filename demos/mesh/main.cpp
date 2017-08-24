@@ -388,6 +388,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
    vi_attribs[1].offset = 12;
 
+   VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(res->cube_mesh);
    res->pipeline = vkdf_create_gfx_pipeline(ctx,
                                             NULL,
                                             1,
@@ -397,7 +398,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             true,
                                             res->render_pass,
                                             res->pipeline_layout,
-                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                            primitive,
                                             VK_CULL_MODE_BACK_BIT,
                                             res->vs_module,
                                             res->fs_module);

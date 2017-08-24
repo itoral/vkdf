@@ -11,7 +11,8 @@ vkdf_model_new()
 static VkdfMesh *
 process_mesh(const aiScene *scene, const aiMesh *mesh)
 {
-   VkdfMesh *_mesh = vkdf_mesh_new();
+   // FIXME: for now we only support triangle lists for loaded models
+   VkdfMesh *_mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
    // Vertex data
    for (uint32_t i = 0; i < mesh->mNumVertices; i++) {

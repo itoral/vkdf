@@ -1,7 +1,7 @@
 #include "vkdf.hpp"
 
 VkdfMesh *
-vkdf_mesh_new()
+vkdf_mesh_new(VkPrimitiveTopology primitive)
 {
    VkdfMesh *mesh = g_new0(VkdfMesh, 1);
 
@@ -12,6 +12,8 @@ vkdf_mesh_new()
    mesh->indices = std::vector<uint32_t>();
 
    mesh->material_idx = -1;
+
+   mesh->primitive = primitive;
 
    return mesh;
 }
@@ -78,7 +80,7 @@ vkdf_cube_mesh_new(VkdfContext *ctx)
       glm::vec3( 0.0f, -1.0f,  0.0f), // Bottom
    };
 
-   VkdfMesh *mesh = vkdf_mesh_new();
+   VkdfMesh *mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
    for (uint32_t i = 0; i < 36; i++) {
       mesh->vertices.push_back(vertices[i]);
       mesh->normals.push_back(face_normals[i / 6]);
@@ -101,7 +103,7 @@ vkdf_tile_mesh_new(VkdfContext *ctx)
       glm::vec3( 1.0f,  0.0f, -1.0f),
    };
 
-   VkdfMesh *mesh = vkdf_mesh_new();
+   VkdfMesh *mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
    for (uint32_t i = 0; i < 6; i++) {
       mesh->vertices.push_back(vertices[i]);
       mesh->normals.push_back(glm::vec3(0.0f, 1.0f, 0.0f));
@@ -129,7 +131,7 @@ vkdf_2d_tile_mesh_new(VkdfContext *ctx)
       glm::vec2(1.0f, 0.0f),
    };
 
-   VkdfMesh *mesh = vkdf_mesh_new();
+   VkdfMesh *mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
    for (uint32_t i = 0; i < 4; i++) {
       mesh->vertices.push_back(vertices[i]);
       mesh->uvs.push_back(uvs[i]);

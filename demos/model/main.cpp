@@ -536,6 +536,9 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    vi_attribs[2].format = VK_FORMAT_R32_UINT;
    vi_attribs[2].offset = 0;
 
+   // We assume all meshes in the model use the same primitive type
+   VkdfMesh *mesh = res->model->meshes[0];
+   VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
    res->pipeline = vkdf_create_gfx_pipeline(ctx,
                                             NULL,
                                             2,
@@ -545,7 +548,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             true,
                                             res->render_pass,
                                             res->pipeline_layout,
-                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                                            primitive,
                                             VK_CULL_MODE_BACK_BIT,
                                             res->vs_module,
                                             res->fs_module);
