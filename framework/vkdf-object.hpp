@@ -18,6 +18,9 @@ typedef struct {
    uint32_t material_idx_base;
 
    bool is_dynamic;
+
+   bool receives_shadows;
+   bool casts_shadows;
 } VkdfObject;
 
 VkdfObject *
@@ -102,6 +105,27 @@ inline bool
 vkdf_object_is_dynamic(VkdfObject *obj)
 {
    return obj->is_dynamic;
+}
+
+inline void
+vkdf_object_set_lighting_behavior(VkdfObject *obj,
+                                  bool casts_shadows,
+                                  bool receives_shadows)
+{
+   obj->casts_shadows = casts_shadows;
+   obj->receives_shadows = receives_shadows;
+}
+
+inline bool
+vkdf_object_casts_shadows(VkdfObject *obj)
+{
+   return obj->casts_shadows;
+}
+
+inline bool
+vkdf_object_receives_shadows(VkdfObject *obj)
+{
+   return obj->receives_shadows;
 }
 
 #endif
