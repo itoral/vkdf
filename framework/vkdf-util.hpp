@@ -60,6 +60,9 @@ vkdf_compute_view_matrix(glm::vec3 origin, glm::vec3 target);
 glm::mat4
 vkdf_compute_view_matrix_for_rotation(glm::vec3 origin, glm::vec3 rot);
 
+glm::mat4
+vkdf_compute_rotation_matrix(glm::vec3 rot);
+
 glm::vec3
 vkdf_compute_viewdir(glm::vec3 rot);
 
