@@ -530,15 +530,22 @@ vkdf_scene_add_light(VkdfScene *s,
 }
 
 static inline uint32_t
+frustum_contains_box(VkdfBox *box,
+                     VkdfBox *frustum_box,
+                     VkdfPlane *frustum_planes)
+{
+   if (!vkdf_box_collision(box, frustum_box))
+      return OUTSIDE;
+
+   return vkdf_box_is_in_frustum(box, frustum_planes);
+}
+
+static inline uint32_t
 tile_is_visible(VkdfSceneTile *t, VkdfBox *visible_box, VkdfPlane *fp)
 {
    if (t->obj_count == 0)
       return OUTSIDE;
-
-   if (!vkdf_box_collision(&t->box, visible_box))
-      return OUTSIDE;
-
-   return vkdf_box_is_in_frustum(&t->box, fp);
+   return frustum_contains_box(&t->box, visible_box, fp);
 }
 
 static inline uint32_t
@@ -1358,17 +1365,6 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
                                 &sl->shadow.framebuffer));
 }
 
-static bool
-frustum_contains_box(VkdfBox *box,
-                     VkdfBox *frustum_box,
-                     VkdfPlane *frustum_planes)
-{
-   if (!vkdf_box_collision(box, frustum_box))
-      return false;
-
-   return vkdf_box_is_in_frustum(box, frustum_planes) != OUTSIDE;
-}
-
 /**
  * - Prepares rendering resources for shadow maps
  * - Computes visible tiles for each static light source that casts shadows
@@ -1426,7 +1422,7 @@ prepare_scene_lights(VkdfScene *s)
          VkdfSceneTile *t = &s->tiles[ti];
          if (t->obj_count == 0)
             continue;
-         if (frustum_contains_box(&t->box, &frustum_box, frustum_planes))
+         if (frustum_contains_box(&t->box, &frustum_box, frustum_planes) != OUTSIDE)
             sl->shadow.visible = g_list_prepend(sl->shadow.visible, t);
       }
 
