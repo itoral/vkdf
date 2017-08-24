@@ -71,6 +71,7 @@ compute_lighting(Light l,
                  vec3 normal,
                  vec3 view_dir,
                  Material mat,
+                 bool receives_shadows,
                  vec4 light_space_pos,
                  sampler2D shadow_map)
 {
@@ -105,8 +106,13 @@ compute_lighting(Light l,
    float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
 
    // Check if the fragment is in the shadow
-   float shadow_factor =
-      cutoff_factor * compute_shadow_factor(light_space_pos, shadow_map);
+   float shadow_factor;
+   if (receives_shadows) {
+      shadow_factor = compute_shadow_factor(light_space_pos, shadow_map);
+   } else {
+      shadow_factor = 1.0;
+   }
+   shadow_factor *= cutoff_factor;
 
    // Compute light contributions to the fragment. Do not attenuate
    // ambient light to make it constant across the scene.
