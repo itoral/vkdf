@@ -93,9 +93,9 @@ struct _VkdfContext {
 
 typedef struct _VkdfContext VkdfContext;
 
+#include "vkdf-plane.hpp"
 #include "vkdf-util.hpp"
 #include "vkdf-thread-pool.hpp"
-#include "vkdf-plane.hpp"
 #include "vkdf-box.hpp"
 #include "vkdf-error.hpp"
 #include "vkdf-init.hpp"

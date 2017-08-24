@@ -137,9 +137,15 @@ vkdf_camera_get_clip_box(VkdfCamera *cam, VkdfBox *box)
    return vkdf_camera_get_clip_box_at_distance(cam, cam->proj.far_plane, box);
 }
 
-void
+inline void
 vkdf_camera_get_frustum_planes_at_distance(VkdfCamera *cam,
-                                           float dist, VkdfPlane *p);
+                                           float dist, VkdfPlane *p)
+
+{
+   glm::vec3 f[8];
+   vkdf_camera_get_frustum_vertices_at_distance(cam, cam->proj.far_plane, f);
+   vkdf_compute_frustum_planes(f, p);
+}
 
 inline void
 vkdf_camera_get_frustum_planes(VkdfCamera *cam, VkdfPlane *p)

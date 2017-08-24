@@ -75,4 +75,7 @@ vkdf_compute_frustum_vertices(glm::vec3 origin,
                               float aspect_ratio,
                               glm::vec3 *f);
 
+void
+vkdf_compute_frustum_planes(glm::vec3 *f, VkdfPlane *p);
+
 #endif

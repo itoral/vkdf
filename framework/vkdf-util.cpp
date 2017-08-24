@@ -168,3 +168,25 @@ vkdf_compute_frustum_vertices(glm::vec3 origin,
    f[FRUSTUM_NBR] = near_bottom + right_vector * near_width;
    f[FRUSTUM_NBL] = near_bottom + right_vector * (-near_width);
 }
+
+void
+vkdf_compute_frustum_planes(glm::vec3 *f, VkdfPlane *p)
+{
+   vkdf_plane_from_points(&p[FRUSTUM_FAR],
+                          f[FRUSTUM_FTL], f[FRUSTUM_FTR], f[FRUSTUM_FBR]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_NEAR],
+                          f[FRUSTUM_NTL], f[FRUSTUM_NBR], f[FRUSTUM_NTR]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_LEFT],
+                          f[FRUSTUM_NTL], f[FRUSTUM_FTL], f[FRUSTUM_FBL]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_RIGHT],
+                          f[FRUSTUM_NTR], f[FRUSTUM_FBR], f[FRUSTUM_FTR]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_TOP],
+                          f[FRUSTUM_NTL], f[FRUSTUM_FTR], f[FRUSTUM_FTL]);
+
+   vkdf_plane_from_points(&p[FRUSTUM_BOTTOM],
+                          f[FRUSTUM_NBL], f[FRUSTUM_FBL], f[FRUSTUM_FBR]);
+}
