@@ -61,6 +61,9 @@ vkdf_mesh_add_textured_vertex(VkdfMesh *mesh,
 VkDeviceSize
 vkdf_mesh_get_vertex_data_size(VkdfMesh *mesh);
 
+uint32_t
+vkdf_mesh_get_vertex_data_stride(VkdfMesh *mesh);
+
 void
 vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh);
 

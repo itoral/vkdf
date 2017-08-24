@@ -168,6 +168,26 @@ vkdf_mesh_free(VkdfContext *ctx, VkdfMesh *mesh)
    g_free(mesh);
 }
 
+static inline uint32_t
+get_vertex_data_stride(VkdfMesh *mesh)
+{
+   uint32_t has_vertices = MIN2(mesh->vertices.size(), 1);
+   uint32_t has_normals = MIN2(mesh->normals.size(), 1);
+   uint32_t has_uv = MIN2(mesh->uvs.size(), 1);
+
+   assert(has_vertices);
+
+   return has_vertices * sizeof(glm::vec3) +
+          has_normals  * sizeof(glm::vec3) +
+          has_uv       * sizeof(glm::vec2);
+}
+
+uint32_t
+vkdf_mesh_get_vertex_data_stride(VkdfMesh *mesh)
+{
+   return get_vertex_data_stride(mesh);
+}
+
 static inline VkDeviceSize
 get_vertex_data_size(VkdfMesh *mesh)
 {
