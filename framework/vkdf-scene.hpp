@@ -166,7 +166,7 @@ struct _VkdfScene {
          VkDescriptorSetLayout models_set_layout;
          VkDescriptorSet models_set;
          VkPipelineLayout layout;
-         VkPipeline pipeline;
+         GHashTable *pipelines;
       } pipeline;
       struct {
          VkShaderModule vs;

@@ -254,6 +254,14 @@ free_tile(VkdfSceneTile *t)
    }
 }
 
+static void
+destroy_shadow_map_pipeline(gpointer key, gpointer value, gpointer data)
+{
+   VkdfScene *s = (VkdfScene *) data;
+   VkPipeline pipeline = (VkPipeline) value;
+   vkDestroyPipeline(s->ctx->device, pipeline, NULL);
+}
+
 void
 vkdf_scene_free(VkdfScene *s)
 {
@@ -317,8 +325,11 @@ vkdf_scene_free(VkdfScene *s)
    if (s->shadows.pipeline.layout)
       vkDestroyPipelineLayout(s->ctx->device, s->shadows.pipeline.layout, NULL);
 
-   if (s->shadows.pipeline.pipeline)
-      vkDestroyPipeline(s->ctx->device, s->shadows.pipeline.pipeline, NULL);
+   if (s->shadows.pipeline.pipelines) {
+      g_hash_table_foreach(s->shadows.pipeline.pipelines,
+                           destroy_shadow_map_pipeline, s);
+      g_hash_table_destroy(s->shadows.pipeline.pipelines);
+   }
 
    if (s->shadows.shaders.vs)
      vkDestroyShaderModule(s->ctx->device, s->shadows.shaders.vs, NULL);
@@ -1088,60 +1099,30 @@ create_descriptor_set(VkdfContext *ctx,
    return set;
 }
 
-static void
-create_shadow_map_pipeline(VkdfScene *s)
+static inline uint32_t
+hash_shadow_map_pipeline_spec(uint32_t vertex_data_stride,
+                              VkPrimitiveTopology primitive)
 {
-   // Set layout with a single binding for the model matrices of
-   // scene objects
-   s->shadows.pipeline.models_set_layout =
-      vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
-                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+   assert((vertex_data_stride & 0x00ffffff) == vertex_data_stride);
+   return primitive << 24 | vertex_data_stride;
+}
 
-   s->shadows.pipeline.models_set =
-      create_descriptor_set(s->ctx, s->ubo.static_pool,
-                            s->shadows.pipeline.models_set_layout);
+static void
+create_shadow_map_pipeline_for_mesh(VkdfScene *s, VkdfMesh *mesh)
+{
+   uint32_t vertex_data_stride = vkdf_mesh_get_vertex_data_stride(mesh);
+   VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
+   void *hash = GINT_TO_POINTER(
+      hash_shadow_map_pipeline_spec(vertex_data_stride, primitive));
+   if (g_hash_table_lookup(s->shadows.pipeline.pipelines, hash) != NULL)
+      return;
 
-   VkDeviceSize ubo_offset = 0;
-   VkDeviceSize ubo_size = s->ubo.obj.size;
-   vkdf_descriptor_set_buffer_update(s->ctx,
-                                     s->shadows.pipeline.models_set,
-                                     s->ubo.obj.buf.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
-
-   // Pipeline layout: 2 push constant ranges and 1 set layout
-   VkPushConstantRange pcb_ranges[1];
-   pcb_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-   pcb_ranges[0].offset = 0;
-   pcb_ranges[0].size = sizeof(struct _shadow_map_pcb);
-
-   VkDescriptorSetLayout set_layouts[1] = {
-      s->shadows.pipeline.models_set_layout,
-   };
-
-   VkPipelineLayoutCreateInfo pipeline_layout_info;
-   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-   pipeline_layout_info.pNext = NULL;
-   pipeline_layout_info.pushConstantRangeCount =
-      sizeof(pcb_ranges) / sizeof(VkPushConstantRange);
-   pipeline_layout_info.pPushConstantRanges = pcb_ranges;
-   pipeline_layout_info.setLayoutCount =
-      sizeof(set_layouts) / sizeof(VkDescriptorSetLayout);
-   pipeline_layout_info.pSetLayouts = set_layouts;
-   pipeline_layout_info.flags = 0;
-
-   VK_CHECK(vkCreatePipelineLayout(s->ctx->device,
-                                   &pipeline_layout_info,
-                                   NULL,
-                                   &s->shadows.pipeline.layout));
-
-   // Pipeline
-   // FIXME: assumes primitive is always triangle lists
    VkPipelineInputAssemblyStateCreateInfo ia;
    ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
    ia.pNext = NULL;
    ia.flags = 0;
    ia.primitiveRestartEnable = VK_FALSE;
-   ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+   ia.topology = primitive;
 
    VkPipelineViewportStateCreateInfo vp;
    vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -1231,14 +1212,12 @@ create_shadow_map_pipeline(VkdfScene *s)
    rs.lineWidth = 1.0f;
    rs.depthBiasEnable = VK_TRUE;
 
-   // FIXME: this assumes a vertex data layout where we have
-   // packed positions and normals per vertex
    VkPipelineVertexInputStateCreateInfo vi;
    VkVertexInputBindingDescription vi_binding[1];
    VkVertexInputAttributeDescription vi_attribs[1];
    vi_binding[0].binding = 0;
    vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = 2 * sizeof(glm::vec3);
+   vi_binding[0].stride = vertex_data_stride;
    vi_attribs[0].binding = 0;
    vi_attribs[0].location = 0;
    vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -1251,9 +1230,11 @@ create_shadow_map_pipeline(VkdfScene *s)
    vi.vertexAttributeDescriptionCount = 1;
    vi.pVertexAttributeDescriptions = vi_attribs;
 
+   if (!s->shadows.shaders.vs) {
+      s->shadows.shaders.vs =
+         vkdf_create_shader_module(s->ctx, SHADOW_MAP_SHADER_PATH);
+   }
    VkPipelineShaderStageCreateInfo shader_stages[1];
-   s->shadows.shaders.vs =
-      vkdf_create_shader_module(s->ctx, SHADOW_MAP_SHADER_PATH);
    vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
                                         VK_SHADER_STAGE_VERTEX_BIT,
                                         s->shadows.shaders.vs);
@@ -1279,12 +1260,84 @@ create_shadow_map_pipeline(VkdfScene *s)
    pipeline_info.renderPass = s->shadows.renderpass;
    pipeline_info.subpass = 0;
 
+   VkPipeline pipeline;
    VK_CHECK(vkCreateGraphicsPipelines(s->ctx->device,
                                       NULL,
                                       1,
                                       &pipeline_info,
                                       NULL,
-                                      &s->shadows.pipeline.pipeline));
+                                      &pipeline));
+
+   g_hash_table_insert(s->shadows.pipeline.pipelines, hash, pipeline);
+}
+
+/**
+ * Creates a pipeline to render each mesh in the scene to the
+ * shadow map.
+ */
+static void
+create_shadow_map_pipelines(VkdfScene *s)
+{
+   // Set layout with a single binding for the model matrices of
+   // scene objects
+   s->shadows.pipeline.models_set_layout =
+      vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
+                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+
+   s->shadows.pipeline.models_set =
+      create_descriptor_set(s->ctx, s->ubo.static_pool,
+                            s->shadows.pipeline.models_set_layout);
+
+   VkDeviceSize ubo_offset = 0;
+   VkDeviceSize ubo_size = s->ubo.obj.size;
+   vkdf_descriptor_set_buffer_update(s->ctx,
+                                     s->shadows.pipeline.models_set,
+                                     s->ubo.obj.buf.buf,
+                                     0, 1, &ubo_offset, &ubo_size, false);
+
+   // Pipeline layout: 2 push constant ranges and 1 set layout
+   VkPushConstantRange pcb_ranges[1];
+   pcb_ranges[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+   pcb_ranges[0].offset = 0;
+   pcb_ranges[0].size = sizeof(struct _shadow_map_pcb);
+
+   VkDescriptorSetLayout set_layouts[1] = {
+      s->shadows.pipeline.models_set_layout,
+   };
+
+   VkPipelineLayoutCreateInfo pipeline_layout_info;
+   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   pipeline_layout_info.pNext = NULL;
+   pipeline_layout_info.pushConstantRangeCount =
+      sizeof(pcb_ranges) / sizeof(VkPushConstantRange);
+   pipeline_layout_info.pPushConstantRanges = pcb_ranges;
+   pipeline_layout_info.setLayoutCount =
+      sizeof(set_layouts) / sizeof(VkDescriptorSetLayout);
+   pipeline_layout_info.pSetLayouts = set_layouts;
+   pipeline_layout_info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device,
+                                   &pipeline_layout_info,
+                                   NULL,
+                                   &s->shadows.pipeline.layout));
+
+   // Create a pipeline instance for each mesh spec in the scene
+   //
+   // Different meshes may require slightly different pipelines to be rendered
+   // to the shadow map to account for varying vertex data strides in the
+   // meshes's vertex buffers and different primitive topologies.
+   s->shadows.pipeline.pipelines =
+      g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, NULL);
+
+   GList *iter = s->models;
+   while(iter) {
+      VkdfModel *model = (VkdfModel *) iter->data;
+      for (uint32_t mesh_idx = 0; mesh_idx < model->meshes.size(); mesh_idx++) {
+         VkdfMesh *mesh = model->meshes[mesh_idx];
+         create_shadow_map_pipeline_for_mesh(s, mesh);
+      }
+      iter = g_list_next(iter);
+   }
 }
 
 static void
@@ -1317,7 +1370,7 @@ prepare_scene_lights(VkdfScene *s)
 
    // Create rendering resources for shadow maps
    create_shadow_map_renderpass(s);
-   create_shadow_map_pipeline(s);
+   create_shadow_map_pipelines(s);
 
    // Find visible tiles for shadow casters, create shadow map framebuffers
    for (uint32_t i = 0; i < s->lights.size(); i++) {
@@ -1545,11 +1598,6 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
                      0.0f,
                      sl->shadow.spec.depth_bias_slope_factor);
 
-   // Bind pipeline
-   vkCmdBindPipeline(sl->shadow.cmd_buf,
-                     VK_PIPELINE_BIND_POINT_GRAPHICS,
-                     s->shadows.pipeline.pipeline);
-
    // Push constants (Light View/projection)
    vkCmdPushConstants(sl->shadow.cmd_buf,
                       s->shadows.pipeline.layout,
@@ -1567,6 +1615,8 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
                            NULL);                           // Dynamic offsets
 
    // Draw
+   VkPipeline current_pipeline = 0;
+
    // For each tile visible from this light source...
    GList *tile_iter = sl->shadow.visible;
    while (tile_iter) {
@@ -1590,6 +1640,23 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
             // For each mesh in this model...
             for (uint32_t i = 0; i < model->meshes.size(); i++) {
                VkdfMesh *mesh = model->meshes[i];
+
+               // Bind pipeline
+               uint32_t vertex_data_stride =
+                  vkdf_mesh_get_vertex_data_stride(mesh);
+               VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
+               void *hash = GINT_TO_POINTER(
+                  hash_shadow_map_pipeline_spec(vertex_data_stride, primitive));
+               VkPipeline pipeline = (VkPipeline)
+                  g_hash_table_lookup(s->shadows.pipeline.pipelines, hash);
+               assert(pipeline);
+
+               if (pipeline != current_pipeline) {
+                  vkCmdBindPipeline(sl->shadow.cmd_buf,
+                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    pipeline);
+                  current_pipeline = pipeline;
+               }
 
                // Draw all instances
                const VkDeviceSize offsets[1] = { 0 };
