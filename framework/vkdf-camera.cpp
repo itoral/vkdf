@@ -153,48 +153,6 @@ vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z)
 }
 
 void
-vkdf_camera_get_frustum_vertices_at_distance(VkdfCamera *cam,
-                                             float dist,
-                                             glm::vec3 *f)
-{
-   /* Vulkan camera looks at -Z */
-   glm::mat4 rot_matrix = vkdf_camera_get_rotation_matrix(cam);
-   glm::vec3 forward_vector =
-      vec3(rot_matrix * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f));
-
-   glm::vec3 to_far = forward_vector * dist;
-   glm::vec3 to_near = forward_vector * cam->proj.near_plane;
-   glm::vec3 center_far = cam->pos + to_far;
-   glm::vec3 center_near = cam->pos + to_near;
-
-   glm::vec3 up_vector = vec3(rot_matrix * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
-   glm::vec3 right_vector = glm::cross(forward_vector, up_vector);
-   vkdf_vec3_normalize(&up_vector);
-   vkdf_vec3_normalize(&right_vector);
-
-   float t = tanf(DEG_TO_RAD(cam->proj.fov / 2.0f));
-   float far_height = dist * t;
-   float far_width = far_height * cam->proj.aspect_ratio;
-   float near_width = cam->proj.near_plane * t;
-   float near_height = near_width / cam->proj.aspect_ratio;
-
-   glm::vec3 far_top = center_far + up_vector * far_height;
-   glm::vec3 far_bottom = center_far + up_vector * (-far_height);
-   glm::vec3 near_top = center_near + up_vector * near_height;
-   glm::vec3 near_bottom = center_near + up_vector * (-near_height);
-
-   f[FRUSTUM_FTR] = far_top + right_vector * far_width;
-   f[FRUSTUM_FTL] = far_top + right_vector * (-far_width);
-   f[FRUSTUM_FBR] = far_bottom + right_vector * far_width;
-   f[FRUSTUM_FBL] = far_bottom + right_vector * (-far_width);
-
-   f[FRUSTUM_NTR] = near_top + right_vector * near_width;
-   f[FRUSTUM_NTL] = near_top + right_vector * (-near_width);
-   f[FRUSTUM_NBR] = near_bottom + right_vector * near_width;
-   f[FRUSTUM_NBL] = near_bottom + right_vector * (-near_width);
-}
-
-void
 vkdf_camera_get_clip_box_at_distance(VkdfCamera *cam, float dist, VkdfBox *box)
 {
    glm::vec3 f[8];

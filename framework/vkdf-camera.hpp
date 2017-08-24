@@ -110,10 +110,17 @@ vkdf_camera_get_rotation_matrix(VkdfCamera *cam)
    return vkdf_compute_rotation_matrix(cam->rot);
 }
 
-void
+inline void
 vkdf_camera_get_frustum_vertices_at_distance(VkdfCamera *cam,
                                              float dist,
-                                             glm::vec3 *f);
+                                             glm::vec3 *f)
+{
+   vkdf_compute_frustum_vertices(
+      cam->pos, cam->rot,
+      cam->proj.near_plane, dist,
+      cam->proj.fov, cam->proj.aspect_ratio,
+      f);
+}
 
 inline void
 vkdf_camera_get_frustum_vertices(VkdfCamera *cam, glm::vec3 *f)
