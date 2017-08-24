@@ -157,32 +157,5 @@ vkdf_camera_get_clip_box_at_distance(VkdfCamera *cam, float dist, VkdfBox *box)
 {
    glm::vec3 f[8];
    vkdf_camera_get_frustum_vertices_at_distance(cam, dist, f);
-
-   glm::vec3 box_min = glm::vec3(f[0].x, f[0].y, f[0].z);
-   glm::vec3 box_max = glm::vec3(f[0].x, f[0].y, f[0].z);
-
-   for (int i = 1; i < 8; i++) {
-      glm::vec3 *v = &f[i];
-      if (v->x < box_min.x)
-         box_min.x = v->x;
-      else if (v->x > box_max.x)
-         box_max.x = v->x;
-
-      if (v->y < box_min.y)
-         box_min.y = v->y;
-      else if (v->y > box_max.y)
-         box_max.y = v->y;
-
-      if (v->z < box_min.z)
-         box_min.z = v->z;
-      else if (v->z > box_max.z)
-         box_max.z = v->z;
-   }
-
-   box->w = (box_max.x - box_min.x) / 2.0f;
-   box->h = (box_max.y - box_min.y) / 2.0f;
-   box->d = (box_max.z - box_min.z) / 2.0f;
-   box->center = glm::vec3(box_min.x + box->w,
-                           box_min.y + box->h,
-                           box_min.z + box->d);
+   vkdf_compute_frustum_clip_box(f, box);
 }

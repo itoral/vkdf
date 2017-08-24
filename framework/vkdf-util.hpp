@@ -78,4 +78,7 @@ vkdf_compute_frustum_vertices(glm::vec3 origin,
 void
 vkdf_compute_frustum_planes(glm::vec3 *f, VkdfPlane *p);
 
+void
+vkdf_compute_frustum_clip_box(glm::vec3 *f, VkdfBox *box);
+
 #endif
