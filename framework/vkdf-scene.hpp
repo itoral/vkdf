@@ -2,8 +2,7 @@
 #define __VKDF_SCENE_H__
 
 typedef struct {
-   uint32_t shadow_map_width;
-   uint32_t shadow_map_height;
+   uint32_t shadow_map_size;
    float shadow_map_near;
    float shadow_map_far;
    float depth_bias_const_factor;

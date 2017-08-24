@@ -463,15 +463,15 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
 }
 
 static inline VkdfImage
-create_shadow_map_image(VkdfScene *s, uint32_t width, uint32_t height)
+create_shadow_map_image(VkdfScene *s, uint32_t size)
 {
    const VkImageUsageFlagBits shadow_map_usage =
    (VkImageUsageFlagBits) (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                            VK_IMAGE_USAGE_SAMPLED_BIT);
 
    return vkdf_create_image(s->ctx,
-                            width,
-                            height,
+                            size,
+                            size,
                             1,
                             VK_IMAGE_TYPE_2D,
                             VK_FORMAT_D32_SFLOAT,
@@ -496,10 +496,8 @@ compute_light_view_projection(VkdfSceneLight *sl)
    VkdfSceneShadowSpec *spec = &sl->shadow.spec;
 
    float cutoff_angle = vkdf_light_get_cutoff_angle(sl->light);
-   float aspect_ratio = ((float) spec->shadow_map_width) /
-                        ((float) spec->shadow_map_height);
    glm::mat4 proj = clip * glm::perspective(2.0f * cutoff_angle,
-                                            aspect_ratio,
+                                            1.0f,
                                             spec->shadow_map_near,
                                             spec->shadow_map_far);
    glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
@@ -518,9 +516,7 @@ vkdf_scene_add_light(VkdfScene *s,
    if (light->casts_shadows) {
       slight->shadow.spec = *spec;
       slight->shadow.shadow_map =
-         create_shadow_map_image(s,
-                                 spec->shadow_map_width,
-                                 spec->shadow_map_height);
+         create_shadow_map_image(s, spec->shadow_map_size);
       compute_light_view_projection(slight);
       slight->dirty = true;
    }
@@ -1356,8 +1352,8 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
    fb_info.renderPass = s->shadows.renderpass;
    fb_info.attachmentCount = 1;
    fb_info.pAttachments = &sl->shadow.shadow_map.view;
-   fb_info.width = sl->shadow.spec.shadow_map_width;
-   fb_info.height = sl->shadow.spec.shadow_map_height;
+   fb_info.width = sl->shadow.spec.shadow_map_size;
+   fb_info.height = sl->shadow.spec.shadow_map_size;
    fb_info.layers = 1;
    fb_info.flags = 0;
 
@@ -1395,10 +1391,6 @@ prepare_scene_lights(VkdfScene *s)
       assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
       // Compute spotlight's frustum bounds for clipping
-      float aspect_ratio =
-         (float) sl->shadow.spec.shadow_map_width /
-         (float) sl->shadow.spec.shadow_map_height;
-
       float cutoff_angle_deg =
          2.0f * RAD_TO_DEG(vkdf_light_get_cutoff_angle(sl->light));
 
@@ -1407,7 +1399,7 @@ prepare_scene_lights(VkdfScene *s)
          sl->light->origin, sl->light->spot.priv.rot,
          sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
          cutoff_angle_deg,
-         aspect_ratio,
+         1.0f,
          f);
 
       VkdfBox frustum_box;
@@ -1592,8 +1584,7 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
    clear_values[0].depthStencil.depth = 1.0f;
    clear_values[0].depthStencil.stencil = 0;
 
-   uint32_t shadow_map_width = sl->shadow.spec.shadow_map_width;
-   uint32_t shadow_map_height = sl->shadow.spec.shadow_map_height;
+   uint32_t shadow_map_size = sl->shadow.spec.shadow_map_size;
 
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1602,8 +1593,8 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
    rp_begin.framebuffer = sl->shadow.framebuffer;
    rp_begin.renderArea.offset.x = 0;
    rp_begin.renderArea.offset.y = 0;
-   rp_begin.renderArea.extent.width = shadow_map_width;
-   rp_begin.renderArea.extent.height = shadow_map_height;
+   rp_begin.renderArea.extent.width = shadow_map_size;
+   rp_begin.renderArea.extent.height = shadow_map_size;
    rp_begin.clearValueCount = 1;
    rp_begin.pClearValues = clear_values;
 
@@ -1613,8 +1604,8 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
 
    // Dynamic viewport / scissor / depth bias
    VkViewport viewport;
-   viewport.width = shadow_map_width;
-   viewport.height = shadow_map_height;
+   viewport.width = shadow_map_size;
+   viewport.height = shadow_map_size;
    viewport.minDepth = 0.0f;
    viewport.maxDepth = 1.0f;
    viewport.x = 0;
@@ -1622,8 +1613,8 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
    vkCmdSetViewport(sl->shadow.cmd_buf, 0, 1, &viewport);
 
    VkRect2D scissor;
-   scissor.extent.width = shadow_map_width;
-   scissor.extent.height = shadow_map_height;
+   scissor.extent.width = shadow_map_size;
+   scissor.extent.height = shadow_map_size;
    scissor.offset.x = 0;
    scissor.offset.y = 0;
    vkCmdSetScissor(sl->shadow.cmd_buf, 0, 1, &scissor);
