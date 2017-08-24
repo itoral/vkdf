@@ -11,8 +11,6 @@ layout(push_constant) uniform pcb
 struct ObjData
 {
    mat4 Model;
-   uint material_base_idx;
-   uint model_idx;
 };
 
 layout(std140, set = 0, binding = 0) uniform m_ubo

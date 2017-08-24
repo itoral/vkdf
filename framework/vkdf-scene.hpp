@@ -38,9 +38,11 @@ struct ThreadData {
 };
 
 typedef struct {
-   GList *objs;                 // Set list
-   uint32_t start_index;        // The global scene set index of the first object in this set
-   uint32_t count;              // Number of objects in the set
+   GList *objs;                        // Set list
+   uint32_t start_index;               // The global scene set index of the first object in this set
+   uint32_t count;                     // Number of objects in the set
+   uint32_t shadow_caster_start_index; // The shadow map scene set index of the first shadow caster object in this set
+   uint32_t shadow_caster_count;       // Number of objects in the set that cast shadows
 } VkdfSceneSetInfo;
 
 struct _VkdfSceneTile {
@@ -52,6 +54,7 @@ struct _VkdfSceneTile {
    VkdfBox box;                  // Bounding box of the ojects in the tile
    GHashTable *sets;             // Objects in the tile
    uint32_t obj_count;           // Number of objects in the tile
+   uint32_t shadow_caster_count; // Number of objects in the tile that can cast shadows
    VkCommandBuffer cmd_buf;      // Secondary command buffer for this tile
    VkdfSceneTile *subtiles;      // Subtiles within this tile
 };
@@ -113,6 +116,7 @@ struct _VkdfScene {
    bool dirty;
    bool lights_dirty;
    uint32_t obj_count;
+   bool has_shadow_caster_lights;
 
    /** 
     * active    : list of secondary command buffers that are active (that is,
@@ -183,6 +187,11 @@ struct _VkdfScene {
          VkdfBuffer buf;
          VkDeviceSize size;
       } material;
+      struct {
+         VkdfBuffer buf;
+         VkDeviceSize inst_size;
+         VkDeviceSize size;
+      } shadow_map;
    } ubo;
 };
 

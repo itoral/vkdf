@@ -26,6 +26,7 @@ layout(location = 1) flat in uint in_material_idx;
 layout(location = 2) in vec4 in_world_pos;
 layout(location = 3) in vec3 in_view_dir;
 layout(location = 4) in vec4 in_light_space_pos;
+layout(location = 5) flat in uint in_receives_shadows;
 
 layout(location = 0) out vec4 out_color;
 
@@ -40,6 +41,7 @@ void main()
                                        in_world_pos.xyz,
                                        in_normal, in_view_dir,
                                        mat,
+                                       bool(in_receives_shadows),
                                        in_light_space_pos, shadow_map);
 
    out_color = vec4((color.diffuse + color.ambient + color.specular), 1.0);

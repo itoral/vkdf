@@ -788,20 +788,23 @@ init_objects(SceneResources *res)
    glm::vec3 pos = glm::vec3(0.0f, 3.0f, 0.0f);
    VkdfObject *obj = vkdf_object_new_from_model(pos, res->cube_model);
    vkdf_object_set_scale(obj, glm::vec3(2.0f, 3.0f, 2.0f));
-   vkdf_scene_add_object(res->scene, "cube", obj);
+   vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_material_idx_base(obj, 0);
+   vkdf_scene_add_object(res->scene, "cube", obj);
 
    pos = glm::vec3(0.0f, 1.0f, -8.0f);
    obj = vkdf_object_new_from_model(pos, res->cube_model);
+   vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_scale(obj, glm::vec3(3.0f, 1.0f, 3.0f));
-   vkdf_scene_add_object(res->scene, "cube", obj);
    vkdf_object_set_material_idx_base(obj, 1);
+   vkdf_scene_add_object(res->scene, "cube", obj);
 
    pos = glm::vec3(-10.0f, 2.0f, -5.0f);
    obj = vkdf_object_new_from_model(pos, res->cube_model);
+   vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_scale(obj, glm::vec3(3.0f, 2.0f, 2.0f));
-   vkdf_scene_add_object(res->scene, "cube", obj);
    vkdf_object_set_material_idx_base(obj, 2);
+   vkdf_scene_add_object(res->scene, "cube", obj);
 
    // FIXME: this should be handled in untiled-mode, maybe we should do that
    // automatically for any object that is too big or something...
@@ -810,6 +813,7 @@ init_objects(SceneResources *res)
    vkdf_object_set_scale(floor, glm::vec3(res->scene->scene_area.w / 2.0f,
                                           0.1f,
                                           res->scene->scene_area.d / 2.0f));
+   vkdf_object_set_lighting_behavior(floor, false, true);
    vkdf_scene_add_object(res->scene, "floor", floor);
    vkdf_object_set_material_idx_base(floor, 0);
 

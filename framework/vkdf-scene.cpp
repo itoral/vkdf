@@ -344,6 +344,11 @@ vkdf_scene_free(VkdfScene *s)
       vkFreeMemory(s->ctx->device, s->ubo.material.buf.mem, NULL);
    }
 
+   if (s->ubo.shadow_map.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->ubo.shadow_map.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->ubo.shadow_map.buf.mem, NULL);
+   }
+
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
 
    g_free(s);
@@ -519,6 +524,7 @@ vkdf_scene_add_light(VkdfScene *s,
          create_shadow_map_image(s, spec->shadow_map_size);
       compute_light_view_projection(slight);
       slight->dirty = true;
+      s->has_shadow_caster_lights = true;
    }
 
    s->lights.push_back(slight);
@@ -864,7 +870,7 @@ create_static_object_ubo(VkdfScene *s)
 {
    // Per-instance data: model matrix, base material index
    uint32_t num_objects = vkdf_scene_get_num_objects(s);
-   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + sizeof(uint32_t), 16);
+   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
    s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
    s->ubo.obj.buf =
       vkdf_create_buffer(s->ctx, 0,
@@ -911,6 +917,11 @@ create_static_object_ubo(VkdfScene *s)
                memcpy(mem + offset, &model_index, sizeof(uint32_t));
                offset += sizeof(uint32_t);
 
+               // Receives shadows
+               uint32_t receives_shadows = (uint32_t) obj->receives_shadows;
+               memcpy(mem + offset, &receives_shadows, sizeof(uint32_t));
+               offset += sizeof(uint32_t);
+
                offset = ALIGN(offset, 16);
 
                iter = g_list_next(iter);
@@ -932,6 +943,109 @@ create_static_object_ubo(VkdfScene *s)
    }
 
    vkUnmapMemory(s->ctx->device, s->ubo.obj.buf.mem);
+}
+
+/**
+ * Creates a UBO with the model matrices for each object that can cast
+ * shadows (the ones we need to render to the shadow map).
+ *
+ * The function also computes the counts of shadow caster objects per tile and
+ * in each set as well as the starting index of each set in the UBO so we can
+ * draw correct instance counts when we render each set to the the shadow map.
+ */
+static void
+create_static_shadow_map_ubo(VkdfScene *s)
+{
+   // Compute shadow caster counts and start indices
+   uint32_t scene_shadow_caster_count = 0;
+   uint32_t start_index = 0;
+   GList *set_id_iter = s->set_ids;
+   while (set_id_iter) {
+      for (uint32_t i = 0; i < s->num_tiles.total; i++) {
+         VkdfSceneTile *t = &s->tiles[i];
+         t->shadow_caster_count = 0;
+         if (t->obj_count == 0)
+             continue;
+
+         const char *set_id = (const char *) set_id_iter->data;
+         VkdfSceneSetInfo *info =
+            (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, set_id);
+         if (info) {
+            info->shadow_caster_count = 0;
+            info->shadow_caster_start_index = start_index;
+            GList *iter = info->objs;
+            while (iter) {
+               VkdfObject *obj = (VkdfObject *) iter->data;
+               if (vkdf_object_casts_shadows(obj)) {
+                  info->shadow_caster_count++;
+                  t->shadow_caster_count++;
+                  scene_shadow_caster_count++;
+               }
+               iter = g_list_next(iter);
+            }
+            start_index += info->shadow_caster_count;
+         }
+      }
+
+      set_id_iter = g_list_next(set_id_iter);
+   }
+
+   // Build per-instance data for each shadow caster object
+   s->ubo.shadow_map.inst_size = ALIGN(sizeof(glm::mat4), 16);
+   s->ubo.shadow_map.size =
+      s->ubo.shadow_map.inst_size * scene_shadow_caster_count;
+   s->ubo.shadow_map.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->ubo.shadow_map.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   uint8_t *mem;
+   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.shadow_map.buf.mem,
+                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+
+   VkDeviceSize offset = 0;
+   set_id_iter = s->set_ids;
+   while (set_id_iter) {
+      for (uint32_t i = 0; i < s->num_tiles.total; i++) {
+         VkdfSceneTile *t = &s->tiles[i];
+         if (t->obj_count == 0)
+             continue;
+
+         const char *set_id = (const char *) set_id_iter->data;
+         VkdfSceneSetInfo *info =
+            (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, set_id);
+         if (info && info->shadow_caster_count > 0) {
+            GList *iter = info->objs;
+            while (iter) {
+               VkdfObject *obj = (VkdfObject *) iter->data;
+               if (vkdf_object_casts_shadows(obj)) {
+                  // Model matrix
+                  glm::mat4 model = vkdf_object_get_model_matrix(obj);
+                  float *model_data = glm::value_ptr(model);
+                  memcpy(mem + offset, model_data, sizeof(glm::mat4));
+                  offset += sizeof(glm::mat4);
+
+                  offset = ALIGN(offset, 16);
+               }
+               iter = g_list_next(iter);
+            }
+         }
+      }
+      set_id_iter = g_list_next(set_id_iter);
+   }
+
+   if (!(s->ubo.shadow_map.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+      VkMappedMemoryRange range;
+      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+      range.pNext = NULL;
+      range.memory = s->ubo.shadow_map.buf.mem;
+      range.offset = 0;
+      range.size = VK_WHOLE_SIZE;
+      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
+   }
+
+   vkUnmapMemory(s->ctx->device, s->ubo.shadow_map.buf.mem);
 }
 
 static void
@@ -1027,6 +1141,8 @@ prepare_scene_objects(VkdfScene *s)
 
    create_static_object_ubo(s);
    create_static_material_ubo(s);
+   if (s->has_shadow_caster_lights)
+      create_static_shadow_map_ubo(s);
 
    s->dirty = false;
 }
@@ -1292,10 +1408,10 @@ create_shadow_map_pipelines(VkdfScene *s)
                             s->shadows.pipeline.models_set_layout);
 
    VkDeviceSize ubo_offset = 0;
-   VkDeviceSize ubo_size = s->ubo.obj.size;
+   VkDeviceSize ubo_size = s->ubo.shadow_map.size;
    vkdf_descriptor_set_buffer_update(s->ctx,
                                      s->shadows.pipeline.models_set,
-                                     s->ubo.obj.buf.buf,
+                                     s->ubo.shadow_map.buf.buf,
                                      0, 1, &ubo_offset, &ubo_size, false);
 
    // Pipeline layout: 2 push constant ranges and 1 set layout
@@ -1656,8 +1772,8 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
          VkdfSceneSetInfo *set_info =
             (VkdfSceneSetInfo *) g_hash_table_lookup(tile->sets, set_id);
 
-         // If there are objects of this type...
-         if (set_info->count > 0) {
+         // If there are shadow caster objects of this type...
+         if (set_info->shadow_caster_count > 0) {
             // Grab the model (it is shared across all objects in the same type)
             VkdfObject *obj = (VkdfObject *) set_info->objs->data;
             VkdfModel *model = obj->model;
@@ -1694,9 +1810,9 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
 
                vkCmdDraw(sl->shadow.cmd_buf,
                          mesh->vertices.size(),                // vertex count
-                         set_info->count,                      // instance count
+                         set_info->shadow_caster_count,        // instance count
                          0,                                    // first vertex
-                         set_info->start_index);               // first instance
+                         set_info->shadow_caster_start_index); // first instance
             }
          }
          set_iter = g_list_next(set_iter);

@@ -19,6 +19,7 @@ struct ObjData {
    mat4 Model;
    uint material_base_idx;
    uint model_idx;
+   uint receives_shadows;
 };
 
 layout(std140, set = 1, binding = 0) uniform ubo_obj_data {
@@ -37,6 +38,7 @@ layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec4 out_world_pos;
 layout(location = 3) out vec3 out_view_dir;
 layout(location = 4) out vec4 out_light_space_pos;
+layout(location = 5) flat out uint out_receives_shadows;
 
 void main()
 {
@@ -61,4 +63,6 @@ void main()
       normalize(vec3(CD.ViewInv * vec4(0.0, 0.0, 0.0, 1.0) - out_world_pos));
 
    out_light_space_pos = LVP.ViewProjection * out_world_pos;
+
+   out_receives_shadows = obj_data.receives_shadows;
 }
