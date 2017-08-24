@@ -59,24 +59,6 @@ vkdf_light_new_spotlight(glm::vec4 pos,
    return l;
 }
 
-bool
-vkdf_light_is_box_visible(VkdfLight *l, VkdfBox *box)
-{
-   // FIXME: implement this for all light types
-   uint32_t light_type = vkdf_light_get_type(l);
-   switch (light_type) {
-   case VKDF_LIGHT_DIRECTIONAL:
-      return true;
-   case VKDF_LIGHT_POINT:
-      return true;
-   case VKDF_LIGHT_SPOTLIGHT:
-      return true;
-   default:
-      assert(!"invalid light type");
-      return false;
-   }
-}
-
 void
 vkdf_light_free(VkdfLight *light)
 {

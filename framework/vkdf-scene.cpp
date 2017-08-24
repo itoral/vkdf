@@ -1358,6 +1358,17 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
                                 &sl->shadow.framebuffer));
 }
 
+static bool
+frustum_contains_box(VkdfBox *box,
+                     VkdfBox *frustum_box,
+                     VkdfPlane *frustum_planes)
+{
+   if (!vkdf_box_collision(box, frustum_box))
+      return false;
+
+   return vkdf_box_is_in_frustum(box, frustum_planes) != OUTSIDE;
+}
+
 /**
  * - Prepares rendering resources for shadow maps
  * - Computes visible tiles for each static light source that casts shadows
@@ -1384,13 +1395,38 @@ prepare_scene_lights(VkdfScene *s)
          continue;
       assert(sl->shadow.shadow_map.image);
 
-      // We only support spotlights for now
+      // FIXME: We only support spotlights for now
       assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
+      // Compute spotlight's frustum bounds for clipping
+      float aspect_ratio =
+         (float) sl->shadow.spec.shadow_map_width /
+         (float) sl->shadow.spec.shadow_map_height;
+
+      float cutoff_angle_deg =
+         2.0f * RAD_TO_DEG(vkdf_light_get_cutoff_angle(sl->light));
+
+      glm::vec3 f[8];
+      vkdf_compute_frustum_vertices(
+         sl->light->origin, sl->light->spot.priv.rot,
+         sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
+         cutoff_angle_deg,
+         aspect_ratio,
+         f);
+
+      VkdfBox frustum_box;
+      vkdf_compute_frustum_clip_box(f, &frustum_box);
+
+      VkdfPlane frustum_planes[6];
+      vkdf_compute_frustum_planes(f, frustum_planes);
+
+      // Test each tile for visibility
       sl->shadow.visible = NULL;
       for (uint32_t ti = 0; ti < s->num_tiles.total; ti++) {
          VkdfSceneTile *t = &s->tiles[ti];
-         if (vkdf_light_is_box_visible(sl->light, &t->box))
+         if (t->obj_count == 0)
+            continue;
+         if (frustum_contains_box(&t->box, &frustum_box, frustum_planes))
             sl->shadow.visible = g_list_prepend(sl->shadow.visible, t);
       }
 
