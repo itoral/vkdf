@@ -278,12 +278,18 @@ vkdf_scene_free(VkdfScene *s)
 
    if (s->thread.pool) {
       vkdf_thread_pool_wait(s->thread.pool);
-      g_free(s->thread.data);
       vkdf_thread_pool_free(s->thread.pool);
    }
 
+   for (uint32_t i = 0; i < s->thread.num_threads; i++)
+      g_list_free(s->thread.data[i].visible);
+   g_free(s->thread.data);
+
    g_list_free_full(s->set_ids, g_free);
    s->set_ids = NULL;
+
+   g_list_free(s->models);
+   s->models = NULL;
 
    for (uint32_t i = 0; i < s->num_tiles.total; i++)
       free_tile(&s->tiles[i]);
