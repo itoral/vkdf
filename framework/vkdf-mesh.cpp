@@ -301,7 +301,8 @@ vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh)
       return;
 
    VkDeviceSize index_data_size = get_index_data_size(mesh);
-   assert(index_data_size > 0);
+   if (index_data_size == 0)
+      return;
 
    mesh->index_buf =
       vkdf_create_buffer(ctx,
