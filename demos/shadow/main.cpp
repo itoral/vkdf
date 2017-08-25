@@ -497,7 +497,6 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res)
                           &res->cube_material_buf.buf,  // Buffers
                           offsets);                     // Offsets
 
-
    // Draw
    vkCmdDraw(res->cmd_buf,
              cube_mesh->vertices.size(),           // vertex count
@@ -989,6 +988,7 @@ static void
 init_meshes(VkdfContext *ctx, SceneResources *res)
 {
    res->cube_mesh = vkdf_cube_mesh_new(ctx);
+   res->cube_mesh->material_idx = 0;
    vkdf_mesh_fill_vertex_buffer(ctx, res->cube_mesh);
 
    res->cube_model = vkdf_model_new();
@@ -1017,6 +1017,7 @@ init_meshes(VkdfContext *ctx, SceneResources *res)
    vkdf_model_add_material(res->cube_model, &blue);
 
    res->tile_mesh = vkdf_tile_mesh_new(ctx);
+   res->tile_mesh->material_idx = 0;
    vkdf_mesh_fill_vertex_buffer(ctx, res->tile_mesh);
 
    res->tile_model = vkdf_model_new();
@@ -1232,7 +1233,12 @@ create_pipeline(VkdfContext *ctx, SceneResources *res, bool init_cache)
    // Vertex attribute binding 0: position, normal
    vi_binding[0].binding = 0;
    vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = 2 * sizeof(glm::vec3);
+   vi_binding[0].stride = vkdf_mesh_get_vertex_data_stride(res->cube_mesh);
+
+   // Since we use the same pipeline for all meshes, make sure they are
+   // compatible
+   assert(vkdf_mesh_get_vertex_data_stride(res->cube_mesh) ==
+          vkdf_mesh_get_vertex_data_stride(res->tile_mesh));
 
    // Vertex attribute binding 1: material index
    vi_binding[1].binding = 1;
@@ -1322,7 +1328,7 @@ create_shadow_pipeline(VkdfContext *ctx, SceneResources *res, bool init_cache)
    // Vertex attribute binding 0, location 0: position
    vi_binding[0].binding = 0;
    vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = 2 * sizeof(glm::vec3); // positon and normal are stored together
+   vi_binding[0].stride = vkdf_mesh_get_vertex_data_stride(res->cube_mesh);
 
    vi_attribs[0].binding = 0;
    vi_attribs[0].location = 0;
