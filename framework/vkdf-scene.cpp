@@ -1808,11 +1808,25 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
                                       &mesh->vertex_buf.buf,   // Buffers
                                       offsets);                // Offsets
 
-               vkCmdDraw(sl->shadow.cmd_buf,
-                         mesh->vertices.size(),                // vertex count
-                         set_info->shadow_caster_count,        // instance count
-                         0,                                    // first vertex
-                         set_info->shadow_caster_start_index); // first instance
+               if (!mesh->index_buf.buf) {
+                  vkCmdDraw(sl->shadow.cmd_buf,
+                            mesh->vertices.size(),                // vertex count
+                            set_info->shadow_caster_count,        // instance count
+                            0,                                    // first vertex
+                            set_info->shadow_caster_start_index); // first instance
+               } else {
+                  vkCmdBindIndexBuffer(sl->shadow.cmd_buf,
+                                       mesh->index_buf.buf,       // Buffer
+                                       0,                         // Offset
+                                       VK_INDEX_TYPE_UINT32);     // Index type
+
+                  vkCmdDrawIndexed(sl->shadow.cmd_buf,
+                                   mesh->indices.size(),                 // index count
+                                   set_info->shadow_caster_count,        // instance count
+                                   0,                                    // first index
+                                   0,                                    // first vertex
+                                   set_info->shadow_caster_start_index); // first instance
+               }
             }
          }
          set_iter = g_list_next(set_iter);
