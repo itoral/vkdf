@@ -181,12 +181,13 @@ model_fill_vertex_buffer(VkdfContext *ctx, VkdfModel *model)
    VK_CHECK(vkMapMemory(ctx->device, model->vertex_buf.mem,
                         0, vertex_data_size, 0, (void **) &map));
 
-   // Interleaved per-vertex attributes (position, normal, uv)
+   // Interleaved per-vertex attributes (position, normal, uv, material)
    VkDeviceSize byte_offset = 0;
    for (uint32_t m = 0; m < model->meshes.size(); m++) {
       VkdfMesh *mesh = model->meshes[m];
       bool has_normals = mesh->normals.size() > 0;
       bool has_uv = mesh->uvs.size() > 0;
+      bool has_material = mesh->material_idx != -1;
 
       model->vertex_buf_offsets.push_back(byte_offset);
 
@@ -204,6 +205,12 @@ model_fill_vertex_buffer(VkdfContext *ctx, VkdfModel *model)
          if (has_uv) {
             elem_size = sizeof(mesh->uvs[0]);
             memcpy(map + byte_offset, &mesh->uvs[i], elem_size);
+            byte_offset += elem_size;
+         }
+
+         if (has_material) {
+            elem_size = sizeof(mesh->material_idx);
+            memcpy(map + byte_offset, &mesh->material_idx, elem_size);
             byte_offset += elem_size;
          }
       }

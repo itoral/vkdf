@@ -176,12 +176,14 @@ get_vertex_data_stride(VkdfMesh *mesh)
    uint32_t has_vertices = MIN2(mesh->vertices.size(), 1);
    uint32_t has_normals = MIN2(mesh->normals.size(), 1);
    uint32_t has_uv = MIN2(mesh->uvs.size(), 1);
+   uint32_t has_material = mesh->material_idx == -1 ? 0 : 1;
 
    assert(has_vertices);
 
    return has_vertices * sizeof(glm::vec3) +
           has_normals  * sizeof(glm::vec3) +
-          has_uv       * sizeof(glm::vec2);
+          has_uv       * sizeof(glm::vec2) +
+          has_material * sizeof(int32_t);
 }
 
 uint32_t
@@ -196,14 +198,16 @@ get_vertex_data_size(VkdfMesh *mesh)
    uint32_t vertex_count = mesh->vertices.size();
    uint32_t normal_count = mesh->normals.size();
    uint32_t uv_count = mesh->uvs.size();
+   uint32_t material_count = (mesh->material_idx == -1 ? 0 : 1) * vertex_count;
 
    assert(vertex_count > 0 &&
           (vertex_count == normal_count || normal_count == 0) &&
           (vertex_count == uv_count || uv_count == 0));
 
-   return vertex_count * sizeof(glm::vec3) + // pos
-          normal_count * sizeof(glm::vec3) + // normal
-          uv_count     * sizeof(glm::vec2);  // uv
+   return vertex_count   * sizeof(glm::vec3) + // pos
+          normal_count   * sizeof(glm::vec3) + // normal
+          uv_count       * sizeof(glm::vec2) + // uv
+          material_count * sizeof(int32_t);    // material
 }
 
 VkDeviceSize
@@ -219,7 +223,7 @@ vkdf_mesh_get_vertex_data_size(VkdfMesh *mesh)
 void
 vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
 {
-   // Interleaved per-vertex attributes (position, normal, uv)
+   // Interleaved per-vertex attributes (position, normal, uv, material)
    if (mesh->vertex_buf.buf != 0)
       return;
 
@@ -234,6 +238,7 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
 
    bool has_normals = mesh->normals.size() > 0;
    bool has_uv = mesh->uvs.size() > 0;
+   bool has_material = mesh->material_idx != -1;
 
    uint8_t *map;
    VK_CHECK(vkMapMemory(ctx->device, mesh->vertex_buf.mem,
@@ -253,6 +258,12 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
       if (has_uv) {
          elem_size = sizeof(mesh->uvs[0]);
          memcpy(map, &mesh->uvs[i], elem_size);
+         map += elem_size;
+      }
+
+      if (has_material) {
+         elem_size = sizeof(mesh->material_idx);
+         memcpy(map, &mesh->material_idx, elem_size);
          map += elem_size;
       }
    }

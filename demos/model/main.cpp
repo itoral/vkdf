@@ -50,11 +50,6 @@ typedef struct {
    VkdfBuffer instance_buf;
 } DemoResources;
 
-typedef struct {
-   glm::vec3 pos;
-   glm::vec3 normal;
-} VertexData;
-
 static VkdfBuffer
 create_ubo(VkdfContext *ctx, uint32_t size, uint32_t mem_props)
 {
@@ -509,7 +504,8 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    VkVertexInputBindingDescription vi_bindings[2];
    vi_bindings[0].binding = 0;
    vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride = sizeof(VertexData);
+   vi_bindings[0].stride =
+      vkdf_mesh_get_vertex_data_stride(res->model->meshes[0]);
 
    // Vertex attribute binding 1: material index (per-instance)
    vi_bindings[1].binding = 1;
