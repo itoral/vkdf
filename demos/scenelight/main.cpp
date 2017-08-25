@@ -117,6 +117,8 @@ typedef struct {
    VkdfMesh *floor_mesh;
    VkdfModel *floor_model;
 
+   VkdfModel *tree_model;
+
    VkdfMesh *tile_mesh;
 } SceneResources;
 
@@ -341,6 +343,44 @@ record_scene_commands(VkdfContext *ctx,
                    cube_info->count,                    // instance count
                    0,                                   // first vertex
                    cube_info->start_index);             // first instance
+      }
+   }
+
+   VkdfSceneSetInfo *tree_info =
+      (VkdfSceneSetInfo *) g_hash_table_lookup(sets, "tree");
+
+   if (tree_info->count > 0) {
+      VkdfModel *model = res->tree_model;
+
+      // Pipeline
+      vkCmdBindPipeline(cmd_buf,
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        res->pipelines.obj.pipeline);
+
+      for (uint32_t i = 0; i < model->meshes.size(); i++) {
+         VkdfMesh *mesh = model->meshes[i];
+
+         // Bind index buffer
+         vkCmdBindIndexBuffer(cmd_buf,
+                              mesh->index_buf.buf,      // Buffer
+                              0,                        // Offset
+                              VK_INDEX_TYPE_UINT32);    // Index type
+
+         // Vertex buffers
+         const VkDeviceSize offsets[1] = { 0 };
+         vkCmdBindVertexBuffers(cmd_buf,
+                                0,                         // Start Binding
+                                1,                         // Binding Count
+                                &mesh->vertex_buf.buf,     // Buffers
+                                offsets);                  // Offsets
+
+         // Draw
+         vkCmdDrawIndexed(cmd_buf,
+                          mesh->indices.size(),                // index count
+                          tree_info->count,                    // instance count
+                          0,                                   // first index
+                          0,                                   // first vertex
+                          tree_info->start_index);             // first instance
       }
    }
 
@@ -592,12 +632,17 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
    }
 
    VkVertexInputBindingDescription vi_bindings[1];
-   VkVertexInputAttributeDescription vi_attribs[2];
+   VkVertexInputAttributeDescription vi_attribs[3];
 
-   // Vertex attribute binding 0: position, normal
+   // Vertex attribute binding 0: position, normal, material
    vi_bindings[0].binding = 0;
    vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride = 2 * sizeof(glm::vec3);
+   vi_bindings[0].stride = vkdf_mesh_get_vertex_data_stride(res->cube_mesh);
+
+   assert(vkdf_mesh_get_vertex_data_stride(res->tree_model->meshes[0]) ==
+          vi_bindings[0].stride);
+   assert(vkdf_mesh_get_vertex_data_stride(res->tree_model->meshes[1]) ==
+          vi_bindings[0].stride);
 
    // binding 0, location 0: position
    vi_attribs[0].binding = 0;
@@ -611,12 +656,18 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
    vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
    vi_attribs[1].offset = 12;
 
+   // binding 0, location 2: material
+   vi_attribs[2].binding = 0;
+   vi_attribs[2].location = 2;
+   vi_attribs[2].format = VK_FORMAT_R32_UINT;
+   vi_attribs[2].offset = 24;
+
    res->pipelines.obj.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
                                &res->pipelines.obj.cache,
                                1,
                                vi_bindings,
-                               2,
+                               3,
                                vi_attribs,
                                true,
                                res->render_pass,
@@ -642,12 +693,12 @@ init_floor_pipeline(SceneResources *res, bool init_cache)
    }
 
    VkVertexInputBindingDescription vi_bindings[1];
-   VkVertexInputAttributeDescription vi_attribs[2];
+   VkVertexInputAttributeDescription vi_attribs[3];
 
-   // Vertex attribute binding 0: position, normal
+   // Vertex attribute binding 0: position, normal, material
    vi_bindings[0].binding = 0;
    vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride = 2 * sizeof(glm::vec3);
+   vi_bindings[0].stride = vkdf_mesh_get_vertex_data_stride(res->floor_mesh);
 
    // binding 0, location 0: position
    vi_attribs[0].binding = 0;
@@ -661,12 +712,18 @@ init_floor_pipeline(SceneResources *res, bool init_cache)
    vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
    vi_attribs[1].offset = 12;
 
+   // binding 0, location 2: material
+   vi_attribs[2].binding = 0;
+   vi_attribs[2].location = 2;
+   vi_attribs[2].format = VK_FORMAT_R32_UINT;
+   vi_attribs[2].offset = 24;
+
    res->pipelines.floor.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
                                &res->pipelines.floor.cache,
                                1,
                                vi_bindings,
-                               2,
+                               3,
                                vi_attribs,
                                true,
                                res->render_pass,
@@ -742,6 +799,7 @@ init_meshes(SceneResources *res)
    white.shininess = 48.0f;
 
    res->cube_mesh = vkdf_cube_mesh_new(res->ctx);
+   res->cube_mesh->material_idx = 0;
    vkdf_mesh_fill_vertex_buffer(res->ctx, res->cube_mesh);
 
    res->cube_model = vkdf_model_new();
@@ -767,6 +825,7 @@ init_meshes(SceneResources *res)
    grey2.shininess = 48.0f;
 
    res->floor_mesh = vkdf_cube_mesh_new(res->ctx);
+   res->floor_mesh->material_idx = 0;
    vkdf_mesh_fill_vertex_buffer(res->ctx, res->floor_mesh);
 
    res->floor_model = vkdf_model_new();
@@ -775,6 +834,10 @@ init_meshes(SceneResources *res)
 
    vkdf_model_add_material(res->floor_model, &grey1);
    vkdf_model_add_material(res->floor_model, &grey2);
+
+   // Tree
+   res->tree_model = vkdf_model_load("./tree.obj");
+   vkdf_model_fill_vertex_buffers(res->ctx, res->tree_model, true);
 
    // Debug tile
    res->tile_mesh = vkdf_2d_tile_mesh_new(res->ctx);
@@ -785,6 +848,7 @@ init_meshes(SceneResources *res)
 static void
 init_objects(SceneResources *res)
 {
+   // Cubes
    glm::vec3 pos = glm::vec3(0.0f, 3.0f, 0.0f);
    VkdfObject *obj = vkdf_object_new_from_model(pos, res->cube_model);
    vkdf_object_set_scale(obj, glm::vec3(2.0f, 3.0f, 2.0f));
@@ -792,20 +856,30 @@ init_objects(SceneResources *res)
    vkdf_object_set_material_idx_base(obj, 0);
    vkdf_scene_add_object(res->scene, "cube", obj);
 
-   pos = glm::vec3(0.0f, 1.0f, -8.0f);
+   pos = glm::vec3(0.0f, 1.0f, -12.0f);
    obj = vkdf_object_new_from_model(pos, res->cube_model);
    vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_scale(obj, glm::vec3(3.0f, 1.0f, 3.0f));
    vkdf_object_set_material_idx_base(obj, 1);
    vkdf_scene_add_object(res->scene, "cube", obj);
 
-   pos = glm::vec3(-10.0f, 2.0f, -5.0f);
+   pos = glm::vec3(-12.0f, 2.0f, -5.0f);
    obj = vkdf_object_new_from_model(pos, res->cube_model);
    vkdf_object_set_lighting_behavior(obj, true, true);
+   vkdf_object_set_rotation(obj, glm::vec3(0.0f, 45.0f, 0.0f));
    vkdf_object_set_scale(obj, glm::vec3(3.0f, 2.0f, 2.0f));
    vkdf_object_set_material_idx_base(obj, 2);
    vkdf_scene_add_object(res->scene, "cube", obj);
 
+   // Tree
+   pos = glm::vec3(5.0f, 3.0f, -5.0f);
+   obj = vkdf_object_new_from_model(pos, res->tree_model);
+   vkdf_object_set_lighting_behavior(obj, true, true);
+   vkdf_object_set_scale(obj, glm::vec3(2.0f, 2.0f, 2.0f));
+   vkdf_object_set_material_idx_base(obj, 0);
+   vkdf_scene_add_object(res->scene, "tree", obj);
+
+   // Floor
    // FIXME: this should be handled in untiled-mode, maybe we should do that
    // automatically for any object that is too big or something...
    pos = glm::vec3(0.0f, 0.0f - 0.1f / 2.0f, 0.0f);
@@ -823,7 +897,7 @@ init_objects(SceneResources *res)
 static void
 init_lights(SceneResources *res)
 {
-   glm::vec4 origin = glm::vec4(5.0f, 10.0f, 5.0f, 2.0f);
+   glm::vec4 origin = glm::vec4(10.0f, 10.0f, 5.0f, 2.0f);
    glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    glm::vec4 ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
    glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
@@ -922,10 +996,9 @@ create_debug_tile_pipeline(SceneResources *res)
    VkVertexInputAttributeDescription vi_attribs[2];
 
    // Vertex attribute binding 0: position, uv
-   // Notice that mesh's positions are always a vec3
    vi_binding[0].binding = 0;
    vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = sizeof(glm::vec3) + sizeof(glm::vec2);
+   vi_binding[0].stride = vkdf_mesh_get_vertex_data_stride(res->tile_mesh);
 
    // binding 0, location 0: position
    vi_attribs[0].binding = 0;
@@ -1207,6 +1280,7 @@ destroy_models(SceneResources *res)
 {
    vkdf_model_free(res->ctx, res->cube_model);
    vkdf_model_free(res->ctx, res->floor_model);
+   vkdf_model_free(res->ctx, res->tree_model);
    vkdf_mesh_free(res->ctx, res->tile_mesh);
 }
 

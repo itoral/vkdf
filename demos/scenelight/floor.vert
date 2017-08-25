@@ -32,6 +32,7 @@ layout(std140, set = 2, binding = 1) uniform light_vp_ubo {
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
+layout(location = 2) in uint in_material_idx;
 
 layout(location = 0) out vec3 out_normal;
 layout(location = 1) flat out uint out_material_idx;
@@ -55,7 +56,7 @@ void main()
 
    out_material_idx =
       obj_data.model_idx * MAX_MATERIALS_PER_MODEL +
-      obj_data.material_base_idx;
+      obj_data.material_base_idx + in_material_idx;
 
    out_world_pos = world_pos;
 
