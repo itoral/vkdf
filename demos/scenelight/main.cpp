@@ -75,10 +75,6 @@ typedef struct {
    } ubos;
 
    struct {
-      VkSampler shadow_map;
-   } samplers;
-
-   struct {
       struct {
          VkShaderModule vs;
          VkShaderModule fs;
@@ -102,7 +98,6 @@ typedef struct {
       } pipeline;
       VkRenderPass renderpass;
       VkFramebuffer framebuffer;
-      VkSampler sampler;
       VkCommandBuffer cmd_buf;
       VkSemaphore draw_sem;
    } debug;
@@ -582,16 +577,17 @@ init_pipeline_descriptors(SceneResources *res)
                             res->descriptor_pool.sampler_pool,
                             res->pipelines.descr.shadow_map_sampler_layout);
 
-   res->samplers.shadow_map =
-      vkdf_create_sampler(res->ctx,
-                          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                          VK_FILTER_LINEAR,
-                          VK_SAMPLER_MIPMAP_MODE_NEAREST);
+   // FIXME: only supporting a single light for now
+   VkSampler shadow_map_sampler =
+      vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
+
+   VkdfImage *shadow_map_image =
+      vkdf_scene_light_get_shadow_map_image(res->scene, 0);
 
    vkdf_descriptor_set_sampler_update(res->ctx,
                                       res->pipelines.descr.shadow_map_sampler_set,
-                                      res->samplers.shadow_map,
-                                      res->scene->lights[0]->shadow.shadow_map.view,
+                                      shadow_map_sampler,
+                                      shadow_map_image->view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       0, 1);
 }
@@ -937,18 +933,17 @@ create_debug_tile_pipeline(SceneResources *res)
                             res->descriptor_pool.sampler_pool,
                             res->debug.pipeline.sampler_set_layout);
 
-   res->debug.sampler =
-      vkdf_create_sampler(res->ctx,
-                          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                          VK_FILTER_LINEAR,
-                          VK_SAMPLER_MIPMAP_MODE_NEAREST);
-
    // FIXME: only showing the first light in the scene
-   VkdfSceneLight *sl = res->scene->lights[0];
+   VkSampler shadow_map_sampler =
+      vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
+
+   VkdfImage *shadow_map_image =
+      vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+
    vkdf_descriptor_set_sampler_update(res->ctx,
                                       res->debug.pipeline.sampler_set,
-                                      res->debug.sampler,
-                                      sl->shadow.shadow_map.view,
+                                      shadow_map_sampler,
+                                      shadow_map_image->view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       0, 1);
 
@@ -1371,17 +1366,9 @@ destroy_debug_tile_resources(SceneResources *res)
    vkDestroyDescriptorSetLayout(res->ctx->device,
                                 res->debug.pipeline.sampler_set_layout, NULL);
 
-   vkDestroySampler(res->ctx->device, res->debug.sampler, NULL);
-
    vkDestroyFramebuffer(res->ctx->device, res->debug.framebuffer, NULL);
 
    vkDestroySemaphore(res->ctx->device, res->debug.draw_sem, NULL);
-}
-
-static void
-destroy_samplers(SceneResources *res)
-{
-   vkDestroySampler(res->ctx->device, res->samplers.shadow_map, NULL);
 }
 
 void
@@ -1397,7 +1384,6 @@ cleanup_resources(SceneResources *res)
    destroy_ubos(res);
    destroy_renderpasses(res);
    destroy_framebuffers(res);
-   destroy_samplers(res);
 
    vkdf_camera_free(res->camera);
 }

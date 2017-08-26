@@ -18,6 +18,7 @@ typedef struct {
       glm::mat4 viewproj;
       VkdfImage shadow_map;
       VkFramebuffer framebuffer;
+      VkSampler sampler;
       VkCommandBuffer cmd_buf;
       GList *visible;
    } shadow;
@@ -275,6 +276,20 @@ inline VkDeviceSize
 vkdf_scene_get_light_ubo_size(VkdfScene *s)
 {
    return s->ubo.light.size;
+}
+
+inline VkSampler
+vkdf_scene_light_get_shadow_map_sampler(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   return s->lights[index]->shadow.sampler;
+}
+
+inline VkdfImage *
+vkdf_scene_light_get_shadow_map_image(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   return &s->lights[index]->shadow.shadow_map;
 }
 
 inline uint32_t

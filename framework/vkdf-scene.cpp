@@ -234,6 +234,8 @@ destroy_light(VkdfScene *s, VkdfSceneLight *slight)
                            s->cmd_buf.pool[0], 1, &slight->shadow.cmd_buf);
    if (slight->shadow.framebuffer)
       vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
+   if (slight->shadow.sampler)
+      vkDestroySampler(s->ctx->device, slight->shadow.sampler, NULL);
    g_free(slight);
 }
 
@@ -533,6 +535,11 @@ vkdf_scene_add_light(VkdfScene *s,
       slight->shadow.spec = *spec;
       slight->shadow.shadow_map =
          create_shadow_map_image(s, spec->shadow_map_size);
+      slight->shadow.sampler =
+         vkdf_create_sampler(s->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_LINEAR,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST);
       compute_light_view_projection(slight);
       slight->dirty = true;
       s->has_shadow_caster_lights = true;
