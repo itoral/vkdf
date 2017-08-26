@@ -2,11 +2,12 @@ import sys
 import re
 
 def processline(line, regexp):
-   m = regexp.match(line)
+   stripped_line = line.strip(' ')
+   m = regexp.match(stripped_line)
    inc_lines = [line]
    if m:
       s = m.span()
-      inc_filename = line[s[0]+8:s[1]-1]
+      inc_filename = stripped_line[s[0]+8:s[1]-1]
       inc_lines = open(inc_filename).readlines()
    return inc_lines
 
