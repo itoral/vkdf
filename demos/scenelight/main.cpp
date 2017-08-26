@@ -211,6 +211,49 @@ record_render_pass_begin(VkdfContext *ctx,
    rp_begin->pClearValues = res->clear_values;
 }
 
+static void
+record_instanced_draw(VkCommandBuffer cmd_buf,
+                      VkPipeline pipeline,
+                      VkdfModel *model,
+                      uint32_t count,
+                      uint32_t first_instance)
+{
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     pipeline);
+
+   for (uint32_t i = 0; i < model->meshes.size(); i++) {
+      VkdfMesh *mesh = model->meshes[i];
+
+      const VkDeviceSize offsets[1] = { 0 };
+      vkCmdBindVertexBuffers(cmd_buf,
+                             0,                         // Start Binding
+                             1,                         // Binding Count
+                             &mesh->vertex_buf.buf,     // Buffers
+                             offsets);                  // Offsets
+
+      if (mesh->index_buf.buf == 0) {
+         vkCmdDraw(cmd_buf,
+                   mesh->vertices.size(),               // vertex count
+                   count,                               // instance count
+                   0,                                   // first vertex
+                   first_instance);                     // first instance
+      } else {
+         vkCmdBindIndexBuffer(cmd_buf,
+                              mesh->index_buf.buf,      // Buffer
+                              0,                        // Offset
+                              VK_INDEX_TYPE_UINT32);    // Index type
+
+         vkCmdDrawIndexed(cmd_buf,
+                          mesh->indices.size(),         // index count
+                          count,                        // instance count
+                          0,                            // first index
+                          0,                            // first vertex
+                          first_instance);              // first instance
+      }
+   }
+}
+
 static VkCommandBuffer
 record_scene_commands(VkdfContext *ctx,
                       VkCommandPool cmd_pool,
@@ -288,102 +331,39 @@ record_scene_commands(VkdfContext *ctx,
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
 
-   VkdfSceneSetInfo *cube_info =
-      (VkdfSceneSetInfo *) g_hash_table_lookup(sets, "cube");
+   char *set_id;
+   VkdfSceneSetInfo *set_info;
+   GHashTableIter iter;
+   g_hash_table_iter_init(&iter, sets);
+   while (g_hash_table_iter_next(&iter, (void **)&set_id, (void **)&set_info)) {
+      if (!set_info || set_info->count == 0)
+         continue;
 
-   if (cube_info->count > 0) {
-      VkdfModel *model = res->cube_model;
-
-      // Pipeline
-      vkCmdBindPipeline(cmd_buf,
-                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        res->pipelines.obj.pipeline);
-
-      for (uint32_t i = 0; i < model->meshes.size(); i++) {
-         VkdfMesh *mesh = model->meshes[i];
-
-         // Vertex buffers
-         const VkDeviceSize offsets[1] = { 0 };
-         vkCmdBindVertexBuffers(cmd_buf,
-                                0,                         // Start Binding
-                                1,                         // Binding Count
-                                &mesh->vertex_buf.buf,     // Buffers
-                                offsets);                  // Offsets
-         // Draw
-         vkCmdDraw(cmd_buf,
-                   mesh->vertices.size(),               // vertex count
-                   cube_info->count,                    // instance count
-                   0,                                   // first vertex
-                   cube_info->start_index);             // first instance
+      if (!strcmp(set_id, "cube")) {
+         record_instanced_draw(cmd_buf,
+                               res->pipelines.obj.pipeline,
+                               res->cube_model,
+                               set_info->count, set_info->start_index);
+         continue;
       }
-   }
 
-   VkdfSceneSetInfo *tree_info =
-      (VkdfSceneSetInfo *) g_hash_table_lookup(sets, "tree");
-
-   if (tree_info->count > 0) {
-      VkdfModel *model = res->tree_model;
-
-      // Pipeline
-      vkCmdBindPipeline(cmd_buf,
-                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        res->pipelines.obj.pipeline);
-
-      for (uint32_t i = 0; i < model->meshes.size(); i++) {
-         VkdfMesh *mesh = model->meshes[i];
-
-         // Bind index buffer
-         vkCmdBindIndexBuffer(cmd_buf,
-                              mesh->index_buf.buf,      // Buffer
-                              0,                        // Offset
-                              VK_INDEX_TYPE_UINT32);    // Index type
-
-         // Vertex buffers
-         const VkDeviceSize offsets[1] = { 0 };
-         vkCmdBindVertexBuffers(cmd_buf,
-                                0,                         // Start Binding
-                                1,                         // Binding Count
-                                &mesh->vertex_buf.buf,     // Buffers
-                                offsets);                  // Offsets
-
-         // Draw
-         vkCmdDrawIndexed(cmd_buf,
-                          mesh->indices.size(),                // index count
-                          tree_info->count,                    // instance count
-                          0,                                   // first index
-                          0,                                   // first vertex
-                          tree_info->start_index);             // first instance
+      if (!strcmp(set_id, "tree")) {
+         record_instanced_draw(cmd_buf,
+                               res->pipelines.obj.pipeline,
+                               res->tree_model,
+                               set_info->count, set_info->start_index);
+         continue;
       }
-   }
 
-   VkdfSceneSetInfo *floor_info =
-      (VkdfSceneSetInfo *) g_hash_table_lookup(sets, "floor");
-
-   if (floor_info->count > 0) {
-      VkdfModel *model = res->floor_model;
-
-      // Pipeline
-      vkCmdBindPipeline(cmd_buf,
-                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        res->pipelines.floor.pipeline);
-
-      for (uint32_t i = 0; i < model->meshes.size(); i++) {
-         VkdfMesh *mesh = model->meshes[i];
-
-         // Vertex buffers
-         const VkDeviceSize offsets[1] = { 0 };
-         vkCmdBindVertexBuffers(cmd_buf,
-                                0,                         // Start Binding
-                                1,                         // Binding Count
-                                &mesh->vertex_buf.buf,     // Buffers
-                                offsets);                  // Offsets
-         // Draw
-         vkCmdDraw(cmd_buf,
-                   mesh->vertices.size(),                // vertex count
-                   floor_info->count,                    // instance count
-                   0,                                    // first vertex
-                   floor_info->start_index);             // first instance
+      if (!strcmp(set_id, "floor")) {
+         record_instanced_draw(cmd_buf,
+                               res->pipelines.floor.pipeline,
+                               res->floor_model,
+                               set_info->count, set_info->start_index);
+         continue;
       }
+
+      assert(!"unkown object category");
    }
 
    vkdf_command_buffer_end(cmd_buf);
