@@ -378,12 +378,12 @@ init_scene(SceneResources *res)
 {
    VkdfContext *ctx = res->ctx;
 
-   res->camera = vkdf_camera_new(0.0f, 10.0f, -20.0f,
+   res->camera = vkdf_camera_new(0.0f, 10.0f, -30.0f,
                                  0.0f, 180.0f, 0.0f);
    // FIXME: we should pass the projection in the constructor
    vkdf_camera_set_projection(res->camera,
                               45.0f, 0.1f, 500.0f, WIN_WIDTH / WIN_HEIGHT);
-   vkdf_camera_look_at(res->camera, 0.0f, 0.0f, 0.0f);
+   vkdf_camera_look_at(res->camera, 0.0f, 3.0f, 0.0f);
 
    res->images.color =
       vkdf_create_image(ctx,
@@ -750,6 +750,18 @@ init_meshes(SceneResources *res)
    blue.specular = glm::vec4(0.75f, 0.75f, 1.0f, 1.0f);
    blue.shininess = 8.0f;
 
+   VkdfMaterial white;
+   white.diffuse = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+   white.ambient = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+   white.specular = glm::vec4(0.75f, 0.75f, 1.0f, 1.0f);
+   white.shininess = 8.0f;
+
+   VkdfMaterial yellow;
+   yellow.diffuse = glm::vec4(0.7f, 0.7f, 0.15f, 1.0f);
+   yellow.ambient = glm::vec4(0.7f, 0.7f, 0.15f, 1.0f);
+   yellow.specular = glm::vec4(0.75f, 0.75f, 1.0f, 1.0f);
+   yellow.shininess = 8.0f;
+
    res->cube_mesh = vkdf_cube_mesh_new(res->ctx);
    res->cube_mesh->material_idx = 0;
    vkdf_mesh_fill_vertex_buffer(res->ctx, res->cube_mesh);
@@ -761,6 +773,7 @@ init_meshes(SceneResources *res)
    vkdf_model_add_material(res->cube_model, &red);
    vkdf_model_add_material(res->cube_model, &green);
    vkdf_model_add_material(res->cube_model, &blue);
+   vkdf_model_add_material(res->cube_model, &white);
 
    // Floor
    VkdfMaterial grey1;
@@ -789,6 +802,11 @@ init_meshes(SceneResources *res)
    // Tree
    res->tree_model = vkdf_model_load("./tree.obj");
    vkdf_model_fill_vertex_buffers(res->ctx, res->tree_model, true);
+
+   /* Add another set of materials so we can have a tree variant */
+   vkdf_model_add_material(res->tree_model, &white);
+   vkdf_model_add_material(res->tree_model, &red);
+   vkdf_model_add_material(res->tree_model, &yellow);
 
    // Debug tile
    res->tile_mesh = vkdf_2d_tile_mesh_new(res->ctx);
@@ -822,12 +840,26 @@ init_objects(SceneResources *res)
    vkdf_object_set_material_idx_base(obj, 2);
    vkdf_scene_add_object(res->scene, "cube", obj);
 
-   // Tree
+   pos = glm::vec3(0.0f, 10.0f, 10.0f);
+   obj = vkdf_object_new_from_model(pos, res->cube_model);
+   vkdf_object_set_scale(obj, glm::vec3(20.0f, 10.0f, 1.0f));
+   vkdf_object_set_lighting_behavior(obj, true, true);
+   vkdf_object_set_material_idx_base(obj, 3);
+   vkdf_scene_add_object(res->scene, "cube", obj);
+
+   // Trees
    pos = glm::vec3(5.0f, 3.0f, -5.0f);
    obj = vkdf_object_new_from_model(pos, res->tree_model);
    vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_scale(obj, glm::vec3(2.0f, 2.0f, 2.0f));
    vkdf_object_set_material_idx_base(obj, 0);
+   vkdf_scene_add_object(res->scene, "tree", obj);
+
+   pos = glm::vec3(-5.0f, 5.0f, 4.0f);
+   obj = vkdf_object_new_from_model(pos, res->tree_model);
+   vkdf_object_set_lighting_behavior(obj, true, true);
+   vkdf_object_set_scale(obj, glm::vec3(3.0f, 3.0f, 3.0f));
+   vkdf_object_set_material_idx_base(obj, 3);
    vkdf_scene_add_object(res->scene, "tree", obj);
 
    // Floor
@@ -851,9 +883,9 @@ init_lights(SceneResources *res)
    // Light 0
    uint32_t idx = 0;
    glm::vec4 origin = glm::vec4(10.0f, 10.0f, 5.0f, 2.0f);
-   glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-   glm::vec4 ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
-   glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+   glm::vec4 diffuse = glm::vec4(0.25f, 1.0f, 0.25f, 0.0f);
+   glm::vec4 ambient = glm::vec4(0.01f, 0.04f, 0.01f, 1.0f);
+   glm::vec4 specular = glm::vec4(0.7f, 1.0f, 0.7f, 0.0f);
    glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
    float cutoff_angle = DEG_TO_RAD(90.0f / 2.0f);
 
@@ -875,11 +907,11 @@ init_lights(SceneResources *res)
 
    // Light 1
    idx++;
-   origin = glm::vec4(-15.0f, 15.0f, -30.0f, 2.0f);
-   diffuse = glm::vec4(0.25f, 0.25f, 1.0f, 0.0f);
-   ambient = glm::vec4(0.01f, 0.01f, 0.01f, 1.0f);
-   specular = glm::vec4(0.9f, 0.8f, 1.0f, 0.0f);
-   attenuation = glm::vec4(0.05f, 0.025f, 0.0005f, 0.0f);
+   origin = glm::vec4(-15.0f, 5.0f, -30.0f, 2.0f);
+   diffuse = glm::vec4(1.0f, 0.25f, 0.25f, 0.0f);
+   ambient = glm::vec4(0.04f, 0.01f, 0.01f, 1.0f);
+   specular = glm::vec4(1.0f, 0.7f, 0.7f, 0.0f);
+   attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
    cutoff_angle = DEG_TO_RAD(50.0f / 2.0f);
 
    res->lights[idx] =
@@ -887,7 +919,7 @@ init_lights(SceneResources *res)
                                diffuse, ambient, specular,
                                attenuation);
 
-   vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 20.0f));
+   vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 10.0f));
    vkdf_light_enable_shadows(res->lights[idx], true);
 
    shadow_spec.shadow_map_near = 0.1f;

@@ -1123,7 +1123,7 @@ create_static_material_ubo(VkdfScene *s)
    // which could happen if different set-ids share the same model. It is
    // fine though, since we don't handle the case of shared models when
    // we set up the static object ubo either.
-   const uint32_t MAX_MATERIALS_PER_MODEL = 4;
+   const uint32_t MAX_MATERIALS_PER_MODEL = 8;
 
    uint32_t num_models = g_list_length(s->models);
    s->ubo.material.size = num_models * MAX_MATERIALS_PER_MODEL *
