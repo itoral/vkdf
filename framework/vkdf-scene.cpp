@@ -350,6 +350,11 @@ vkdf_scene_free(VkdfScene *s)
       vkFreeMemory(s->ctx->device, s->ubo.material.buf.mem, NULL);
    }
 
+   if (s->ubo.light.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->ubo.light.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->ubo.light.buf.mem, NULL);
+   }
+
    if (s->ubo.shadow_map.buf.buf) {
       vkDestroyBuffer(s->ctx->device, s->ubo.shadow_map.buf.buf, NULL);
       vkFreeMemory(s->ctx->device, s->ubo.shadow_map.buf.mem, NULL);
@@ -951,6 +956,56 @@ create_static_object_ubo(VkdfScene *s)
    vkUnmapMemory(s->ctx->device, s->ubo.obj.buf.mem);
 }
 
+static void
+create_static_light_ubo(VkdfScene *s)
+{
+   uint32_t num_lights = s->lights.size();
+   if (num_lights == 0)
+      return;
+
+   // Ubo data: light source description and View/Projection matrix
+   uint32_t light_data_size = ALIGN(sizeof(VkdfLight), 16) +
+                              ALIGN(sizeof(glm::mat4), 16);
+   s->ubo.light.size = num_lights * light_data_size;
+   s->ubo.light.buf = vkdf_create_buffer(s->ctx, 0,
+                                         s->ubo.light.size,
+                                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   uint8_t *mem;
+   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.light.buf.mem,
+                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+
+   // First we pack light descriptions
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      VkDeviceSize offset = i * ALIGN(sizeof(VkdfLight), 16);
+      memcpy(mem + offset, sl->light, sizeof(VkdfLight));
+   }
+
+   // Next we pack light view/projecion matrices
+   VkDeviceSize base_offset = num_lights * ALIGN(sizeof(VkdfLight), 16);
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      VkDeviceSize offset = base_offset + i * ALIGN(sizeof(glm::mat4), 16);
+      // View/Projection (only needing for shadow mapping)
+      if (sl->light->casts_shadows)
+         memcpy(mem + offset, &sl->shadow.viewproj[0][0], sizeof(VkdfLight));
+   }
+
+   if (!(s->ubo.light.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+      VkMappedMemoryRange range;
+      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+      range.pNext = NULL;
+      range.memory = s->ubo.light.buf.mem;
+      range.offset = 0;
+      range.size = VK_WHOLE_SIZE;
+      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
+   }
+
+   vkUnmapMemory(s->ctx->device, s->ubo.light.buf.mem);
+}
+
 /**
  * Creates a UBO with the model matrices for each object that can cast
  * shadows (the ones we need to render to the shadow map).
@@ -1147,6 +1202,7 @@ prepare_scene_objects(VkdfScene *s)
 
    create_static_object_ubo(s);
    create_static_material_ubo(s);
+   create_static_light_ubo(s);
    if (s->has_shadow_caster_lights)
       create_static_shadow_map_ubo(s);
 

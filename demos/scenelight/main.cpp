@@ -72,10 +72,6 @@ typedef struct {
          VkdfBuffer buf;
          VkDeviceSize size;
       } camera_view;
-      struct {
-         VkdfBuffer buf;
-         VkDeviceSize size;
-      } light;
    } ubos;
 
    struct {
@@ -160,25 +156,6 @@ init_ubos(SceneResources *res)
                                           res->ubos.camera_view.size,
                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-
-   // Light
-   struct {
-      VkdfLight light;
-      glm::mat4 viewproj;
-   } light_data;
-   res->ubos.light.size = sizeof(light_data);
-   res->ubos.light.buf = create_ubo(res->ctx,
-                                    res->ubos.light.size,
-                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-
-   memcpy(&light_data.light, res->light, sizeof(light_data.light));
-   memcpy(&light_data.viewproj[0][0],
-          &res->scene->lights[0]->shadow.viewproj[0][0],
-          sizeof(light_data.viewproj));
-   vkdf_buffer_map_and_fill(res->ctx, res->ubos.light.buf,
-                            0, res->ubos.light.size, &light_data);
-   assert(res->ubos.light.size == sizeof(light_data));
 }
 
 static VkCommandBuffer
@@ -584,18 +561,20 @@ init_pipeline_descriptors(SceneResources *res)
                             res->descriptor_pool.static_ubo_pool,
                             res->pipelines.descr.light_layout);
 
+   VkdfBuffer *light_ubo = vkdf_scene_get_light_ubo(res->scene);
+   uint32_t num_lights = vkdf_scene_get_num_lights(res->scene);
    ubo_offset = 0;
-   ubo_size = sizeof(VkdfLight);
+   ubo_size = num_lights * ALIGN(sizeof(VkdfLight), 16);
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
-                                     res->ubos.light.buf.buf,
+                                     light_ubo->buf,
                                      0, 1, &ubo_offset, &ubo_size, false);
 
    ubo_offset = ubo_size;
-   ubo_size = sizeof(glm::mat4);
+   ubo_size = num_lights * ALIGN(sizeof(glm::mat4), 16);
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
-                                     res->ubos.light.buf.buf,
+                                     light_ubo->buf,
                                      1, 1, &ubo_offset, &ubo_size, false);
 
    res->pipelines.descr.shadow_map_sampler_set =
@@ -1353,9 +1332,6 @@ destroy_ubos(SceneResources *res)
 {
    vkDestroyBuffer(res->ctx->device, res->ubos.camera_view.buf.buf, NULL);
    vkFreeMemory(res->ctx->device, res->ubos.camera_view.buf.mem, NULL);
-
-   vkDestroyBuffer(res->ctx->device, res->ubos.light.buf.buf, NULL);
-   vkFreeMemory(res->ctx->device, res->ubos.light.buf.mem, NULL);
 }
 
 static void

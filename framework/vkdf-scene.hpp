@@ -189,6 +189,10 @@ struct _VkdfScene {
       } material;
       struct {
          VkdfBuffer buf;
+         VkDeviceSize size;
+      } light;
+      struct {
+         VkdfBuffer buf;
          VkDeviceSize inst_size;
          VkDeviceSize size;
       } shadow_map;
@@ -253,6 +257,24 @@ inline VkDeviceSize
 vkdf_scene_get_material_ubo_size(VkdfScene *s)
 {
    return s->ubo.material.size;
+}
+
+inline uint32_t
+vkdf_scene_get_num_lights(VkdfScene *s)
+{
+   return s->lights.size();
+}
+
+inline VkdfBuffer *
+vkdf_scene_get_light_ubo(VkdfScene *s)
+{
+   return &s->ubo.light.buf;
+}
+
+inline VkDeviceSize
+vkdf_scene_get_light_ubo_size(VkdfScene *s)
+{
+   return s->ubo.light.size;
 }
 
 inline uint32_t
