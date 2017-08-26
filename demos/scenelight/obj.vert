@@ -5,6 +5,7 @@
 
 const int MAX_INSTANCES = 16 * 1024;
 const int MAX_MATERIALS_PER_MODEL = 4;
+const int NUM_LIGHTS = 2;
 
 layout(push_constant) uniform pcb {
    mat4 Projection;
@@ -27,7 +28,7 @@ layout(std140, set = 1, binding = 0) uniform ubo_obj_data {
 } OID;
 
 layout(std140, set = 2, binding = 1) uniform light_vp_ubo {
-   mat4 ViewProjection;
+   mat4 ViewProjection[NUM_LIGHTS];
 } LVP;
 
 layout(location = 0) in vec3 in_position;
@@ -38,8 +39,8 @@ layout(location = 0) out vec3 out_normal;
 layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec4 out_world_pos;
 layout(location = 3) out vec3 out_view_dir;
-layout(location = 4) out vec4 out_light_space_pos;
-layout(location = 5) flat out uint out_receives_shadows;
+layout(location = 4) flat out uint out_receives_shadows;
+layout(location = 5) out vec4 out_light_space_pos[NUM_LIGHTS];
 
 void main()
 {
@@ -63,7 +64,8 @@ void main()
    out_view_dir =
       normalize(vec3(CD.ViewInv * vec4(0.0, 0.0, 0.0, 1.0) - out_world_pos));
 
-   out_light_space_pos = LVP.ViewProjection * out_world_pos;
-
    out_receives_shadows = obj_data.receives_shadows;
+
+   for (int i = 0; i < NUM_LIGHTS; i++)
+      out_light_space_pos[i] = LVP.ViewProjection[i] * out_world_pos;
 }

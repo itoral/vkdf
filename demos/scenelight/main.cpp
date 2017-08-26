@@ -3,6 +3,8 @@
 const float WIN_WIDTH  = 800.0f;
 const float WIN_HEIGHT = 600.0f;
 
+const uint32_t NUM_LIGHTS = 2;
+
 // ----------------------------------------------------------------------------
 // Renders a scene with lighting
 //
@@ -19,7 +21,7 @@ typedef struct {
    VkdfScene *scene;
 
    VkdfCamera *camera;
-   VkdfLight *light;
+   VkdfLight *lights[NUM_LIGHTS];
 
    VkRenderPass render_pass;
    VkClearValue clear_values[2];
@@ -472,7 +474,7 @@ init_pipeline_descriptors(SceneResources *res)
                                             false);
 
    res->pipelines.descr.shadow_map_sampler_layout =
-      vkdf_create_sampler_descriptor_set_layout(res->ctx, 0, 1,
+      vkdf_create_sampler_descriptor_set_layout(res->ctx, 0, NUM_LIGHTS,
                                                 VK_SHADER_STAGE_FRAGMENT_BIT);
 
    VkDescriptorSetLayout layouts[] = {
@@ -557,19 +559,20 @@ init_pipeline_descriptors(SceneResources *res)
                             res->descriptor_pool.sampler_pool,
                             res->pipelines.descr.shadow_map_sampler_layout);
 
-   // FIXME: only supporting a single light for now
-   VkSampler shadow_map_sampler =
-      vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
+   for (uint32_t i = 0; i < NUM_LIGHTS; i++) {
+      VkSampler shadow_map_sampler =
+         vkdf_scene_light_get_shadow_map_sampler(res->scene, i);
 
-   VkdfImage *shadow_map_image =
-      vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+      VkdfImage *shadow_map_image =
+         vkdf_scene_light_get_shadow_map_image(res->scene, i);
 
-   vkdf_descriptor_set_sampler_update(res->ctx,
-                                      res->pipelines.descr.shadow_map_sampler_set,
-                                      shadow_map_sampler,
-                                      shadow_map_image->view,
-                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                      0, 1);
+      vkdf_descriptor_set_sampler_update(res->ctx,
+                                         res->pipelines.descr.shadow_map_sampler_set,
+                                         shadow_map_sampler,
+                                         shadow_map_image->view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                         i, 1);
+   }
 }
 
 static void
@@ -730,28 +733,22 @@ init_meshes(SceneResources *res)
 {
    // Cube
    VkdfMaterial red;
-   red.diffuse = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
-   red.ambient = glm::vec4(0.5f, 0.0f, 0.0f, 1.0f);
+   red.diffuse = glm::vec4(0.80f, 0.15f, 0.15f, 1.0f);
+   red.ambient = glm::vec4(0.80f, 0.15f, 0.15f, 1.0f);
    red.specular = glm::vec4(1.0f, 0.75f, 0.75f, 1.0f);
-   red.shininess = 48.0f;
+   red.shininess = 8.0f;
 
    VkdfMaterial green;
-   green.diffuse = glm::vec4(0.0f, 0.5f, 0.0f, 1.0f);
-   green.ambient = glm::vec4(0.0f, 0.5f, 0.0f, 1.0f);
+   green.diffuse = glm::vec4(0.15f, 0.80f, 0.15f, 1.0f);
+   green.ambient = glm::vec4(0.15f, 0.80f, 0.15f, 1.0f);
    green.specular = glm::vec4(0.75f, 1.0f, 0.75f, 1.0f);
-   green.shininess = 48.0f;
+   green.shininess = 8.0f;
 
    VkdfMaterial blue;
-   blue.diffuse = glm::vec4(0.0f, 0.0f, 0.5f, 1.0f);
-   blue.ambient = glm::vec4(0.0f, 0.0f, 0.5f, 1.0f);
+   blue.diffuse = glm::vec4(0.15f, 0.15f, 0.80f, 1.0f);
+   blue.ambient = glm::vec4(0.15f, 0.15f, 0.80f, 1.0f);
    blue.specular = glm::vec4(0.75f, 0.75f, 1.0f, 1.0f);
-   blue.shininess = 48.0f;
-
-   VkdfMaterial white;
-   white.diffuse = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
-   white.ambient = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
-   white.specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-   white.shininess = 48.0f;
+   blue.shininess = 8.0f;
 
    res->cube_mesh = vkdf_cube_mesh_new(res->ctx);
    res->cube_mesh->material_idx = 0;
@@ -764,20 +761,19 @@ init_meshes(SceneResources *res)
    vkdf_model_add_material(res->cube_model, &red);
    vkdf_model_add_material(res->cube_model, &green);
    vkdf_model_add_material(res->cube_model, &blue);
-   vkdf_model_add_material(res->cube_model, &white);
 
    // Floor
    VkdfMaterial grey1;
    grey1.diffuse = glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
    grey1.ambient = glm::vec4(0.75f, 0.75f, 0.75f, 1.0f);
    grey1.specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-   grey1.shininess = 48.0f;
+   grey1.shininess = 4.0f;
 
    VkdfMaterial grey2;
    grey2.diffuse = glm::vec4(0.25f, 0.25f, 0.25f, 1.0f);
    grey2.ambient = glm::vec4(0.25f, 0.25f, 0.25f, 1.0f);
    grey2.specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-   grey2.shininess = 48.0f;
+   grey2.shininess = 4.0f;
 
    res->floor_mesh = vkdf_cube_mesh_new(res->ctx);
    res->floor_mesh->material_idx = 0;
@@ -852,21 +848,22 @@ init_objects(SceneResources *res)
 static void
 init_lights(SceneResources *res)
 {
+   // Light 0
+   uint32_t idx = 0;
    glm::vec4 origin = glm::vec4(10.0f, 10.0f, 5.0f, 2.0f);
    glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    glm::vec4 ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
    glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-   glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.01f, 0.0f);
+   glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
    float cutoff_angle = DEG_TO_RAD(90.0f / 2.0f);
 
-   res->light =
+   res->lights[idx] =
       vkdf_light_new_spotlight(origin, cutoff_angle,
                                diffuse, ambient, specular,
                                attenuation);
 
-   vkdf_light_look_at(res->light, glm::vec3(0.0f, 0.0f, 0.0f));
-
-   vkdf_light_enable_shadows(res->light, true);
+   vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 0.0f));
+   vkdf_light_enable_shadows(res->lights[idx], true);
 
    VkdfSceneShadowSpec shadow_spec;
    shadow_spec.shadow_map_near = 0.1f;
@@ -874,7 +871,31 @@ init_lights(SceneResources *res)
    shadow_spec.shadow_map_size = 1024;
    shadow_spec.depth_bias_const_factor = 4.0f;
    shadow_spec.depth_bias_slope_factor = 1.5f;
-   vkdf_scene_add_light(res->scene, res->light, &shadow_spec);
+   vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
+
+   // Light 1
+   idx++;
+   origin = glm::vec4(-15.0f, 15.0f, -30.0f, 2.0f);
+   diffuse = glm::vec4(0.25f, 0.25f, 1.0f, 0.0f);
+   ambient = glm::vec4(0.01f, 0.01f, 0.01f, 1.0f);
+   specular = glm::vec4(0.9f, 0.8f, 1.0f, 0.0f);
+   attenuation = glm::vec4(0.05f, 0.025f, 0.0005f, 0.0f);
+   cutoff_angle = DEG_TO_RAD(50.0f / 2.0f);
+
+   res->lights[idx] =
+      vkdf_light_new_spotlight(origin, cutoff_angle,
+                               diffuse, ambient, specular,
+                               attenuation);
+
+   vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 20.0f));
+   vkdf_light_enable_shadows(res->lights[idx], true);
+
+   shadow_spec.shadow_map_near = 0.1f;
+   shadow_spec.shadow_map_far = 100.0f;
+   shadow_spec.shadow_map_size = 1024;
+   shadow_spec.depth_bias_const_factor = 4.0f;
+   shadow_spec.depth_bias_slope_factor = 1.5f;
+   vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 }
 
 static void
@@ -917,8 +938,9 @@ create_debug_tile_pipeline(SceneResources *res)
    VkSampler shadow_map_sampler =
       vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
 
-   VkdfImage *shadow_map_image =
+    VkdfImage *shadow_map_image =
       vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+
 
    vkdf_descriptor_set_sampler_update(res->ctx,
                                       res->debug.pipeline.sampler_set,
