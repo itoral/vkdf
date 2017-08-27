@@ -4,7 +4,6 @@ SUBDIRS = triangle \
           depth \
           mesh \
           model \
-          light \
           shadow \
           scene \
           scenelight
