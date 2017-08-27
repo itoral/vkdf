@@ -144,3 +144,65 @@ vkdf_box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
 
    return result;
 }
+
+uint32_t
+vkdf_box_is_in_cone(VkdfBox *box, glm::vec3 top, glm::vec3 dir, float cutoff)
+{
+   // Consider some errors margin to account for accumulated precission errors
+   // in the computations and specially, CPU/GPU precission differences in
+   // trigonometric functions, etc. This error margin is not perfect though,
+   // the cosine is not a linear function its value varies more rapidly
+   // for some angle ranges than others, so ideally, we would also want to
+   // modulate this error margin in similar fasion.
+   const float error_margin = 0.05f;
+
+   vkdf_vec3_normalize(&dir);
+   cutoff = fabs(cutoff);
+
+   glm::vec3 xmin = box->center - box->w;
+   glm::vec3 vmin = xmin - top;
+   vkdf_vec3_normalize(&vmin);
+   float cos_min = vkdf_vec3_dot(vmin, dir);
+
+   glm::vec3 xmax = box->center + box->w;
+   glm::vec3 vmax = xmax - top;
+   vkdf_vec3_normalize(&vmax);
+   float cos_max = vkdf_vec3_dot(vmax, dir);
+
+   if (((vmin.x < 0) == (vmax.x < 0)) &&
+       (fabs(cos_min) + error_margin < cutoff &&
+        fabs(cos_max) + error_margin < cutoff))
+      return OUTSIDE;
+
+   glm::vec3 ymin = box->center - box->h;
+   vmin = ymin - top;
+   vkdf_vec3_normalize(&vmin);
+   cos_min = vkdf_vec3_dot(vmin, dir);
+
+   glm::vec3 ymax = box->center + box->h;
+   vmax = ymax - top;
+   vkdf_vec3_normalize(&vmax);
+   cos_max = vkdf_vec3_dot(vmax, dir);
+
+   if (((vmin.y < 0) == (vmax.y < 0)) &&
+       (fabs(cos_min) + error_margin < cutoff &&
+        fabs(cos_max) + error_margin < cutoff))
+      return OUTSIDE;
+
+   glm::vec3 zmin = box->center - box->d;
+   vmin = zmin - top;
+   vkdf_vec3_normalize(&vmin);
+   cos_min = vkdf_vec3_dot(vmin, dir);
+
+   glm::vec3 zmax = box->center + box->d;
+   vmax = zmax - top;
+   vkdf_vec3_normalize(&vmax);
+   cos_max = vkdf_vec3_dot(vmax, dir);
+
+   if (((vmin.z < 0) == (vmax.z < 0)) &&
+       (fabs(cos_min) + error_margin < cutoff &&
+        fabs(cos_max) + error_margin < cutoff))
+      return OUTSIDE;
+
+   return INSIDE;
+}

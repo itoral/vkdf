@@ -1644,13 +1644,27 @@ prepare_scene_lights(VkdfScene *s)
       sl->shadow.visible = find_visible_tiles(s, 0, s->num_tiles.total - 1,
                                               &frustum_box, frustum_planes);
 
-      // FIXME: we could refine the list a bit more by testing the visible
-      // tiles against the cone of the spotlight. An easy way to fo that would
-      // be to take the Xmin and Xmax coordinates of the tile and check
-      // if the angle between each of these and the light source is larger
-      // than the spotlight's cutoff angle. Do the same for the Z and Y
-      // coordinates. If any of these tests is positive, then the bos is
-      // the cone of light.
+#if 0
+      // Trim the list of visible tiles further by testing the tiles that
+      // passed the tests against the cone of the spotlight
+      // FIXME: seems to work fine, but due to CPU/GPU precission differences
+      // the vkdf_box_box_is_in_cone() function requires some error margin
+      // that reduces its effectiviness, so disable it for now.
+      GList *iter = sl->shadow.visible;
+      while (iter) {
+         VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+         if (!vkdf_box_is_in_cone(&t->box, sl->light->origin,
+                                  vec3(sl->light->spot.priv.dir),
+                                  sl->light->spot.cutoff)) {
+            GList *tmp = iter;
+            iter = g_list_next(iter);
+            sl->shadow.visible = g_list_delete_link(sl->shadow.visible, tmp);
+            // vkdf_info("scene: spotlight cone culling success.\n");
+         } else {
+            iter = g_list_next(iter);
+         }
+      }
+#endif
 
       // Create the target framebuffer for the shadow map pipeline
       create_shadow_map_framebuffer(s, sl);
