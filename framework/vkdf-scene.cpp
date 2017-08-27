@@ -898,8 +898,8 @@ create_static_object_ubo(VkdfScene *s)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *mem;
-   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.obj.buf.mem,
-                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+   vkdf_memory_map(s->ctx, s->ubo.obj.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **) &mem);
 
    // NOTE: this assumes that each set-id model has a different set of
    // materials. In theory, we could have different set-ids share models
@@ -951,17 +951,8 @@ create_static_object_ubo(VkdfScene *s)
       model_index++;
    }
 
-   if (!(s->ubo.obj.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      VkMappedMemoryRange range;
-      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-      range.pNext = NULL;
-      range.memory = s->ubo.obj.buf.mem;
-      range.offset = 0;
-      range.size = VK_WHOLE_SIZE;
-      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
-   }
-
-   vkUnmapMemory(s->ctx->device, s->ubo.obj.buf.mem);
+   vkdf_memory_unmap(s->ctx, s->ubo.obj.buf.mem, s->ubo.obj.buf.mem_props,
+                     0, VK_WHOLE_SIZE);
 }
 
 struct _shadow_map_ubo_data {
@@ -995,8 +986,8 @@ create_static_light_ubo(VkdfScene *s)
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *mem;
-   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.light.buf.mem,
-                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+   vkdf_memory_map(s->ctx, s->ubo.light.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **)&mem);
 
    // First we pack light descriptions
    for (uint32_t i = 0; i < num_lights; i++) {
@@ -1021,17 +1012,8 @@ create_static_light_ubo(VkdfScene *s)
       offset += sizeof(uint32_t);
    }
 
-   if (!(s->ubo.light.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      VkMappedMemoryRange range;
-      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-      range.pNext = NULL;
-      range.memory = s->ubo.light.buf.mem;
-      range.offset = 0;
-      range.size = VK_WHOLE_SIZE;
-      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
-   }
-
-   vkUnmapMemory(s->ctx->device, s->ubo.light.buf.mem);
+   vkdf_memory_unmap(s->ctx, s->ubo.light.buf.mem, s->ubo.light.buf.mem_props,
+                     0, VK_WHOLE_SIZE);
 }
 
 /**
@@ -1090,8 +1072,8 @@ create_static_shadow_map_ubo(VkdfScene *s)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *mem;
-   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.shadow_map.buf.mem,
-                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+   vkdf_memory_map(s->ctx, s->ubo.shadow_map.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **) &mem);
 
    VkDeviceSize offset = 0;
    set_id_iter = s->set_ids;
@@ -1124,17 +1106,8 @@ create_static_shadow_map_ubo(VkdfScene *s)
       set_id_iter = g_list_next(set_id_iter);
    }
 
-   if (!(s->ubo.shadow_map.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      VkMappedMemoryRange range;
-      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-      range.pNext = NULL;
-      range.memory = s->ubo.shadow_map.buf.mem;
-      range.offset = 0;
-      range.size = VK_WHOLE_SIZE;
-      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
-   }
-
-   vkUnmapMemory(s->ctx->device, s->ubo.shadow_map.buf.mem);
+   vkdf_memory_unmap(s->ctx, s->ubo.shadow_map.buf.mem,
+                     s->ubo.shadow_map.buf.mem_props, 0, VK_WHOLE_SIZE);
 }
 
 static void
@@ -1157,8 +1130,8 @@ create_static_material_ubo(VkdfScene *s)
 
    uint8_t *mem;
    VkDeviceSize material_size = sizeof(VkdfMaterial);
-   VK_CHECK(vkMapMemory(s->ctx->device, s->ubo.material.buf.mem,
-                        0, VK_WHOLE_SIZE, 0, (void **) &mem));
+   vkdf_memory_map(s->ctx, s->ubo.material.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **) &mem);
 
    uint32_t model_idx = 0;
    GList *model_iter = s->models;
@@ -1177,17 +1150,8 @@ create_static_material_ubo(VkdfScene *s)
       model_idx++;
    }
 
-   if (!(s->ubo.material.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-      VkMappedMemoryRange range;
-      range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-      range.pNext = NULL;
-      range.memory = s->ubo.material.buf.mem;
-      range.offset = 0;
-      range.size = VK_WHOLE_SIZE;
-      VK_CHECK(vkFlushMappedMemoryRanges(s->ctx->device, 1, &range));
-   }
-
-   vkUnmapMemory(s->ctx->device, s->ubo.material.buf.mem);
+   vkdf_memory_unmap(s->ctx, s->ubo.material.buf.mem,
+                     s->ubo.material.buf.mem_props, 0, VK_WHOLE_SIZE);
 }
 
 /**

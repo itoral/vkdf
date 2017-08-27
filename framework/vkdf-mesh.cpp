@@ -241,8 +241,8 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
    bool has_material = mesh->material_idx != -1;
 
    uint8_t *map;
-   VK_CHECK(vkMapMemory(ctx->device, mesh->vertex_buf.mem,
-                        0, vertex_data_size, 0, (void **) &map));
+   vkdf_memory_map(ctx, mesh->vertex_buf.mem,
+                   0, vertex_data_size, (void **) &map);
 
    for (uint32_t i = 0; i < mesh->vertices.size(); i++) {
       uint32_t elem_size = sizeof(mesh->vertices[0]);
@@ -268,15 +268,8 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
       }
    }
 
-   VkMappedMemoryRange range;
-   range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-   range.pNext = NULL;
-   range.memory = mesh->vertex_buf.mem;
-   range.offset = 0;
-   range.size = vertex_data_size;
-   VK_CHECK(vkFlushMappedMemoryRanges(ctx->device, 1, &range));
-
-   vkUnmapMemory(ctx->device, mesh->vertex_buf.mem);
+   vkdf_memory_unmap(ctx, mesh->vertex_buf.mem, mesh->vertex_buf.mem_props,
+                     0, vertex_data_size);
 }
 
 static inline VkDeviceSize
@@ -312,20 +305,13 @@ vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *map;
-   VK_CHECK(vkMapMemory(ctx->device, mesh->index_buf.mem,
-                        0, index_data_size, 0, (void **) &map));
+   vkdf_memory_map(ctx, mesh->index_buf.mem,
+                   0, index_data_size, (void **) &map);
 
    memcpy(map, &mesh->indices[0], index_data_size);
 
-   VkMappedMemoryRange range;
-   range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-   range.pNext = NULL;
-   range.memory = mesh->index_buf.mem;
-   range.offset = 0;
-   range.size = index_data_size;
-   VK_CHECK(vkFlushMappedMemoryRanges(ctx->device, 1, &range));
-
-   vkUnmapMemory(ctx->device, mesh->index_buf.mem);
+   vkdf_memory_unmap(ctx, mesh->index_buf.mem, mesh->index_buf.mem_props,
+                     0, index_data_size);
 }
 
 void

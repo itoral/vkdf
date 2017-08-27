@@ -446,8 +446,7 @@ scene_update(VkdfContext *ctx, void *data)
          VkDeviceSize buf_size = VK_WHOLE_SIZE;
 
          uint8_t *map;
-         vkMapMemory(ctx->device, res->M_ubo.mem,
-                     0, buf_size, 0, (void**) &map);
+         vkdf_memory_map(ctx, res->M_ubo.mem, 0, buf_size, (void**) &map);
 
          for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
             VkdfObject *obj = res->objs[i];
@@ -470,15 +469,8 @@ scene_update(VkdfContext *ctx, void *data)
                pos_speeds[i].z *= -1.0f;
          }
 
-         VkMappedMemoryRange range;
-         range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-         range.pNext = NULL;
-         range.memory = res->M_ubo.mem;
-         range.offset = 0;
-         range.size = buf_size;
-         vkFlushMappedMemoryRanges(ctx->device, 1, &range);
-
-         vkUnmapMemory(ctx->device, res->M_ubo.mem);
+         vkdf_memory_unmap(ctx, res->M_ubo.mem, res->M_ubo.mem_props,
+                           0, buf_size);
          return;
       }
    }
@@ -488,8 +480,7 @@ scene_update(VkdfContext *ctx, void *data)
    VkDeviceSize buf_size = VK_WHOLE_SIZE;
 
    uint8_t *map;
-   vkMapMemory(ctx->device, res->M_ubo.mem,
-               0, buf_size, 0, (void**) &map);
+   vkdf_memory_map(ctx, res->M_ubo.mem, 0, buf_size, (void**) &map);
 
    for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
       VkdfObject *obj = res->objs[i];
@@ -512,15 +503,8 @@ scene_update(VkdfContext *ctx, void *data)
          pos_speeds[i].z *= -1.0f;
    }
 
-   VkMappedMemoryRange range;
-   range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-   range.pNext = NULL;
-   range.memory = res->M_ubo.mem;
-   range.offset = 0;
-   range.size = buf_size;
-   vkFlushMappedMemoryRanges(ctx->device, 1, &range);
-
-   vkUnmapMemory(ctx->device, res->M_ubo.mem);
+   vkdf_memory_unmap(ctx, res->M_ubo.mem, res->M_ubo.mem_props,
+                     0, buf_size);
 }
 
 static void

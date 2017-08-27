@@ -340,35 +340,27 @@ init_objects(VkdfContext *ctx, DemoResources *res)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint32_t *map;
-   VK_CHECK(vkMapMemory(ctx->device, res->instance_buf.mem,
-                        0, instance_data_size, 0, (void **) &map));
+   vkdf_memory_map(ctx, res->instance_buf.mem, 0, instance_data_size,
+                   (void **) &map);
 
    for (uint32_t j = 0; j < model->meshes.size(); j++) {
       assert(model->meshes[j]->material_idx >= 0 &&
              model->meshes[j]->material_idx < (int32_t) model->materials.size());
       for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
-         *map = model->meshes[j]->material_idx; 
+         *map = model->meshes[j]->material_idx;
          map++;
       }
    }
 
-   VkMappedMemoryRange range;
-   range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-   range.pNext = NULL;
-   range.memory = res->instance_buf.mem;
-   range.offset = 0;
-   range.size = instance_data_size;
-   VK_CHECK(vkFlushMappedMemoryRanges(ctx->device, 1, &range));
-
-   vkUnmapMemory(ctx->device, res->instance_buf.mem);
+   vkdf_memory_unmap(ctx, res->instance_buf.mem, res->instance_buf.mem_props,
+                     0, instance_data_size);
 }
 
 static void
 fill_model_ubo(VkdfContext *ctx, DemoResources *res)
 {
    uint8_t *map;
-   vkMapMemory(ctx->device, res->M_ubo.mem,
-               0, VK_WHOLE_SIZE, 0, (void**) &map);
+   vkdf_memory_map(ctx, res->M_ubo.mem, 0, VK_WHOLE_SIZE, (void**) &map);
 
    for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
       VkdfObject *obj = res->objs[i];
@@ -377,16 +369,8 @@ fill_model_ubo(VkdfContext *ctx, DemoResources *res)
       map += sizeof(glm::mat4);
    }
 
-   VkMappedMemoryRange range;
-   range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-   range.pNext = NULL;
-   range.memory = res->M_ubo.mem;
-   range.offset = 0;
-   range.size = VK_WHOLE_SIZE;
-   vkFlushMappedMemoryRanges(ctx->device, 1, &range);
-
-   vkUnmapMemory(ctx->device, res->M_ubo.mem);
-
+   vkdf_memory_unmap(ctx, res->M_ubo.mem, res->M_ubo.mem_props,
+                     0, VK_WHOLE_SIZE);
 }
 
 static void
