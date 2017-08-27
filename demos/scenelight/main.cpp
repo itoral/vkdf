@@ -1,7 +1,7 @@
 #include "vkdf.hpp"
 
-const float WIN_WIDTH  = 800.0f;
-const float WIN_HEIGHT = 600.0f;
+const float WIN_WIDTH  = 1024.0f;
+const float WIN_HEIGHT = 768.0f;
 
 const uint32_t NUM_LIGHTS = 2;
 
