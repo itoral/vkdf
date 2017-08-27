@@ -430,6 +430,8 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
       s->models = g_list_prepend(s->models, obj->model);
    }
 
+   bool is_shadow_caster = obj->casts_shadows;
+
    // Find tile this object belongs to
    glm::vec3 tile_coord = tile_coord_from_position(s, obj->pos);
 
@@ -441,6 +443,8 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    VkdfSceneTile *tile = &s->tiles[ti];
 
    tile->obj_count++;
+   if (is_shadow_caster)
+      tile->shadow_caster_count++;
    tile->dirty = true;
 
    // Update the tile's box to fit this object
@@ -457,6 +461,8 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
       VkdfSceneTile *subtile = &tile->subtiles[subtile_idx];
 
       subtile->obj_count++;
+      if (is_shadow_caster)
+         subtile->shadow_caster_count++;
       subtile->dirty = true;
 
       update_tile_box_to_fit_box(subtile, min_box, max_box);
@@ -475,8 +481,12 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    }
    info->objs = g_list_prepend(info->objs, obj);
    info->count++;
+   if (is_shadow_caster)
+      info->shadow_caster_count++;
 
    s->obj_count++;
+   if (is_shadow_caster)
+      s->shadow_caster_count++;
    s->dirty = true;   
 }
 
@@ -548,36 +558,6 @@ vkdf_scene_add_light(VkdfScene *s,
 
    s->lights.push_back(slight);
    s->lights_dirty = true;
-}
-
-static inline uint32_t
-frustum_contains_box(VkdfBox *box,
-                     VkdfBox *frustum_box,
-                     VkdfPlane *frustum_planes)
-{
-   if (!vkdf_box_collision(box, frustum_box))
-      return OUTSIDE;
-
-   return vkdf_box_is_in_frustum(box, frustum_planes);
-}
-
-static inline uint32_t
-tile_is_visible(VkdfSceneTile *t, VkdfBox *visible_box, VkdfPlane *fp)
-{
-   if (t->obj_count == 0)
-      return OUTSIDE;
-   return frustum_contains_box(&t->box, visible_box, fp);
-}
-
-static inline uint32_t
-subtile_is_visible(VkdfSceneTile *t, VkdfPlane *fp)
-{
-   if (t->obj_count == 0)
-      return OUTSIDE;
-
-   // We only check subtiles if the parent tile is inside the camera's box,
-   // so no need to check if a subtile is inside it
-   return vkdf_box_is_in_frustum(&t->box, fp);
 }
 
 static int
@@ -825,10 +805,12 @@ build_object_lists(VkdfScene *s, VkdfSceneTile *t, const char *set_id)
             (VkdfSceneSetInfo *) g_hash_table_lookup(st->sets, set_id);
          GList *st_objs = subtile_set_info->objs;
          while (st_objs) {
-            tile_set_info->objs =
-               g_list_prepend(tile_set_info->objs, st_objs->data);
+            VkdfObject *obj = (VkdfObject *) st_objs->data;
+            tile_set_info->objs = g_list_prepend(tile_set_info->objs, obj);
             st_objs = g_list_next(st_objs);
             tile_set_info->count++;
+            if (obj->casts_shadows)
+               tile_set_info->shadow_caster_count++;
          }
       }
    }
@@ -836,18 +818,27 @@ build_object_lists(VkdfScene *s, VkdfSceneTile *t, const char *set_id)
    tile_set_info->objs = g_list_reverse(tile_set_info->objs);
 }
 
-static uint32_t
+static void
 compute_tile_start_indices(VkdfScene *s,
                            VkdfSceneTile *t,
                            const char *set_id,
-                           uint32_t start_index)
+                           uint32_t start_index,
+                           uint32_t shadow_caster_start_index,
+                           uint32_t *next_start_index,
+                           uint32_t *next_shadow_caster_start_index)
 {
    VkdfSceneSetInfo *tile_set_info =
       (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, set_id);
    tile_set_info->start_index = start_index;
+   tile_set_info->shadow_caster_start_index = shadow_caster_start_index;
 
-   if (!t->subtiles)
-      return tile_set_info->start_index + tile_set_info->count;
+   if (!t->subtiles) {
+      *next_start_index = tile_set_info->start_index + tile_set_info->count;
+      *next_shadow_caster_start_index =
+         tile_set_info->shadow_caster_start_index +
+         tile_set_info->shadow_caster_count;
+      return;
+   }
 
    for (uint32_t i = 0; i < 8; i++) {
       VkdfSceneTile *st = &t->subtiles[i];
@@ -855,11 +846,20 @@ compute_tile_start_indices(VkdfScene *s,
          (VkdfSceneSetInfo *) g_hash_table_lookup(st->sets, set_id);
 
       subtile_set_info->start_index = start_index;
-      compute_tile_start_indices(s, st, set_id, subtile_set_info->start_index);
+      subtile_set_info->shadow_caster_start_index = shadow_caster_start_index;
+
+      uint32_t unused;
+      compute_tile_start_indices(s, st, set_id,
+                                 subtile_set_info->start_index,
+                                 subtile_set_info->shadow_caster_start_index,
+                                 &unused, &unused);
+
       start_index += subtile_set_info->count;
+      shadow_caster_start_index += subtile_set_info->shadow_caster_count;
     }
 
-   return start_index;
+   *next_start_index = start_index;
+   *next_shadow_caster_start_index = shadow_caster_start_index;
 }
 
 static void
@@ -882,6 +882,94 @@ ensure_set_infos(VkdfSceneTile *t, GList *set_ids)
 
       iter = g_list_next(iter);
    }
+}
+
+static inline uint32_t
+frustum_contains_box(VkdfBox *box,
+                     VkdfBox *frustum_box,
+                     VkdfPlane *frustum_planes)
+{
+   if (!vkdf_box_collision(box, frustum_box))
+      return OUTSIDE;
+
+   return vkdf_box_is_in_frustum(box, frustum_planes);
+}
+
+static inline uint32_t
+tile_is_visible(VkdfSceneTile *t, VkdfBox *visible_box, VkdfPlane *fp)
+{
+   if (t->obj_count == 0)
+      return OUTSIDE;
+   return frustum_contains_box(&t->box, visible_box, fp);
+}
+
+static inline uint32_t
+subtile_is_visible(VkdfSceneTile *t, VkdfPlane *fp)
+{
+   if (t->obj_count == 0)
+      return OUTSIDE;
+
+   // We only check subtiles if the parent tile is inside the camera's box,
+   // so no need to check if a subtile is inside it
+   return vkdf_box_is_in_frustum(&t->box, fp);
+}
+
+static GList *
+find_visible_subtiles(VkdfSceneTile *t, VkdfPlane *fplanes, GList *visible)
+{
+   // If the tile can't be subdivided, then take the entire tile as visible
+   if (!t->subtiles)
+      return g_list_prepend(visible, t);
+
+   // Otherwise, check visibility for each subtile
+   uint32_t subtile_visibility[8];
+   bool all_subtiles_visible = true;
+
+   for (uint32_t j = 0; j < 8; j++) {
+      VkdfSceneTile *st = &t->subtiles[j];
+      subtile_visibility[j] = subtile_is_visible(st, fplanes);
+
+      // Only take individualsubtiles if there are invisible subtiles that have
+      // objects in them
+      if (subtile_visibility[j] == OUTSIDE && st->obj_count > 0)
+         all_subtiles_visible = false;
+   }
+
+   // If all subtiles are visible, then the parent tile is fully visible,
+   // just add the parent tile
+   if (all_subtiles_visible)
+      return g_list_prepend(visible, t);
+
+   // Otherwise, add only the visible subtiles
+   for (uint32_t j = 0; j < 8; j++) {
+      if (subtile_visibility[j] == INSIDE) {
+         visible = g_list_prepend(visible, &t->subtiles[j]);
+      } else if (subtile_visibility[j] == INTERSECT) {
+         visible = find_visible_subtiles(&t->subtiles[j], fplanes, visible);
+      }
+   }
+
+   return visible;
+}
+
+static GList *
+find_visible_tiles(VkdfScene *s,
+                   uint32_t first_tile_idx,
+                   uint32_t last_tile_idx,
+                   VkdfBox *visible_box,
+                   VkdfPlane *fplanes)
+{
+   GList *visible = NULL;
+   for (uint32_t i = first_tile_idx; i <= last_tile_idx; i++) {
+      VkdfSceneTile *t = &s->tiles[i];
+      uint32_t visibility = tile_is_visible(t, visible_box, fplanes);
+      if (visibility == INSIDE) {
+         visible = g_list_prepend(visible, t);
+      } else if (visibility == INTERSECT) {
+         visible = find_visible_subtiles(t, fplanes, visible);
+      }
+   }
+   return visible;
 }
 
 static void
@@ -1027,44 +1115,10 @@ create_static_light_ubo(VkdfScene *s)
 static void
 create_static_shadow_map_ubo(VkdfScene *s)
 {
-   // Compute shadow caster counts and start indices
-   uint32_t scene_shadow_caster_count = 0;
-   uint32_t start_index = 0;
-   GList *set_id_iter = s->set_ids;
-   while (set_id_iter) {
-      for (uint32_t i = 0; i < s->num_tiles.total; i++) {
-         VkdfSceneTile *t = &s->tiles[i];
-         t->shadow_caster_count = 0;
-         if (t->obj_count == 0)
-             continue;
-
-         const char *set_id = (const char *) set_id_iter->data;
-         VkdfSceneSetInfo *info =
-            (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, set_id);
-         if (info) {
-            info->shadow_caster_count = 0;
-            info->shadow_caster_start_index = start_index;
-            GList *iter = info->objs;
-            while (iter) {
-               VkdfObject *obj = (VkdfObject *) iter->data;
-               if (vkdf_object_casts_shadows(obj)) {
-                  info->shadow_caster_count++;
-                  t->shadow_caster_count++;
-                  scene_shadow_caster_count++;
-               }
-               iter = g_list_next(iter);
-            }
-            start_index += info->shadow_caster_count;
-         }
-      }
-
-      set_id_iter = g_list_next(set_id_iter);
-   }
-
    // Build per-instance data for each shadow caster object
    s->ubo.shadow_map.inst_size = ALIGN(sizeof(glm::mat4), 16);
    s->ubo.shadow_map.size =
-      s->ubo.shadow_map.inst_size * scene_shadow_caster_count;
+      s->ubo.shadow_map.inst_size * s->shadow_caster_count;
    s->ubo.shadow_map.buf =
       vkdf_create_buffer(s->ctx, 0,
                          s->ubo.shadow_map.size,
@@ -1076,11 +1130,11 @@ create_static_shadow_map_ubo(VkdfScene *s)
                    0, VK_WHOLE_SIZE, (void **) &mem);
 
    VkDeviceSize offset = 0;
-   set_id_iter = s->set_ids;
+   GList *set_id_iter = s->set_ids;
    while (set_id_iter) {
       for (uint32_t i = 0; i < s->num_tiles.total; i++) {
          VkdfSceneTile *t = &s->tiles[i];
-         if (t->obj_count == 0)
+         if (t->shadow_caster_count == 0)
              continue;
 
          const char *set_id = (const char *) set_id_iter->data;
@@ -1182,12 +1236,20 @@ prepare_scene_objects(VkdfScene *s)
    }
 
    uint32_t start_index = 0;
+   uint32_t shadow_caster_start_index = 0;
    GList *iter = s->set_ids;
    while (iter) {
       const char *set_id = (const char *) iter->data;
       for (uint32_t i = 0; i < s->num_tiles.total; i++) {
          VkdfSceneTile *t = &s->tiles[i];
-         start_index = compute_tile_start_indices(s, t, set_id, start_index);
+         uint32_t next_start_index, next_shadow_caster_start_index;
+         compute_tile_start_indices(s, t, set_id,
+                                    start_index,
+                                    shadow_caster_start_index,
+                                    &next_start_index,
+                                    &next_shadow_caster_start_index);
+         start_index = next_start_index;
+         shadow_caster_start_index = next_shadow_caster_start_index;
       }
       iter = g_list_next(iter);
    }
@@ -1578,16 +1640,19 @@ prepare_scene_lights(VkdfScene *s)
       VkdfPlane frustum_planes[6];
       vkdf_compute_frustum_planes(f, frustum_planes);
 
-      // Test each tile for visibility
-      sl->shadow.visible = NULL;
-      for (uint32_t ti = 0; ti < s->num_tiles.total; ti++) {
-         VkdfSceneTile *t = &s->tiles[ti];
-         if (t->obj_count == 0)
-            continue;
-         if (frustum_contains_box(&t->box, &frustum_box, frustum_planes) != OUTSIDE)
-            sl->shadow.visible = g_list_prepend(sl->shadow.visible, t);
-      }
+      // Find the list of tiles visible to this light
+      sl->shadow.visible = find_visible_tiles(s, 0, s->num_tiles.total - 1,
+                                              &frustum_box, frustum_planes);
 
+      // FIXME: we could refine the list a bit more by testing the visible
+      // tiles against the cone of the spotlight. An easy way to fo that would
+      // be to take the Xmin and Xmax coordinates of the tile and check
+      // if the angle between each of these and the light source is larger
+      // than the spotlight's cutoff angle. Do the same for the Z and Y
+      // coordinates. If any of these tests is positive, then the bos is
+      // the cone of light.
+
+      // Create the target framebuffer for the shadow map pipeline
       create_shadow_map_framebuffer(s, sl);
    }
 }
@@ -1600,44 +1665,6 @@ vkdf_scene_prepare(VkdfScene *s)
 {
    prepare_scene_objects(s);
    prepare_scene_lights(s);
-}
-
-static GList *
-process_partial_tile(VkdfSceneTile *t, VkdfPlane *fplanes, GList *visible)
-{
-   // If the tile can't be subdivided, then take the entire tile as visible
-   if (!t->subtiles)
-      return g_list_prepend(visible, t);
-
-   // Otherwise, check visibility for each subtile
-   uint32_t subtile_visibility[8];
-   bool all_subtiles_visible = true;
-
-   for (uint32_t j = 0; j < 8; j++) {
-      VkdfSceneTile *st = &t->subtiles[j];
-      subtile_visibility[j] = subtile_is_visible(st, fplanes);
-
-      // Only take individualsubtiles if there are invisible subtiles that have
-      // objects in them
-      if (subtile_visibility[j] == OUTSIDE && st->obj_count > 0)
-         all_subtiles_visible = false;
-   }
-
-   // If all subtiles are visible, then the parent tile is fully visible,
-   // just add the parent tile
-   if (all_subtiles_visible)
-      return g_list_prepend(visible, t);
-
-   // Otherwise, add only the visible subtiles
-   for (uint32_t j = 0; j < 8; j++) {
-      if (subtile_visibility[j] == INSIDE) {
-         visible = g_list_prepend(visible, &t->subtiles[j]);
-      } else if (subtile_visibility[j] == INTERSECT) {
-         visible = process_partial_tile(&t->subtiles[j], fplanes, visible);
-      }
-   }
-
-   return visible;
 }
 
 static void
@@ -1653,19 +1680,10 @@ thread_update_cmd_bufs(void *arg)
    uint32_t first_idx = data->first_idx;
    uint32_t last_idx = data->last_idx;
 
-   GList *cur_visible = NULL;
-   GList *prev_visible = data->visible;
-
    // Find visible tiles
-   for (uint32_t i = first_idx; i <= last_idx; i++) {
-      VkdfSceneTile *t = &s->tiles[i];
-      uint32_t visibility = tile_is_visible(t, visible_box, fplanes);
-      if (visibility == INSIDE) {
-         cur_visible = g_list_prepend(cur_visible, t);
-      } else if (visibility == INTERSECT) {
-         cur_visible = process_partial_tile(t, fplanes, cur_visible);
-      }
-   }
+   GList *prev_visible = data->visible;
+   GList *cur_visible =
+      find_visible_tiles(s, first_idx, last_idx, visible_box, fplanes);
 
    // Identify new invisible tiles
    data->cmd_buf_changes = false;

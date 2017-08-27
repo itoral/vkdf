@@ -121,6 +121,7 @@ struct _VkdfScene {
    bool dirty;
    bool lights_dirty;
    uint32_t obj_count;
+   uint32_t shadow_caster_count;
    bool has_shadow_caster_lights;
 
    /** 
