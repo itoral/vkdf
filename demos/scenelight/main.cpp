@@ -539,16 +539,14 @@ init_pipeline_descriptors(SceneResources *res)
                             res->pipelines.descr.light_layout);
 
    VkdfBuffer *light_ubo = vkdf_scene_get_light_ubo(res->scene);
-   uint32_t num_lights = vkdf_scene_get_num_lights(res->scene);
-   ubo_offset = 0;
-   ubo_size = num_lights * ALIGN(sizeof(VkdfLight), 16);
+   vkdf_scene_get_light_ubo_range(res->scene, &ubo_offset, &ubo_size);
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
                                      light_ubo->buf,
                                      0, 1, &ubo_offset, &ubo_size, false);
 
-   ubo_offset = ubo_size;
-   ubo_size = num_lights * ALIGN(sizeof(glm::mat4), 16);
+
+   vkdf_scene_get_shadow_map_ubo_range(res->scene, &ubo_offset, &ubo_size);
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
                                      light_ubo->buf,
@@ -903,6 +901,7 @@ init_lights(SceneResources *res)
    shadow_spec.shadow_map_size = 1024;
    shadow_spec.depth_bias_const_factor = 4.0f;
    shadow_spec.depth_bias_slope_factor = 1.5f;
+   shadow_spec.pfc_kernel_size = 2;
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 
    // Light 1
@@ -927,6 +926,7 @@ init_lights(SceneResources *res)
    shadow_spec.shadow_map_size = 1024;
    shadow_spec.depth_bias_const_factor = 4.0f;
    shadow_spec.depth_bias_slope_factor = 1.5f;
+   shadow_spec.pfc_kernel_size = 2;
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 }
 

@@ -7,6 +7,10 @@ typedef struct {
    float shadow_map_far;
    float depth_bias_const_factor;
    float depth_bias_slope_factor;
+
+   // PFC kernel_size: valid values start at 1 (no PFC, 1 sample) to
+   // N (2*(N-1)+1)^2 samples).
+   uint32_t pfc_kernel_size;
 } VkdfSceneShadowSpec;
 
 typedef struct {
@@ -190,6 +194,8 @@ struct _VkdfScene {
       } material;
       struct {
          VkdfBuffer buf;
+         VkDeviceSize light_data_size;
+         VkDeviceSize shadow_map_data_size;
          VkDeviceSize size;
       } light;
       struct {
@@ -276,6 +282,22 @@ inline VkDeviceSize
 vkdf_scene_get_light_ubo_size(VkdfScene *s)
 {
    return s->ubo.light.size;
+}
+
+inline void
+vkdf_scene_get_light_ubo_range(VkdfScene *s,
+                               VkDeviceSize *offset, VkDeviceSize *size)
+{
+   *offset = 0;
+   *size = s->ubo.light.light_data_size;
+}
+
+inline void
+vkdf_scene_get_shadow_map_ubo_range(VkdfScene *s,
+                                    VkDeviceSize *offset, VkDeviceSize *size)
+{
+   *offset = s->ubo.light.light_data_size;
+   *size = s->ubo.light.shadow_map_data_size;
 }
 
 inline VkSampler

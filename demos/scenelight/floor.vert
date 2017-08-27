@@ -27,9 +27,15 @@ layout(std140, set = 1, binding = 0) uniform ubo_obj_data {
    ObjData data[MAX_INSTANCES];
 } OID;
 
-layout(std140, set = 2, binding = 1) uniform light_vp_ubo {
-   mat4 ViewProjection[NUM_LIGHTS];
-} LVP;
+struct ShadowMapData {
+   mat4 light_viewproj;
+   uint shadow_map_size;
+   uint pfc_kernel_size;
+};
+
+layout(std140, set = 2, binding = 1) uniform ubo_shadow_map_data {
+   ShadowMapData data[NUM_LIGHTS];
+} SMD;
 
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
@@ -67,5 +73,5 @@ void main()
    out_receives_shadows = obj_data.receives_shadows;
 
    for (int i = 0; i < NUM_LIGHTS; i++)
-      out_light_space_pos[i] = LVP.ViewProjection[i] * out_world_pos;
+      out_light_space_pos[i] = SMD.data[i].light_viewproj * out_world_pos;
 }

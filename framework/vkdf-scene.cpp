@@ -532,6 +532,7 @@ vkdf_scene_add_light(VkdfScene *s,
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
    if (light->casts_shadows) {
+      assert(spec->pfc_kernel_size >= 1);
       slight->shadow.spec = *spec;
       slight->shadow.shadow_map =
          create_shadow_map_image(s, spec->shadow_map_size);
@@ -963,6 +964,13 @@ create_static_object_ubo(VkdfScene *s)
    vkUnmapMemory(s->ctx->device, s->ubo.obj.buf.mem);
 }
 
+struct _shadow_map_ubo_data {
+   glm::mat4 light_viewproj;
+   uint32_t shadow_map_size;
+   uint32_t pcf_kernel_size;
+   uint32_t padding[2]; // Keep this struct 16-byte aligned
+};
+
 static void
 create_static_light_ubo(VkdfScene *s)
 {
@@ -970,10 +978,17 @@ create_static_light_ubo(VkdfScene *s)
    if (num_lights == 0)
       return;
 
-   // Ubo data: light source description and View/Projection matrix
-   uint32_t light_data_size = ALIGN(sizeof(VkdfLight), 16) +
-                              ALIGN(sizeof(glm::mat4), 16);
-   s->ubo.light.size = num_lights * light_data_size;
+   const uint32_t light_data_size = ALIGN(sizeof(VkdfLight), 16);
+
+   const uint32_t shadow_map_data_size =
+      ALIGN(sizeof(struct _shadow_map_ubo_data) , 16);
+
+   const uint32_t
+      inst_data_size = light_data_size + shadow_map_data_size;
+
+   s->ubo.light.light_data_size = num_lights * light_data_size;
+   s->ubo.light.shadow_map_data_size = num_lights * shadow_map_data_size;
+   s->ubo.light.size = num_lights * inst_data_size;
    s->ubo.light.buf = vkdf_create_buffer(s->ctx, 0,
                                          s->ubo.light.size,
                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -990,14 +1005,20 @@ create_static_light_ubo(VkdfScene *s)
       memcpy(mem + offset, sl->light, sizeof(VkdfLight));
    }
 
-   // Next we pack light view/projecion matrices
+   // Next we pack shadow mapping information
    VkDeviceSize base_offset = num_lights * ALIGN(sizeof(VkdfLight), 16);
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
-      VkDeviceSize offset = base_offset + i * ALIGN(sizeof(glm::mat4), 16);
-      // View/Projection (only needing for shadow mapping)
-      if (sl->light->casts_shadows)
-         memcpy(mem + offset, &sl->shadow.viewproj[0][0], sizeof(VkdfLight));
+      if (!sl->light->casts_shadows)
+         continue;
+      VkDeviceSize offset = base_offset +
+                            i * ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
+      memcpy(mem + offset, &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
+      offset += sizeof(glm::mat4);
+      memcpy(mem + offset, &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
+      offset += sizeof(uint32_t);
+      memcpy(mem + offset, &sl->shadow.spec.pfc_kernel_size, sizeof(uint32_t));
+      offset += sizeof(uint32_t);
    }
 
    if (!(s->ubo.light.buf.mem_props & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {

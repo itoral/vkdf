@@ -46,23 +46,37 @@ compute_spotlight_cutoff_factor(Light l, vec3 light_to_pos_norm)
 
 float
 compute_shadow_factor(vec4 light_space_pos,
-                      sampler2D shadow_map)
+                      sampler2D shadow_map,
+                      uint shadow_map_size,
+                      uint pfc_size)
 {
    // Convert light space position to NDC
    vec3 light_space_ndc = light_space_pos.xyz /= light_space_pos.w;
 
    // Translate from NDC to shadow map space (Vulkan's Z is already in [0..1])
-   vec3 shadow_map_coord =
-      vec3(light_space_ndc.xy * 0.5 + 0.5, light_space_ndc.z);
+   vec2 shadow_map_coord = light_space_ndc.xy * 0.5 + 0.5;
 
-   // Sample shadow map to see if this fragment is visible from the
-   // the light source or not. Notice that the shadow map has been
-   // recorded with depth bias to prevent self-shadowing artifacts
-   if (shadow_map_coord.z > texture(shadow_map, shadow_map_coord.xy).x)
-      return 0.0;
+   // compute total number of samples to take from the shadow map
+   int pfc_size_minus_1 = int(pfc_size - 1);
+   float kernel_size = 2.0 * pfc_size_minus_1 + 1.0;
+   float num_samples = kernel_size * kernel_size;
 
-   // Fragment is in the light
-   return 1.0;
+   // Counter for the shadow map samples not in the shadow
+   float lighted_count = 0.0;
+
+   // Take samples from the shadow map
+   float shadow_map_texel_size = 1.0 / shadow_map_size;
+   for (int x = -pfc_size_minus_1; x <= pfc_size_minus_1; x++)
+   for (int y = -pfc_size_minus_1; y <= pfc_size_minus_1; y++) {
+      // Compute coordinate for this PFC sample
+      vec2 pfc_coord = shadow_map_coord + vec2(x, y) * shadow_map_texel_size;
+
+      // Check if the sample is in light or in the shadow
+      if (light_space_ndc.z <= texture(shadow_map, pfc_coord.xy).x)
+         lighted_count += 1.0;
+   }
+
+   return lighted_count / num_samples;
 }
 
 LightColor
@@ -73,7 +87,9 @@ compute_lighting(Light l,
                  Material mat,
                  bool receives_shadows,
                  vec4 light_space_pos,
-                 sampler2D shadow_map)
+                 sampler2D shadow_map,
+                 uint shadow_map_size,
+                 uint pfc_size)
 {
    vec3 light_to_pos_norm;
    float att_factor;
@@ -108,7 +124,8 @@ compute_lighting(Light l,
    // Check if the fragment is in the shadow
    float shadow_factor;
    if (receives_shadows) {
-      shadow_factor = compute_shadow_factor(light_space_pos, shadow_map);
+      shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
+                                            shadow_map_size, pfc_size);
    } else {
       shadow_factor = 1.0;
    }
