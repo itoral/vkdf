@@ -142,12 +142,11 @@ compute_lighting(Light l,
    }
    shadow_factor *= cutoff_factor;
 
-   // Compute light contributions to the fragment. Do not attenuate
-   // ambient light to make it constant across the scene.
+   // Compute light contributions to the fragment.
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
                 dp_reflection * shadow_factor * l.intensity;
-   lc.ambient = mat.ambient.xyz * l.ambient.xyz * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor * l.intensity;
 
    lc.specular = vec3(0);
 
@@ -203,12 +202,11 @@ compute_lighting(Light l,
    // No shadowing
    float shadow_factor = cutoff_factor;
 
-   // Compute light contributions to the fragment. Do not attenuate
-   // ambient light to make it constant across the scene.
+   // Compute light contributions to the fragment.
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
                 dp_reflection * shadow_factor * l.intensity;
-   lc.ambient = mat.ambient.xyz * l.ambient.xyz * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor * l.intensity;
 
    lc.specular = vec3(0);
    if (dot(normal, -light_to_pos_norm) >= 0.0) {
