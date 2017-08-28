@@ -553,9 +553,12 @@ vkdf_scene_add_light(VkdfScene *s,
                              VK_FILTER_LINEAR,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST);
       compute_light_view_projection(slight);
-      slight->dirty = true;
       s->has_shadow_caster_lights = true;
    }
+
+   // This light needs to be put in the light UBO and maybe
+   // generate a shadow map
+   slight->light->dirty = true;
 
    s->lights.push_back(slight);
    s->lights_dirty = true;
@@ -1052,6 +1055,46 @@ struct _shadow_map_ubo_data {
 };
 
 static void
+fill_light_ubo(VkdfScene *s)
+{
+   uint32_t num_lights = s->lights.size();
+   if (num_lights == 0)
+      return;
+
+   uint8_t *mem;
+   vkdf_memory_map(s->ctx, s->ubo.light.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **)&mem);
+
+   // First we pack light descriptions
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      if (!sl->light->dirty)
+         continue;
+      VkDeviceSize offset = i * ALIGN(sizeof(VkdfLight), 16);
+      memcpy(mem + offset, sl->light, sizeof(VkdfLight));
+   }
+
+   // Next we pack shadow mapping information
+   VkDeviceSize base_offset = num_lights * ALIGN(sizeof(VkdfLight), 16);
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      if (!sl->light->dirty || !sl->light->casts_shadows)
+         continue;
+      VkDeviceSize offset = base_offset +
+                            i * ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
+      memcpy(mem + offset, &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
+      offset += sizeof(glm::mat4);
+      memcpy(mem + offset, &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
+      offset += sizeof(uint32_t);
+      memcpy(mem + offset, &sl->shadow.spec.pfc_kernel_size, sizeof(uint32_t));
+      offset += sizeof(uint32_t);
+   }
+
+   vkdf_memory_unmap(s->ctx, s->ubo.light.buf.mem, s->ubo.light.buf.mem_props,
+                     0, VK_WHOLE_SIZE);
+}
+
+static void
 create_static_light_ubo(VkdfScene *s)
 {
    uint32_t num_lights = s->lights.size();
@@ -1074,35 +1117,7 @@ create_static_light_ubo(VkdfScene *s)
                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
-   uint8_t *mem;
-   vkdf_memory_map(s->ctx, s->ubo.light.buf.mem,
-                   0, VK_WHOLE_SIZE, (void **)&mem);
-
-   // First we pack light descriptions
-   for (uint32_t i = 0; i < num_lights; i++) {
-      VkdfSceneLight *sl = s->lights[i];
-      VkDeviceSize offset = i * ALIGN(sizeof(VkdfLight), 16);
-      memcpy(mem + offset, sl->light, sizeof(VkdfLight));
-   }
-
-   // Next we pack shadow mapping information
-   VkDeviceSize base_offset = num_lights * ALIGN(sizeof(VkdfLight), 16);
-   for (uint32_t i = 0; i < num_lights; i++) {
-      VkdfSceneLight *sl = s->lights[i];
-      if (!sl->light->casts_shadows)
-         continue;
-      VkDeviceSize offset = base_offset +
-                            i * ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
-      memcpy(mem + offset, &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
-      offset += sizeof(glm::mat4);
-      memcpy(mem + offset, &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
-      offset += sizeof(uint32_t);
-      memcpy(mem + offset, &sl->shadow.spec.pfc_kernel_size, sizeof(uint32_t));
-      offset += sizeof(uint32_t);
-   }
-
-   vkdf_memory_unmap(s->ctx, s->ubo.light.buf.mem, s->ubo.light.buf.mem_props,
-                     0, VK_WHOLE_SIZE);
+   fill_light_ubo(s);
 }
 
 /**
@@ -1938,7 +1953,7 @@ update_shadow_map_cmd_bufs(VkdfScene *s)
       if (!sl->light->casts_shadows)
          continue;
 
-      if (!sl->dirty)
+      if (!sl->light->dirty)
          continue;
 
       assert(sl->shadow.shadow_map.image);
@@ -2020,16 +2035,25 @@ vkdf_scene_draw(VkdfScene *s)
       wait_sem = NULL;
    }
 
-   // If we have dirty shadow casters, update their shadow maps
+   // If we have dirty lights, check if there are any shadow casters and
+   // make sure we generate their shadow maps.
+   // This is the last stage for handling dirty lights in the scene, so we
+   // mark all of them them as not being dirty after this step.
    if (s->lights_dirty) {
       VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, s->lights.size());
       uint32_t count = 0;
       for (uint32_t i = 0; i < s->lights.size(); i++) {
          VkdfSceneLight *sl = s->lights[i];
-         if (!sl->dirty)
+         if (!sl->light->dirty)
             continue;
+
+         sl->light->dirty = false;
+
+         // Nothing to do if the light doesn't need a shadow map
+         if (!sl->light->casts_shadows)
+            continue;
+
          cmd_bufs[count++] = sl->shadow.cmd_buf;
-         sl->dirty = false;
       }
 
       assert(count > 0);

@@ -28,7 +28,8 @@ typedef struct {
 
    uint32_t casts_shadows;
    uint32_t is_dynamic;
-   float padding[2];
+   uint32_t dirty;
+   float padding[1];
 } VkdfLight;
 
 VkdfLight *
@@ -63,6 +64,7 @@ vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
 {
    l->spot.cutoff_angle = angle;
    l->spot.cutoff = cosf(l->spot.cutoff_angle);
+   l->dirty = true;
 }
 
 float inline
@@ -80,6 +82,7 @@ vkdf_light_set_rotation(VkdfLight *l, glm::vec3 rot)
    l->spot.priv.rot = glm::vec4(rot, 0.0f);
    l->spot.priv.dir =
       glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)), 0.0f);
+   l->dirty = true;
 }
 
 void inline
@@ -93,6 +96,7 @@ vkdf_light_look_at(VkdfLight *l, glm::vec3 target)
 {
    glm::vec3 rot = vkdf_compute_view_rotation(glm::vec3(l->origin), target);
    vkdf_light_set_rotation(l, rot);
+   // dirty flag set by set_rotation()
 }
 
 glm::mat4 inline

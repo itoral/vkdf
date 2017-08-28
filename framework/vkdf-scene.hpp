@@ -15,7 +15,6 @@ typedef struct {
 
 typedef struct {
    VkdfLight *light;
-   bool dirty;
    bool is_dynamic;
    struct {
       VkdfSceneShadowSpec spec;

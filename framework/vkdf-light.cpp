@@ -11,6 +11,7 @@ init_light(VkdfLight *l,
    l->ambient = ambient;
    l->specular = specular;
    l->attenuation = attenuation;
+   l->dirty = true;
 }
 
 VkdfLight *

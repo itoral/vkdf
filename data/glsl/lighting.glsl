@@ -12,7 +12,8 @@ struct Light
    float cutoff_pad1, cutoff_pad2;
    bool casts_shadows;
    bool is_dynamic;
-   float bottom_pad1, bottom_pad2;
+   bool dirty;
+   float bottom_pad;
 };
 
 struct Material
