@@ -102,9 +102,6 @@ vkdf_light_get_view_matrix(VkdfLight *l)
                                                 glm::vec3(l->spot.priv.rot));
 }
 
-bool
-vkdf_light_is_box_visible(VkdfLight *l, VkdfBox *box);
-
 void inline
 vkdf_light_set_is_dynamic(VkdfLight *l, bool enable)
 {
