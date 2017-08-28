@@ -27,7 +27,8 @@ typedef struct {
    } spot;
 
    uint32_t casts_shadows;
-   float padding[3];
+   uint32_t is_dynamic;
+   float padding[2];
 } VkdfLight;
 
 VkdfLight *
@@ -103,6 +104,18 @@ vkdf_light_get_view_matrix(VkdfLight *l)
 
 bool
 vkdf_light_is_box_visible(VkdfLight *l, VkdfBox *box);
+
+void inline
+vkdf_light_set_is_dynamic(VkdfLight *l, bool enable)
+{
+   l->is_dynamic = (uint32_t) enable;
+}
+
+bool inline
+vkdf_light_is_dynamic(VkdfLight *l)
+{
+   return l->is_dynamic;
+}
 
 void
 vkdf_light_free(VkdfLight *light);

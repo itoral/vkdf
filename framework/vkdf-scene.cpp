@@ -537,6 +537,7 @@ vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *spec)
 {
+   assert(!light->is_dynamic);
    assert(light->casts_shadows == (spec != NULL));
 
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);

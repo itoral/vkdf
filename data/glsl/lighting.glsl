@@ -11,7 +11,8 @@ struct Light
    float cutoff_angle;
    float cutoff_pad1, cutoff_pad2;
    bool casts_shadows;
-   float shadows_pad1, shadows_pad2, shadows_pad3;
+   bool is_dynamic;
+   float bottom_pad1, bottom_pad2;
 };
 
 struct Material
