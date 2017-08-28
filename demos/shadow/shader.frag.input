@@ -30,6 +30,6 @@ void main()
                                        in_normal, in_view_dir,
                                        Mat.materials[in_material_idx],
                                        true,
-                                       in_light_space_pos, shadow_map);
+                                       in_light_space_pos, shadow_map, 2048, 1);
    out_color = vec4(color.diffuse + color.ambient + color.specular, 1.0);
 }

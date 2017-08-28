@@ -102,7 +102,7 @@ typedef struct {
    VkDescriptorSet cube_materials_descriptor_set;
 
    // Light source
-   VkdfLight light;
+   VkdfLight *light;
    glm::mat4 light_projection;
    glm::mat4 light_view;
 
@@ -1429,20 +1429,16 @@ create_ui_tile_pipeline(VkdfContext *ctx, SceneResources *res)
 static void
 init_light_sources(VkdfContext *ctx, SceneResources *res)
 {
-   vkdf_light_set_type(&res->light, VKDF_LIGHT_SPOTLIGHT);
-   vkdf_light_set_position(&res->light,
-                           glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f));
-   vkdf_light_set_diffuse(&res->light,
-                          glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
-   vkdf_light_set_ambient(&res->light,
-                          glm::vec4(0.02f, 0.02f, 0.02f, 1.0f));
-   vkdf_light_set_specular(&res->light,
-                           glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
-   vkdf_light_set_attenuation(&res->light,
-                              glm::vec4(0.1f, 0.05f, 0.01f, 0.0f));
+   glm::vec4 pos = glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f);
+   glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+   glm::vec4 ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
+   glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
+   glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.01f, 0.0f);
 
-   vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
-   vkdf_light_set_cutoff_angle(&res->light, DEG_TO_RAD(45.0f / 2.0f));
+   res->light =
+      vkdf_light_new_spotlight(pos, DEG_TO_RAD(22.5f),
+                               diffuse, ambient, specular, attenuation);
+   vkdf_light_look_at(res->light, glm::vec3(0.0f, 0.0f, 0.0f));
 }
 
 static VkdfCamera *
@@ -1761,7 +1757,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    vkdf_buffer_map_and_fill(ctx, res->Light_ubo,
-                            0, sizeof(VkdfLight), &res->light);
+                            0, sizeof(VkdfLight), res->light);
 
    // Create UBO for light View/Projection matrix (we may update this every
    // frame so we fill the buffer at scene update time)
@@ -1895,9 +1891,9 @@ update_lights(SceneResources *res)
 
    glm::mat4 model(1.0f);
    model = glm::rotate(model, DEG_TO_RAD(rotY), glm::vec3(0, 1, 0));
-   vkdf_light_set_position(&res->light,
+   vkdf_light_set_position(res->light,
                            model * glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f));
-   vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
+   vkdf_light_look_at(res->light, glm::vec3(0.0f, 0.0f, 0.0f));
 
    rotY += 0.25f;
    if (rotY >= 360.0f)
@@ -1917,10 +1913,10 @@ scene_update(VkdfContext *ctx, void *data)
 
       // Light description
       vkdf_buffer_map_and_fill(ctx, res->Light_ubo,
-                               0, sizeof(VkdfLight), &res->light);
+                               0, sizeof(VkdfLight), res->light);
 
       // Light View/Projection
-      res->light_view = vkdf_light_get_view_matrix(&res->light);
+      res->light_view = vkdf_light_get_view_matrix(res->light);
       glm::mat4 vp = res->light_projection * res->light_view;
 
       vkdf_buffer_map_and_fill(ctx, res->Light_VP_ubo,
@@ -2128,6 +2124,7 @@ cleanup_resources(VkdfContext *ctx, SceneResources *res)
    vkDestroyCommandPool(ctx->device, res->cmd_pool, NULL);
    destroy_scene_semaphores(ctx, res);
    vkDestroySemaphore(ctx->device, res->shadow_draw_sem, NULL);
+   g_free(res->light);
 }
 
 static void
