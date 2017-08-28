@@ -15,7 +15,6 @@ typedef struct {
 
 typedef struct {
    VkdfLight *light;
-   bool is_dynamic;
    struct {
       VkdfSceneShadowSpec spec;
       glm::mat4 viewproj;
@@ -119,6 +118,7 @@ struct _VkdfScene {
 
    bool dirty;
    bool lights_dirty;
+   bool shadow_maps_dirty;
    uint32_t obj_count;
    uint32_t shadow_caster_count;
    bool has_shadow_caster_lights;
@@ -143,7 +143,8 @@ struct _VkdfScene {
       GList **active;
       GList **free;
       VkCommandBuffer primary;
-      VkCommandBuffer update_resources;
+      VkCommandBuffer update_resources;       // Resources updated by the app
+      VkCommandBuffer update_scene_resources; // Resources updated by the scene
    } cmd_buf;
 
    struct {
