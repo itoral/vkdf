@@ -10,10 +10,10 @@ struct Light
    float cutoff;
    float cutoff_angle;
    float spot_padding1, spot_padding2;
+   float intensity;
    bool casts_shadows;
    bool dirty;
    bool dirty_shadows;
-   uint32_t padding1;
 };
 
 struct Material
@@ -146,8 +146,8 @@ compute_lighting(Light l,
    // ambient light to make it constant across the scene.
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
-                dp_reflection * shadow_factor;
-   lc.ambient = mat.ambient.xyz * l.ambient.xyz;
+                dp_reflection * shadow_factor * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * l.intensity;
 
    lc.specular = vec3(0);
 
@@ -156,7 +156,8 @@ compute_lighting(Light l,
       float shine_factor = dot(reflection_dir, normalize(view_dir));
       lc.specular =
            att_factor * l.specular.xyz * mat.specular.xyz *
-            pow(max(0.0, shine_factor), mat.shininess) * shadow_factor;
+           pow(max(0.0, shine_factor), mat.shininess) * shadow_factor *
+           l.intensity;
    }
 
    return lc;
@@ -206,8 +207,8 @@ compute_lighting(Light l,
    // ambient light to make it constant across the scene.
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
-                dp_reflection * shadow_factor;
-   lc.ambient = mat.ambient.xyz * l.ambient.xyz;
+                dp_reflection * shadow_factor * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * l.intensity;
 
    lc.specular = vec3(0);
    if (dot(normal, -light_to_pos_norm) >= 0.0) {
@@ -215,7 +216,8 @@ compute_lighting(Light l,
       float shine_factor = dot(reflection_dir, normalize(view_dir));
       lc.specular =
            att_factor * l.specular.xyz * mat.specular.xyz *
-            pow(max(0.0, shine_factor), mat.shininess) * shadow_factor;
+           pow(max(0.0, shine_factor), mat.shininess) * shadow_factor *
+           l.intensity;
    }
 
    return lc;

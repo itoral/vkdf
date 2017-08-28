@@ -26,10 +26,11 @@ typedef struct {
       float padding[2];         // Keep this struct 16-byte aligned
    } spot;
 
+   float intensity;             // From 0 (no light) to 1 (full intensity)
    uint32_t casts_shadows;
    uint32_t dirty;              // Whether the light has been updated
    uint32_t dirty_shadows;      // Whether a light update affects shadow mapping
-   float padding[1];            // Keep this struct 16-byte aligned
+   float padding[0];            // Keep this struct 16-byte aligned
 } VkdfLight;
 
 #define SET_FIELD(light, field, value) \
@@ -264,6 +265,18 @@ bool inline
 vkdf_light_has_dirty_shadows(VkdfLight *l)
 {
    return (bool) l->dirty_shadows;
+}
+
+inline void
+vkdf_light_set_intensity(VkdfLight *l, float intensity)
+{
+   SET_FIELD(l, l->intensity, intensity);
+}
+
+inline float
+vkdf_light_get_intensity(VkdfLight *l)
+{
+   return l->intensity;
 }
 
 void
