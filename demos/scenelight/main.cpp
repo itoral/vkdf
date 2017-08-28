@@ -4,6 +4,7 @@ const float WIN_WIDTH  = 1024.0f;
 const float WIN_HEIGHT = 768.0f;
 
 const uint32_t NUM_LIGHTS = 2;
+const bool LIGHT_IS_DYNAMIC[NUM_LIGHTS] = { true, false };
 
 // ----------------------------------------------------------------------------
 // Renders a scene with lighting
@@ -880,12 +881,12 @@ init_lights(SceneResources *res)
 {
    // Light 0
    uint32_t idx = 0;
-   glm::vec4 origin = glm::vec4(10.0f, 10.0f, 5.0f, 2.0f);
+   glm::vec4 origin = glm::vec4(10.0f, 10.0f, -5.0f, 2.0f);
    glm::vec4 diffuse = glm::vec4(0.25f, 1.0f, 0.25f, 0.0f);
    glm::vec4 ambient = glm::vec4(0.01f, 0.04f, 0.01f, 1.0f);
    glm::vec4 specular = glm::vec4(0.7f, 1.0f, 0.7f, 0.0f);
    glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
-   float cutoff_angle = DEG_TO_RAD(90.0f / 2.0f);
+   float cutoff_angle = DEG_TO_RAD(45.0f);
 
    res->lights[idx] =
       vkdf_light_new_spotlight(origin, cutoff_angle,
@@ -911,7 +912,7 @@ init_lights(SceneResources *res)
    ambient = glm::vec4(0.04f, 0.01f, 0.01f, 1.0f);
    specular = glm::vec4(1.0f, 0.7f, 0.7f, 0.0f);
    attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
-   cutoff_angle = DEG_TO_RAD(50.0f / 2.0f);
+   cutoff_angle = DEG_TO_RAD(25.0f);
 
    res->lights[idx] =
       vkdf_light_new_spotlight(origin, cutoff_angle,
@@ -1243,9 +1244,22 @@ update_camera(SceneResources *res)
 static void
 scene_update(VkdfContext *ctx, void *data)
 {
+   const float rot_speeds[NUM_LIGHTS] = { 1.5f, 2.0f };
    SceneResources *res = (SceneResources *) data;
 
    update_camera(res); // FIXME: this should be a callback called from the scene
+
+   for (uint32_t i = 0; i < NUM_LIGHTS; i++) {
+      if (LIGHT_IS_DYNAMIC[i]) {
+         VkdfLight *l = res->lights[i];
+         glm::vec3 rot = vkdf_light_get_rotation(l);
+         rot.y += rot_speeds[i];
+         if (rot.y > 360.0f)
+            rot.y -= 360.0f;
+         vkdf_light_set_rotation(l, rot);
+      }
+   }
+
    vkdf_scene_update_cmd_bufs(res->scene, res->cmd_pool);
    vkdf_camera_set_dirty(res->camera, false); // FIXME: this should be done by the scene
 }
