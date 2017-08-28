@@ -6,6 +6,10 @@ const float WIN_HEIGHT = 768.0f;
 const uint32_t NUM_LIGHTS = 2;
 const bool LIGHT_IS_DYNAMIC[NUM_LIGHTS] = { true, false };
 
+// FIXME: we only show the shadow map for one light, would be nice
+// to allow the user to switch the shadow map to display at run-time
+const uint32_t debug_light_idx = 0;
+
 // ----------------------------------------------------------------------------
 // Renders a scene with lighting
 //
@@ -969,10 +973,10 @@ create_debug_tile_pipeline(SceneResources *res)
 
    // FIXME: only showing the first light in the scene
    VkSampler shadow_map_sampler =
-      vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
+      vkdf_scene_light_get_shadow_map_sampler(res->scene, debug_light_idx);
 
     VkdfImage *shadow_map_image =
-      vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+      vkdf_scene_light_get_shadow_map_image(res->scene, debug_light_idx);
 
 
    vkdf_descriptor_set_sampler_update(res->ctx,
