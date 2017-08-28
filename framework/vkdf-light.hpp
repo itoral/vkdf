@@ -23,19 +23,27 @@ typedef struct {
       } priv;
       float cutoff;             // cosine of the spotlight's cutoff angle (half of apeture angle)
       float cutoff_angle;       // spotlight's cutoff angle (half of aperture angle)
-      float cutoff_padding[2];  // We want this to be vec4-aligned
+      float padding[2];         // Keep this struct 16-byte aligned
    } spot;
 
    uint32_t casts_shadows;
    uint32_t is_dynamic;
-   uint32_t dirty;
-   float padding[1];
+   uint32_t dirty;              // Whether the light has been updated
+   uint32_t dirty_shadows;      // Whether a light update affects shadow mapping
+   float padding[0];            // Keep this struct 16-byte aligned
 } VkdfLight;
 
 #define SET_FIELD(light, field, value) \
 {                                      \
    field = value;                      \
    light->dirty = (uint32_t) true;     \
+}
+
+#define SET_FIELD_SHADOW(light, field, value)  \
+{                                              \
+   field = value;                              \
+   light->dirty = (uint32_t) true;             \
+   light->dirty_shadows = (uint32_t) true;     \
 }
 
 VkdfLight *
@@ -62,7 +70,7 @@ vkdf_light_new_spotlight(glm::vec4 pos,
 void inline
 vkdf_light_set_type(VkdfLight *l, uint32_t light_type)
 {
-   l->origin.w = (float) light_type;
+   SET_FIELD_SHADOW(l, l->origin.w, (float) light_type);
 }
 
 uint32_t inline
@@ -76,7 +84,7 @@ vkdf_light_set_position(VkdfLight *l, glm::vec3 pos)
 {
    assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
    glm::vec4 p = vec4(pos, l->origin.w);
-   SET_FIELD(l, l->origin, p);
+   SET_FIELD_SHADOW(l, l->origin, p);
 }
 
 glm::vec4 inline
@@ -91,7 +99,7 @@ vkdf_light_set_direction(VkdfLight *l, glm::vec3 dir)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL);
    glm::vec4 d = vec4(dir, l->origin.w);
-   SET_FIELD(l, l->origin, d);
+   SET_FIELD_SHADOW(l, l->origin, d);
 }
 
 glm::vec4 inline
@@ -157,18 +165,15 @@ void inline
 vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   SET_FIELD(l, l->spot.cutoff_angle, angle);
-   SET_FIELD(l, l->spot.cutoff, cosf(l->spot.cutoff_angle));
+   SET_FIELD_SHADOW(l, l->spot.cutoff_angle, angle);
+   SET_FIELD_SHADOW(l, l->spot.cutoff, cosf(l->spot.cutoff_angle));
 }
 
 /* The cutoff angle is half of the aperture angle of the spotlight */
 void inline
 vkdf_light_set_aperture_angle(VkdfLight *l, float angle)
 {
-   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   angle /= 2.0f;
-   SET_FIELD(l, l->spot.cutoff_angle, angle);
-   SET_FIELD(l, l->spot.cutoff, cosf(l->spot.cutoff_angle));
+   vkdf_light_set_cutoff_angle(l, angle / 2.0f);
 }
 
 float inline
@@ -198,9 +203,10 @@ void inline
 vkdf_light_set_rotation(VkdfLight *l, glm::vec3 rot)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   SET_FIELD(l, l->spot.priv.rot, glm::vec4(rot, 0.0f));
-   SET_FIELD(l, l->spot.priv.dir,
-             glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)), 0.0f));
+   SET_FIELD_SHADOW(l, l->spot.priv.rot, glm::vec4(rot, 0.0f));
+   SET_FIELD_SHADOW(l, l->spot.priv.dir,
+                    glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)),
+                    0.0f));
 }
 
 glm::vec3 inline
@@ -213,7 +219,7 @@ vkdf_light_get_rotation(VkdfLight *l)
 void inline
 vkdf_light_enable_shadows(VkdfLight *l, bool enable)
 {
-   SET_FIELD(l, l->casts_shadows, (uint32_t) enable);
+   SET_FIELD_SHADOW(l, l->casts_shadows, (uint32_t) enable);
 }
 
 bool inline
@@ -254,10 +260,23 @@ vkdf_light_set_dirty(VkdfLight *l, bool dirty)
    l->dirty = (uint32_t) dirty;
 }
 
+void inline
+vkdf_light_set_dirty_shadows(VkdfLight *l, bool dirty)
+{
+   l->dirty_shadows = (uint32_t) dirty;
+   l->dirty = (uint32_t) dirty;
+}
+
 bool inline
 vkdf_light_is_dirty(VkdfLight *l)
 {
    return (bool) l->dirty;
+}
+
+bool inline
+vkdf_light_has_dirty_shadows(VkdfLight *l)
+{
+   return (bool) l->dirty_shadows;
 }
 
 void

@@ -13,7 +13,7 @@ struct Light
    bool casts_shadows;
    bool is_dynamic;
    bool dirty;
-   float bottom_pad;
+   bool dirty_shadows;
 };
 
 struct Material

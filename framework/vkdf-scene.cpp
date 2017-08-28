@@ -556,9 +556,12 @@ vkdf_scene_add_light(VkdfScene *s,
       s->has_shadow_caster_lights = true;
    }
 
-   // This light needs to be put in the light UBO and maybe
-   // generate a shadow map
-   vkdf_light_set_dirty(light, true);
+   // Mark light as dirty do it gets into the lights UBO and we generate
+   // shadow map for it if needed
+   if (vkdf_light_casts_shadows(light))
+      vkdf_light_set_dirty_shadows(light, true);
+   else
+      vkdf_light_set_dirty(light, true);
 
    s->lights.push_back(slight);
    s->lights_dirty = true;
@@ -1078,8 +1081,9 @@ fill_light_ubo(VkdfScene *s)
    VkDeviceSize base_offset = num_lights * ALIGN(sizeof(VkdfLight), 16);
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
-      if (!vkdf_light_is_dirty(sl->light) ||
-          !vkdf_light_casts_shadows(sl->light))
+      if (!vkdf_light_casts_shadows(sl->light))
+         continue;
+      if (!vkdf_light_has_dirty_shadows(sl->light))
          continue;
       VkDeviceSize offset = base_offset +
                             i * ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
@@ -1956,7 +1960,7 @@ update_shadow_map_cmd_bufs(VkdfScene *s)
       if (!vkdf_light_casts_shadows(sl->light))
          continue;
 
-      if (!vkdf_light_is_dirty(sl->light))
+      if (!vkdf_light_has_dirty_shadows(sl->light))
          continue;
 
       assert(sl->shadow.shadow_map.image);
@@ -2047,16 +2051,18 @@ vkdf_scene_draw(VkdfScene *s)
       uint32_t count = 0;
       for (uint32_t i = 0; i < s->lights.size(); i++) {
          VkdfSceneLight *sl = s->lights[i];
-         if (!vkdf_light_is_dirty(sl->light))
-            continue;
-
          vkdf_light_set_dirty(sl->light, false);
 
          // Nothing to do if the light doesn't need a shadow map
          if (!vkdf_light_casts_shadows(sl->light))
             continue;
 
+         // If the shadow map is not dirty, nothing to udate
+         if (!vkdf_light_has_dirty_shadows(sl->light))
+            continue;
+
          cmd_bufs[count++] = sl->shadow.cmd_buf;
+         vkdf_light_set_dirty_shadows(sl->light, false);
       }
 
       assert(count > 0);
