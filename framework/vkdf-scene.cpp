@@ -1614,9 +1614,69 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
                                 &sl->shadow.framebuffer));
 }
 
+static void
+compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
+{
+   // We don't support dynamic light sources yet
+   assert(!sl->is_dynamic);
+
+   // The Light must be a shadow caster and we should've a shadow map image
+   assert(vkdf_light_casts_shadows(sl->light));
+   assert(sl->shadow.shadow_map.image);
+
+   // FIXME: We only support spotlights for now
+   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+
+   // Compute spotlight's frustum bounds for clipping
+   float aperture_angle =
+      RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
+
+   glm::vec3 f[8];
+    vkdf_compute_frustum_vertices(
+      vkdf_light_get_position(sl->light),
+      vkdf_light_get_rotation(sl->light),
+      sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
+      aperture_angle,
+      1.0f,
+      f);
+
+   VkdfBox frustum_box;
+   vkdf_compute_frustum_clip_box(f, &frustum_box);
+
+   VkdfPlane frustum_planes[6];
+   vkdf_compute_frustum_planes(f, frustum_planes);
+
+   // Find the list of tiles visible to this light
+   sl->shadow.visible = find_visible_tiles(s, 0, s->num_tiles.total - 1,
+                                           &frustum_box, frustum_planes);
+
+#if 0
+   // Trim the list of visible tiles further by testing the tiles that
+   // passed the tests against the cone of the spotlight
+   // FIXME: seems to work fine, but due to CPU/GPU precission differences
+   // the vkdf_box_box_is_in_cone() function requires some error margin
+   // that reduces its effectiviness, so disable it for now.
+   GList *iter = sl->shadow.visible;
+   while (iter) {
+      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+      if (!vkdf_box_is_in_cone(&t->box,
+                               vkdf_light_get_position(sl->light),
+                               vec3(vkdf_light_get_direction(sl->light)),
+                               vkdf_light_get_cutoff_factor(sl->light))) {
+         GList *tmp = iter;
+         iter = g_list_next(iter);
+         sl->shadow.visible = g_list_delete_link(sl->shadow.visible, tmp);
+         // vkdf_info("scene: spotlight cone culling success.\n");
+      } else {
+         iter = g_list_next(iter);
+      }
+   }
+#endif
+}
+
 /**
+ * Prepares state and resources required by light sources:
  * - Prepares rendering resources for shadow maps
- * - Computes visible tiles for each static light source that casts shadows
  */
 static void
 prepare_scene_lights(VkdfScene *s)
@@ -1624,72 +1684,13 @@ prepare_scene_lights(VkdfScene *s)
    if (!s->lights_dirty)
       return;
 
-   // Create rendering resources for shadow maps
+   // Create shared rendering resources for shadow maps
    create_shadow_map_renderpass(s);
    create_shadow_map_pipelines(s);
 
-   // Find visible tiles for shadow casters, create shadow map framebuffers
+   // Create per-light resources
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
-
-      // We don't support dynamic light sources yet
-      assert(!sl->is_dynamic);
-
-      // Only need to preprocess shadow casters
-      if (!vkdf_light_casts_shadows(sl->light))
-         continue;
-      assert(sl->shadow.shadow_map.image);
-
-      // FIXME: We only support spotlights for now
-      assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
-
-      // Compute spotlight's frustum bounds for clipping
-      float aperture_angle =
-         RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
-
-      glm::vec3 f[8];
-      vkdf_compute_frustum_vertices(
-         vkdf_light_get_position(sl->light),
-         vkdf_light_get_rotation(sl->light),
-         sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
-         aperture_angle,
-         1.0f,
-         f);
-
-      VkdfBox frustum_box;
-      vkdf_compute_frustum_clip_box(f, &frustum_box);
-
-      VkdfPlane frustum_planes[6];
-      vkdf_compute_frustum_planes(f, frustum_planes);
-
-      // Find the list of tiles visible to this light
-      sl->shadow.visible = find_visible_tiles(s, 0, s->num_tiles.total - 1,
-                                              &frustum_box, frustum_planes);
-
-#if 0
-      // Trim the list of visible tiles further by testing the tiles that
-      // passed the tests against the cone of the spotlight
-      // FIXME: seems to work fine, but due to CPU/GPU precission differences
-      // the vkdf_box_box_is_in_cone() function requires some error margin
-      // that reduces its effectiviness, so disable it for now.
-      GList *iter = sl->shadow.visible;
-      while (iter) {
-         VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-         if (!vkdf_box_is_in_cone(&t->box,
-                                  vkdf_light_get_position(sl->light),
-                                  vec3(vkdf_light_get_direction(sl->light)),
-                                  vkdf_light_get_cutoff_factor(sl->light))) {
-            GList *tmp = iter;
-            iter = g_list_next(iter);
-            sl->shadow.visible = g_list_delete_link(sl->shadow.visible, tmp);
-            // vkdf_info("scene: spotlight cone culling success.\n");
-         } else {
-            iter = g_list_next(iter);
-         }
-      }
-#endif
-
-      // Create the target framebuffer for the shadow map pipeline
       create_shadow_map_framebuffer(s, sl);
    }
 }
@@ -1966,6 +1967,7 @@ update_shadow_map_cmd_bufs(VkdfScene *s)
       assert(sl->shadow.shadow_map.image);
       assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
+      compute_visible_tiles_for_light(s, sl);
       record_shadow_map_cmd_buf(s, sl);
    }
 }
