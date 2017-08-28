@@ -423,7 +423,7 @@ render_pass_commands(VkdfContext *ctx, SceneResources *res)
    const VkdfMesh *cube_mesh = res->cubes[0]->model->meshes[0];
    const VkdfMesh *tile_mesh = res->tiles[0]->model->meshes[0];
 
-   // ------------------- Subpass 0: scene rendering ------------------- 
+   // ------------------- Subpass 0: scene rendering -------------------
 
    // Viewport and Scissor
    VkViewport viewport;
@@ -1429,11 +1429,17 @@ create_ui_tile_pipeline(VkdfContext *ctx, SceneResources *res)
 static void
 init_light_sources(VkdfContext *ctx, SceneResources *res)
 {
-   res->light.origin = glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f);
-   res->light.diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-   res->light.ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
-   res->light.specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-   res->light.attenuation = glm::vec4(0.1f, 0.05f, 0.01f, 0.0f);
+   vkdf_light_set_type(&res->light, VKDF_LIGHT_SPOTLIGHT);
+   vkdf_light_set_position(&res->light,
+                           glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f));
+   vkdf_light_set_diffuse(&res->light,
+                          glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
+   vkdf_light_set_ambient(&res->light,
+                          glm::vec4(0.02f, 0.02f, 0.02f, 1.0f));
+   vkdf_light_set_specular(&res->light,
+                           glm::vec4(1.0f, 1.0f, 1.0f, 0.0f));
+   vkdf_light_set_attenuation(&res->light,
+                              glm::vec4(0.1f, 0.05f, 0.01f, 0.0f));
 
    vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
    vkdf_light_set_cutoff_angle(&res->light, DEG_TO_RAD(45.0f / 2.0f));
@@ -1889,7 +1895,8 @@ update_lights(SceneResources *res)
 
    glm::mat4 model(1.0f);
    model = glm::rotate(model, DEG_TO_RAD(rotY), glm::vec3(0, 1, 0));
-   res->light.origin = model * glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f);
+   vkdf_light_set_position(&res->light,
+                           model * glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f));
    vkdf_light_look_at(&res->light, glm::vec3(0.0f, 0.0f, 0.0f));
 
    rotY += 0.25f;

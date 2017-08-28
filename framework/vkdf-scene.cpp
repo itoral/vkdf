@@ -537,8 +537,8 @@ vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *spec)
 {
-   assert(!light->is_dynamic);
-   assert(light->casts_shadows == (spec != NULL));
+   assert(!vkdf_light_is_dynamic(light));
+   assert(vkdf_light_casts_shadows(light) == (spec != NULL));
 
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
@@ -558,7 +558,7 @@ vkdf_scene_add_light(VkdfScene *s,
 
    // This light needs to be put in the light UBO and maybe
    // generate a shadow map
-   slight->light->dirty = true;
+   vkdf_light_set_dirty(light, true);
 
    s->lights.push_back(slight);
    s->lights_dirty = true;
@@ -1068,7 +1068,7 @@ fill_light_ubo(VkdfScene *s)
    // First we pack light descriptions
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
-      if (!sl->light->dirty)
+      if (!vkdf_light_is_dirty(sl->light))
          continue;
       VkDeviceSize offset = i * ALIGN(sizeof(VkdfLight), 16);
       memcpy(mem + offset, sl->light, sizeof(VkdfLight));
@@ -1078,7 +1078,8 @@ fill_light_ubo(VkdfScene *s)
    VkDeviceSize base_offset = num_lights * ALIGN(sizeof(VkdfLight), 16);
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
-      if (!sl->light->dirty || !sl->light->casts_shadows)
+      if (!vkdf_light_is_dirty(sl->light) ||
+          !vkdf_light_casts_shadows(sl->light))
          continue;
       VkDeviceSize offset = base_offset +
                             i * ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
@@ -1631,7 +1632,7 @@ prepare_scene_lights(VkdfScene *s)
       assert(!sl->is_dynamic);
 
       // Only need to preprocess shadow casters
-      if (!sl->light->casts_shadows)
+      if (!vkdf_light_casts_shadows(sl->light))
          continue;
       assert(sl->shadow.shadow_map.image);
 
@@ -1639,14 +1640,15 @@ prepare_scene_lights(VkdfScene *s)
       assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
       // Compute spotlight's frustum bounds for clipping
-      float cutoff_angle_deg =
-         2.0f * RAD_TO_DEG(vkdf_light_get_cutoff_angle(sl->light));
+      float aperture_angle =
+         RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
 
       glm::vec3 f[8];
       vkdf_compute_frustum_vertices(
-         sl->light->origin, sl->light->spot.priv.rot,
+         vkdf_light_get_position(sl->light),
+         vkdf_light_get_rotation(sl->light),
          sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
-         cutoff_angle_deg,
+         aperture_angle,
          1.0f,
          f);
 
@@ -1669,9 +1671,10 @@ prepare_scene_lights(VkdfScene *s)
       GList *iter = sl->shadow.visible;
       while (iter) {
          VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-         if (!vkdf_box_is_in_cone(&t->box, sl->light->origin,
-                                  vec3(sl->light->spot.priv.dir),
-                                  sl->light->spot.cutoff)) {
+         if (!vkdf_box_is_in_cone(&t->box,
+                                  vkdf_light_get_position(sl->light),
+                                  vec3(vkdf_light_get_direction(sl->light)),
+                                  vkdf_light_get_cutoff_factor(sl->light))) {
             GList *tmp = iter;
             iter = g_list_next(iter);
             sl->shadow.visible = g_list_delete_link(sl->shadow.visible, tmp);
@@ -1950,10 +1953,10 @@ update_shadow_map_cmd_bufs(VkdfScene *s)
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
 
-      if (!sl->light->casts_shadows)
+      if (!vkdf_light_casts_shadows(sl->light))
          continue;
 
-      if (!sl->light->dirty)
+      if (!vkdf_light_is_dirty(sl->light))
          continue;
 
       assert(sl->shadow.shadow_map.image);
@@ -2044,13 +2047,13 @@ vkdf_scene_draw(VkdfScene *s)
       uint32_t count = 0;
       for (uint32_t i = 0; i < s->lights.size(); i++) {
          VkdfSceneLight *sl = s->lights[i];
-         if (!sl->light->dirty)
+         if (!vkdf_light_is_dirty(sl->light))
             continue;
 
-         sl->light->dirty = false;
+         vkdf_light_set_dirty(sl->light, false);
 
          // Nothing to do if the light doesn't need a shadow map
-         if (!sl->light->casts_shadows)
+         if (!vkdf_light_casts_shadows(sl->light))
             continue;
 
          cmd_bufs[count++] = sl->shadow.cmd_buf;
