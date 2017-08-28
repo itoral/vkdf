@@ -27,10 +27,9 @@ typedef struct {
    } spot;
 
    uint32_t casts_shadows;
-   uint32_t is_dynamic;
    uint32_t dirty;              // Whether the light has been updated
    uint32_t dirty_shadows;      // Whether a light update affects shadow mapping
-   float padding[0];            // Keep this struct 16-byte aligned
+   float padding[1];            // Keep this struct 16-byte aligned
 } VkdfLight;
 
 #define SET_FIELD(light, field, value) \
@@ -240,18 +239,6 @@ vkdf_light_get_view_matrix(VkdfLight *l)
 {
    return vkdf_compute_view_matrix_for_rotation(glm::vec3(l->origin),
                                                 glm::vec3(l->spot.priv.rot));
-}
-
-void inline
-vkdf_light_set_is_dynamic(VkdfLight *l, bool enable)
-{
-   SET_FIELD(l, l->is_dynamic, (uint32_t) enable);
-}
-
-bool inline
-vkdf_light_is_dynamic(VkdfLight *l)
-{
-   return l->is_dynamic;
 }
 
 void inline

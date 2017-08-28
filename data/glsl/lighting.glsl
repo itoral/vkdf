@@ -9,11 +9,11 @@ struct Light
    vec4 direction;
    float cutoff;
    float cutoff_angle;
-   float cutoff_pad1, cutoff_pad2;
+   float spot_padding1, spot_padding2;
    bool casts_shadows;
-   bool is_dynamic;
    bool dirty;
    bool dirty_shadows;
+   uint32_t padding1;
 };
 
 struct Material
