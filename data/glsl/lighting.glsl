@@ -7,8 +7,8 @@ struct Light
    vec4 attenuation;
    vec4 rotation;
    vec4 direction;
-   float cutoff;
-   float cutoff_angle;
+   float spot_cutoff;
+   float spot_cutoff_angle;
    float spot_angle_dist_factor;
    float spot_ambient_clamp_factor;
    float intensity;
@@ -45,7 +45,7 @@ compute_spotlight_cutoff_factor(Light l,
    float dp_angle_with_light = dot(light_to_pos_norm, spotlight_dir_norm);
 
    float dist;
-   if (dp_angle_with_light < l.cutoff) {
+   if (dp_angle_with_light < l.spot_cutoff) {
       // This beam is outside the spotlight, cut it off
       cutoff_factor = 0.0;
    } else {
@@ -75,7 +75,7 @@ compute_spotlight_cutoff_factor(Light l,
    // beam, again, because it would make things look bad for occluded fragments
    // inside the cone of light, which would have too much ambient light.
    dist = (1.0 - dp_angle_with_light) *
-          l.spot_angle_dist_factor * l.cutoff * l.cutoff;
+          l.spot_angle_dist_factor * l.spot_cutoff * l.spot_cutoff;
    float angle_att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist);
    ambient_att_factor = att_factor *
                         clamp(angle_att_factor, 0.0, l.spot_ambient_clamp_factor);
