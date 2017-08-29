@@ -57,6 +57,8 @@ vkdf_light_new_spotlight(glm::vec4 pos,
    l->spot.priv.rot = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
    l->spot.priv.dir =
       glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)), 0.0f);
+   l->spot.angle_dist_factor = 50.0f;
+   l->spot.ambient_clamp_factor = 2.0f;
    vkdf_light_set_cutoff_angle(l, cutoff_angle);
    return l;
 }

@@ -9,7 +9,8 @@ struct Light
    vec4 direction;
    float cutoff;
    float cutoff_angle;
-   float spot_padding1, spot_padding2;
+   float spot_angle_dist_factor;
+   float spot_ambient_clamp_factor;
    float intensity;
    bool casts_shadows;
    bool dirty;
@@ -32,18 +33,52 @@ struct LightColor
    vec3 specular;
 };
 
-float
-compute_spotlight_cutoff_factor(Light l, vec3 light_to_pos_norm)
+void
+compute_spotlight_cutoff_factor(Light l,
+                                vec3 light_to_pos_norm,
+                                float att_factor,
+                                out float cutoff_factor,
+                                out float ambient_att_factor)
 {
    // Compute angle of this light beam with the spotlight's direction
    vec3 spotlight_dir_norm = normalize(vec3(l.direction));
    float dp_angle_with_light = dot(light_to_pos_norm, spotlight_dir_norm);
 
-   // If the angle exceeds the light's cutoff angle then the beam is cutoff
-   if (dp_angle_with_light <= l.cutoff)
-      return 0.0;
+   float dist;
+   if (dp_angle_with_light < l.cutoff) {
+      // This beam is outside the spotlight, cut it off
+      cutoff_factor = 0.0;
+   } else {
+      // This beam is inside the spotlight's area
+      cutoff_factor = 1.0;
+   }
 
-   return 1.0;
+   // Ambient light for spotlights should also consider the angle with
+   // the spotlight besides the distance to its source. The idea is that
+   // fragments that are closer to the beam get more ambient light and
+   // ambient light decreases progressively as the angle with the spotlight's
+   // direction increases.
+   //
+   // We make the ambient light be at its peak right at the center of the beam
+   // and it starts decreasing progressively. This is good for ambient light
+   // in areas of the scene that are inside the beam bit are occluded from
+   // direct exposure (they are shadowed). Without this, we would see
+   // the are that falls inside the cone of light have constant ambient light,
+   // outlining the spotlight's cone and that doesn't look good.
+   //
+   // Also, we want that lights with a larger cutoff angle (smaller cutoff
+   // factor) do not get very little ambient light at the edge of the spotlight
+   // compared to smaller lights, so we modulate the distance with the light's
+   // cutoff factor to compensate for this.
+   //
+   // Finally, we clamp the result to avoid too much ambient light inside the
+   // beam, again, because it would make things look bad for occluded fragments
+   // inside the cone of light, which would have too much ambient light.
+   dist = (1.0 - dp_angle_with_light) *
+          l.spot_angle_dist_factor * l.cutoff * l.cutoff;
+   float angle_att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist);
+   ambient_att_factor = att_factor *
+                        clamp(angle_att_factor, 0.0, l.spot_ambient_clamp_factor);
 }
 
 float
@@ -105,32 +140,7 @@ compute_lighting(Light l,
    vec3 light_to_pos_norm;
    float att_factor;
    float cutoff_factor;
-
-   if (l.pos.w == 0.0) {
-      // Directional light, no attenuation, no cutoff
-      light_to_pos_norm = normalize(vec3(l.pos));
-      att_factor = 1.0;
-      cutoff_factor = 1.0;
-   } else {
-      // Positional light, compute attenuation
-      vec3 light_to_pos = world_pos - l.pos.xyz;
-      light_to_pos_norm = normalize(light_to_pos);
-      float dist = length(light_to_pos);
-      att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist +
-                          l.attenuation.z * dist * dist);
-
-      if (l.pos.w == 1.0) {
-         // Point light, no cutoff
-         cutoff_factor = 1.0f;
-      } else {
-         // Spotlight
-         cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
-      }
-   }
-
-   // Compute reflection from light for this fragment
-   normal = normalize(normal);
-   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+   float ambient_att_factor;
 
    // Check if the fragment is in the shadow
    float shadow_factor;
@@ -140,16 +150,46 @@ compute_lighting(Light l,
    } else {
       shadow_factor = 1.0;
    }
+
+   if (l.pos.w == 0.0) {
+      // Directional light, no attenuation, no cutoff
+      light_to_pos_norm = normalize(vec3(l.pos));
+      att_factor = 1.0;
+      cutoff_factor = 1.0;
+      ambient_att_factor = att_factor;
+   } else {
+      // Positional light, compute attenuation
+      vec3 light_to_pos = world_pos - l.pos.xyz;
+      light_to_pos_norm = normalize(light_to_pos);
+      float dist = length(light_to_pos);
+      att_factor = 1.0 / (l.attenuation.x + l.attenuation.y * dist +
+                          l.attenuation.z * dist * dist);
+
+      if (l.pos.w == 1.0) {
+         // Point light: no cutoff, normal ambient attenuation
+         cutoff_factor = 1.0f;
+         ambient_att_factor = att_factor;
+      } else {
+         // Spotlight: cutoff, ambient attenuation factors in the angle
+         compute_spotlight_cutoff_factor(l, light_to_pos_norm, att_factor,
+                                         cutoff_factor, ambient_att_factor);
+      }
+   }
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
    shadow_factor *= cutoff_factor;
 
    // Compute light contributions to the fragment.
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
                 dp_reflection * shadow_factor * l.intensity;
-   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * ambient_att_factor *
+                l.intensity;
 
    lc.specular = vec3(0);
-
    if (dot(normal, -light_to_pos_norm) >= 0.0) {
       vec3 reflection_dir = reflect(light_to_pos_norm, normal);
       float shine_factor = dot(reflection_dir, normalize(view_dir));
@@ -172,12 +212,14 @@ compute_lighting(Light l,
    vec3 light_to_pos_norm;
    float att_factor;
    float cutoff_factor;
+   float ambient_att_factor;
 
    if (l.pos.w == 0.0) {
       // Directional light, no attenuation, no cutoff
       light_to_pos_norm = normalize(vec3(l.pos));
       att_factor = 1.0;
       cutoff_factor = 1.0;
+      ambient_att_factor = att_factor;
    } else {
       // Positional light, compute attenuation
       vec3 light_to_pos = world_pos - l.pos.xyz;
@@ -187,11 +229,13 @@ compute_lighting(Light l,
                           l.attenuation.z * dist * dist);
 
       if (l.pos.w == 1.0) {
-         // Point light, no cutoff
+         // Point light: no cutoff, normal ambient attenuation
          cutoff_factor = 1.0f;
+         ambient_att_factor = att_factor;
       } else {
-         // Spotlight
-         cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+         // Spotlight: cutoff, ambient attenuation factors in the angle
+         compute_spotlight_cutoff_factor(l, light_to_pos_norm, att_factor,
+                                         cutoff_factor, ambient_att_factor);
       }
    }
 
@@ -206,7 +250,8 @@ compute_lighting(Light l,
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
                 dp_reflection * shadow_factor * l.intensity;
-   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * ambient_att_factor *
+                l.intensity;
 
    lc.specular = vec3(0);
    if (dot(normal, -light_to_pos_norm) >= 0.0) {
