@@ -110,35 +110,24 @@ init_ubos(SceneResources *res)
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 }
 
-static VkCommandBuffer
+static bool
 record_update_resources_command(VkdfContext *ctx,
-                                VkCommandPool cmd_pool,
+                                VkCommandBuffer cmd_buf,
                                 void *data)
 {
    SceneResources *res = (SceneResources *) data;
 
    VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
    if (!vkdf_camera_is_dirty(camera))
-      return 0;
-
-   // FIXME: maybe use a different pool that has the
-   // VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
-   VkCommandBuffer cmd_buf;
-   vkdf_create_command_buffer(ctx,
-                              cmd_pool,
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
-
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+      return false;
 
    glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
-   vkCmdUpdateBuffer(cmd_buf, res->ubos.camera_view.buf.buf,
-                     0, sizeof(glm::mat4), &view[0][0]);
+   vkCmdUpdateBuffer(cmd_buf,
+                     res->ubos.camera_view.buf.buf,
+                     0, sizeof(glm::mat4),
+                     &view[0][0]);
 
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
+   return true;
 }
 
 static void
@@ -167,7 +156,7 @@ record_scene_commands(VkdfContext *ctx,
                       VkCommandPool cmd_pool,
                       VkFramebuffer framebuffer,
                       uint32_t fb_width, uint32_t fb_height,
-                      GHashTable *sets,
+                      GHashTable *sets, bool is_dynamic,
                       void *data)
 {
    SceneResources *res = (SceneResources *) data;
@@ -329,7 +318,6 @@ init_scene(SceneResources *res)
                                res->camera,
                                scene_origin, scene_size, tile_size, 2,
                                cache_size, 4);
-
    vkdf_scene_set_render_target(res->scene, res->framebuffer, ctx->width, ctx->height);
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,

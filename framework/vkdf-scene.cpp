@@ -3,6 +3,11 @@
 #define JOIN(a,b) (a b)
 #define SHADOW_MAP_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/shadow-map.vert.spv")
 
+static const uint32_t MAX_MATERIALS_PER_MODEL =    8;
+static const uint32_t MAX_DYNAMIC_OBJECTS     = 1024;
+static const uint32_t MAX_DYNAMIC_MODELS      =  128;
+static const uint32_t MAX_DYNAMIC_MATERIALS   =  MAX_DYNAMIC_MODELS * MAX_MATERIALS_PER_MODEL;
+
 struct FreeCmdBufInfo {
    VkCommandBuffer cmd_buf;
    VkdfSceneTile *tile;
@@ -194,6 +199,11 @@ vkdf_scene_new(VkdfContext *ctx,
    s->ubo.static_pool =
       vkdf_create_descriptor_pool(s->ctx, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8);
 
+   s->dynamic.sets =
+      g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+   s->dynamic.visible =
+      g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+
    return s;
 }
 
@@ -257,6 +267,14 @@ free_tile(VkdfSceneTile *t)
 }
 
 static void
+free_dynamic_objects(VkdfScene *s)
+{
+   g_hash_table_foreach(s->dynamic.sets, destroy_set_full, NULL);
+   g_hash_table_destroy(s->dynamic.sets);
+   s->dynamic.sets = NULL;
+}
+
+static void
 destroy_shadow_map_pipeline(gpointer key, gpointer value, gpointer data)
 {
    VkdfScene *s = (VkdfScene *) data;
@@ -296,6 +314,11 @@ vkdf_scene_free(VkdfScene *s)
    for (uint32_t i = 0; i < s->num_tiles.total; i++)
       free_tile(&s->tiles[i]);
    g_free(s->tiles);
+
+   free_dynamic_objects(s);
+   g_free(s->dynamic.ubo.obj.host_buf);
+   g_free(s->dynamic.ubo.material.host_buf);
+   g_free(s->dynamic.ubo.shadow_map.host_buf);
 
    for (uint32_t i = 0; i < s->lights.size(); i++)
       destroy_light(s, s->lights[i]);
@@ -342,14 +365,27 @@ vkdf_scene_free(VkdfScene *s)
    if (s->shadows.shaders.vs)
      vkDestroyShaderModule(s->ctx->device, s->shadows.shaders.vs, NULL);
 
+   // FIXME: have a list of buffers in the scene so that here we can just go
+   // through the list and destory all of them without having to add another
+   // deleter every time we start using a new buffer.
    if (s->ubo.obj.buf.buf) {
       vkDestroyBuffer(s->ctx->device, s->ubo.obj.buf.buf, NULL);
       vkFreeMemory(s->ctx->device, s->ubo.obj.buf.mem, NULL);
    }
 
+   if (s->dynamic.ubo.obj.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->dynamic.ubo.obj.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->dynamic.ubo.obj.buf.mem, NULL);
+   }
+
    if (s->ubo.material.buf.buf) {
       vkDestroyBuffer(s->ctx->device, s->ubo.material.buf.buf, NULL);
       vkFreeMemory(s->ctx->device, s->ubo.material.buf.mem, NULL);
+   }
+
+   if (s->dynamic.ubo.material.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->dynamic.ubo.material.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->dynamic.ubo.material.buf.mem, NULL);
    }
 
    if (s->ubo.light.buf.buf) {
@@ -362,7 +398,13 @@ vkdf_scene_free(VkdfScene *s)
       vkFreeMemory(s->ctx->device, s->ubo.shadow_map.buf.mem, NULL);
    }
 
+   if (s->dynamic.ubo.shadow_map.buf.buf) {
+      vkDestroyBuffer(s->ctx->device, s->dynamic.ubo.shadow_map.buf.buf, NULL);
+      vkFreeMemory(s->ctx->device, s->dynamic.ubo.shadow_map.buf.mem, NULL);
+   }
+
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
+
 
    g_free(s);
 }
@@ -420,12 +462,7 @@ set_id_is_registered(VkdfScene *s, const char *id)
 static void
 add_static_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
 {
-   if (!set_id_is_registered(s, set_id)) {
-      s->set_ids = g_list_prepend(s->set_ids, g_strdup(set_id));
-      s->models = g_list_prepend(s->models, obj->model);
-   }
-
-   bool is_shadow_caster = obj->casts_shadows;
+   bool is_shadow_caster = vkdf_object_casts_shadows(obj);
 
    // Find tile this object belongs to
    glm::vec3 tile_coord = tile_coord_from_position(s, obj->pos);
@@ -484,15 +521,37 @@ add_static_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    s->dirty = true;
 }
 
+static void
+add_dynamic_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
+{
+   // FIXME: for dynamic objects a hashtable might not be the best choice...
+   VkdfSceneSetInfo *info =
+      (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.sets, set_id);
+   if (!info) {
+      info = g_new0(VkdfSceneSetInfo, 1);
+      g_hash_table_replace(s->dynamic.sets, g_strdup(set_id), info);
+   }
+   info->objs = g_list_prepend(info->objs, obj);
+   info->count++;
+   if (vkdf_object_casts_shadows(obj))
+      info->shadow_caster_count++;
+}
+
 void
 vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
 {
    assert(obj->model);
 
-   // FIXME: we don't support dynamic objects yet
-   assert(vkdf_object_is_dynamic(obj) == false);
+   if (!set_id_is_registered(s, set_id)) {
+      s->set_ids = g_list_prepend(s->set_ids, g_strdup(set_id));
+      s->models = g_list_prepend(s->models, obj->model);
+   }
 
-   add_static_object(s, set_id, obj);
+   if (!vkdf_object_is_dynamic(obj))
+      add_static_object(s, set_id, obj);
+   else
+      add_dynamic_object(s, set_id, obj);
+
    s->obj_count++;
 }
 
@@ -567,6 +626,8 @@ vkdf_scene_add_light(VkdfScene *s,
    else
       vkdf_light_set_dirty(light, true);
 
+   slight->frustum.dirty = true;
+
    s->lights.push_back(slight);
 }
 
@@ -625,13 +686,22 @@ build_primary_cmd_buf(VkdfScene *s)
                         VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
    uint32_t cmd_buf_count = g_list_length(active);
+   if (s->cmd_buf.dynamic)
+      cmd_buf_count++;
+
    if (cmd_buf_count > 0) {
       VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, cmd_buf_count);
+      uint32_t idx = 0;
       GList *iter = active;
-      for (uint32_t i = 0; i < cmd_buf_count; i++, iter = g_list_next(iter)) {
+      while (iter) {
          VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
          assert(t->cmd_buf != 0);
-         cmd_bufs[i] = t->cmd_buf;
+         cmd_bufs[idx++] = t->cmd_buf;
+         iter = g_list_next(iter);
+      }
+      if (s->cmd_buf.dynamic) {
+         assert(idx == cmd_buf_count - 1);
+         cmd_bufs[idx] = s->cmd_buf.dynamic;
       }
 
       vkCmdExecuteCommands(cmd_buf, cmd_buf_count, cmd_bufs);
@@ -727,7 +797,7 @@ new_active_tile(struct ThreadData *data, VkdfSceneTile *t)
    VkCommandBuffer cmd_buf =
       s->callbacks.record_commands(s->ctx, s->cmd_buf.pool[thread_id],
                                    s->framebuffer, s->fb_width, s->fb_height,
-                                   t->sets, s->callbacks.data);
+                                   t->sets, false, s->callbacks.data);
    t->cmd_buf = cmd_buf;
    s->cmd_buf.active[thread_id] =
       g_list_prepend(s->cmd_buf.active[thread_id], t);
@@ -782,12 +852,45 @@ new_inactive_cmd_buf(struct ThreadData *data, VkCommandBuffer cmd_buf)
       g_list_prepend(s->cmd_buf.free[thread_id], info);
 }
 
-static inline VkCommandBuffer
-record_resource_updates(VkdfScene *s)
+static void
+start_recording_resource_updates(VkdfScene *s)
 {
-   return s->callbacks.update_resources(s->ctx,
-                                        s->cmd_buf.pool[0],
-                                        s->callbacks.data);
+   // If the previous frame didn't have any resource updates, we have the
+   // resouce update command buffer available for this frame, otherwise
+   // we need to create a new one.
+   VkCommandBuffer cmd_buf;
+   if (s->cmd_buf.update_resources && !s->cmd_buf.have_resource_updates) {
+      cmd_buf = s->cmd_buf.update_resources;
+   } else {
+      if (s->cmd_buf.update_resources)
+         new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.update_resources);
+
+      vkdf_create_command_buffer(s->ctx,
+                                 s->cmd_buf.pool[0],
+                                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                 1, &cmd_buf);
+
+      vkdf_command_buffer_begin(cmd_buf,
+                                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+   }
+
+   s->cmd_buf.update_resources = cmd_buf;
+}
+
+static inline void
+stop_recording_resource_updates(VkdfScene *s)
+{
+   if (s->cmd_buf.have_resource_updates)
+      vkdf_command_buffer_end(s->cmd_buf.update_resources);
+}
+
+static inline void
+record_client_resource_updates(VkdfScene *s)
+{
+   s->cmd_buf.have_resource_updates =
+      s->callbacks.update_resources(s->ctx,
+                                    s->cmd_buf.update_resources,
+                                    s->callbacks.data);
 }
 
 static void
@@ -985,7 +1088,8 @@ find_visible_tiles(VkdfScene *s,
 static void
 create_static_object_ubo(VkdfScene *s)
 {
-   // Per-instance data: model matrix, base material index
+   // Per-instance data: model matrix, base material index, model index,
+   // receives shadows
    uint32_t num_objects = vkdf_scene_get_static_object_count(s);
    s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
    s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
@@ -1051,6 +1155,27 @@ create_static_object_ubo(VkdfScene *s)
 
    vkdf_memory_unmap(s->ctx, s->ubo.obj.buf.mem, s->ubo.obj.buf.mem_props,
                      0, VK_WHOLE_SIZE);
+}
+
+static void
+create_dynamic_object_ubo(VkdfScene *s)
+{
+   // Per-instance data: model matrix, base material index,
+   // model index, receives shadows
+   s->dynamic.ubo.obj.inst_size =
+      ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
+
+   s->dynamic.ubo.obj.host_buf =
+      g_new(uint8_t, MAX_DYNAMIC_OBJECTS * s->dynamic.ubo.obj.inst_size);
+
+   s->dynamic.ubo.obj.size = s->dynamic.ubo.obj.inst_size * MAX_DYNAMIC_OBJECTS;
+
+   s->dynamic.ubo.obj.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->dynamic.ubo.obj.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 }
 
 struct _shadow_map_ubo_data {
@@ -1146,14 +1271,32 @@ create_static_shadow_map_ubo(VkdfScene *s)
 }
 
 static void
+create_dynamic_shadow_map_ubo(VkdfScene *s)
+{
+   s->dynamic.ubo.shadow_map.inst_size = ALIGN(sizeof(glm::mat4), 16);
+
+   VkDeviceSize buf_size =
+      s->dynamic.ubo.shadow_map.inst_size * MAX_DYNAMIC_OBJECTS *
+         s->lights.size();
+
+   s->dynamic.ubo.shadow_map.host_buf = g_new(uint8_t, buf_size);
+   s->dynamic.ubo.shadow_map.size = buf_size;
+
+   s->dynamic.ubo.shadow_map.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->dynamic.ubo.shadow_map.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+}
+
+static void
 create_static_material_ubo(VkdfScene *s)
 {
    // NOTE: this doesn't consider the case where we have repeated models,
    // which could happen if different set-ids share the same model. It is
    // fine though, since we don't handle the case of shared models when
    // we set up the static object ubo either.
-   const uint32_t MAX_MATERIALS_PER_MODEL = 8;
-
    uint32_t num_models = g_list_length(s->models);
    s->ubo.material.size = num_models * MAX_MATERIALS_PER_MODEL *
                           ALIGN(sizeof(VkdfMaterial), 16);
@@ -1187,6 +1330,25 @@ create_static_material_ubo(VkdfScene *s)
 
    vkdf_memory_unmap(s->ctx, s->ubo.material.buf.mem,
                      s->ubo.material.buf.mem_props, 0, VK_WHOLE_SIZE);
+}
+
+static void
+create_dynamic_material_ubo(VkdfScene *s)
+{
+   s->dynamic.ubo.material.inst_size = ALIGN(sizeof(VkdfMaterial), 16);
+
+   VkDeviceSize buf_size =
+      MAX_DYNAMIC_MATERIALS * s->dynamic.ubo.material.inst_size;
+
+   s->dynamic.ubo.material.host_buf = g_new(uint8_t, buf_size);
+   s->dynamic.ubo.material.size = buf_size;
+
+   s->dynamic.ubo.material.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->dynamic.ubo.material.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 }
 
 /**
@@ -1237,9 +1399,15 @@ prepare_scene_objects(VkdfScene *s)
 
    create_static_object_ubo(s);
    create_static_material_ubo(s);
+
+   create_dynamic_object_ubo(s);
+   create_dynamic_material_ubo(s);
+
    create_light_ubo(s);
-   if (s->has_shadow_caster_lights)
+   if (s->has_shadow_caster_lights) {
       create_static_shadow_map_ubo(s);
+      create_dynamic_shadow_map_ubo(s);
+   }
 
    s->dirty = false;
 }
@@ -1504,11 +1672,22 @@ create_shadow_map_pipelines(VkdfScene *s)
       create_descriptor_set(s->ctx, s->ubo.static_pool,
                             s->shadows.pipeline.models_set_layout);
 
+   s->shadows.pipeline.dyn_models_set =
+      create_descriptor_set(s->ctx, s->ubo.static_pool,
+                            s->shadows.pipeline.models_set_layout);
+
    VkDeviceSize ubo_offset = 0;
    VkDeviceSize ubo_size = s->ubo.shadow_map.size;
    vkdf_descriptor_set_buffer_update(s->ctx,
                                      s->shadows.pipeline.models_set,
                                      s->ubo.shadow_map.buf.buf,
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
+
+   ubo_offset = 0;
+   ubo_size = s->dynamic.ubo.shadow_map.size;
+   vkdf_descriptor_set_buffer_update(s->ctx,
+                                     s->shadows.pipeline.dyn_models_set,
+                                     s->dynamic.ubo.shadow_map.buf.buf,
                                      0, 1, &ubo_offset, &ubo_size, false, true);
 
    // Pipeline layout: 2 push constant ranges and 1 set layout
@@ -1574,6 +1753,55 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
                                 &sl->shadow.framebuffer));
 }
 
+// FIXME: we should have a frustum object, then we could put these functions
+// there and share the logic between the lights, the camera, etc instead
+// of replicating camera code here.
+static void
+scene_light_compute_frustum(VkdfSceneLight *sl)
+{
+   float aperture_angle =
+      RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
+
+   vkdf_compute_frustum_vertices(
+      vkdf_light_get_position(sl->light),
+      vkdf_light_get_rotation(sl->light),
+      sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
+      aperture_angle,
+      1.0f,
+      sl->frustum.vertices);
+
+   vkdf_compute_frustum_clip_box(sl->frustum.vertices, &sl->frustum.box);
+   vkdf_compute_frustum_planes(sl->frustum.vertices, sl->frustum.planes);
+   sl->frustum.dirty = false;
+}
+
+VkdfBox *
+scene_light_get_frustum_box(VkdfSceneLight *sl)
+{
+   if (sl->frustum.dirty)
+      scene_light_compute_frustum(sl);
+
+   return &sl->frustum.box;
+}
+
+glm::vec3 *
+scene_light_get_frustum_vertices(VkdfSceneLight *sl)
+{
+   if (sl->frustum.dirty)
+      scene_light_compute_frustum(sl);
+
+   return sl->frustum.vertices;
+}
+
+VkdfPlane *
+scene_light_get_frustum_planes(VkdfSceneLight *sl)
+{
+   if (sl->frustum.dirty)
+      scene_light_compute_frustum(sl);
+
+   return sl->frustum.planes;
+}
+
 static void
 compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
 {
@@ -1585,27 +1813,13 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
    assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
    // Compute spotlight's frustum bounds for clipping
-   float aperture_angle =
-      RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
-
-   glm::vec3 f[8];
-    vkdf_compute_frustum_vertices(
-      vkdf_light_get_position(sl->light),
-      vkdf_light_get_rotation(sl->light),
-      sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
-      aperture_angle,
-      1.0f,
-      f);
-
-   VkdfBox frustum_box;
-   vkdf_compute_frustum_clip_box(f, &frustum_box);
-
-   VkdfPlane frustum_planes[6];
-   vkdf_compute_frustum_planes(f, frustum_planes);
+   VkdfBox *frustum_box = scene_light_get_frustum_box(sl);
+   VkdfPlane *frustum_planes = scene_light_get_frustum_planes(sl);
 
    // Find the list of tiles visible to this light
+   // FIXME: thread this?
    sl->shadow.visible = find_visible_tiles(s, 0, s->num_tiles.total - 1,
-                                           &frustum_box, frustum_planes);
+                                           frustum_box, frustum_planes);
 
 #if 0
    // Trim the list of visible tiles further by testing the tiles that
@@ -1631,211 +1845,23 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
 #endif
 }
 
-static inline void
-check_for_dirty_lights(VkdfScene *s)
-{
-   s->lights_dirty = false;
-   s->shadow_maps_dirty = false;
-   for (uint32_t i = 0;
-        !(s->lights_dirty && s->shadow_maps_dirty) && i < s->lights.size();
-        i++) {
-      VkdfLight *l = s->lights[i]->light;
-      if (vkdf_light_is_dirty(l))
-         s->lights_dirty = true;
-      if (vkdf_light_has_dirty_shadows(l))
-         s->shadow_maps_dirty = true;
-   }
-}
-
-/**
- * Prepares state and resources required by light sources:
- * - Prepares rendering resources for shadow maps
- */
 static void
-prepare_scene_lights(VkdfScene *s)
+record_shadow_map_cmd_buf(VkdfScene *s,
+                          VkdfSceneLight *sl,
+                          GHashTable *dyn_sets)
 {
-   check_for_dirty_lights(s);
-   if (!s->shadow_maps_dirty)
-      return;
+   s->shadow_maps_dirty = true;
 
-   // Create shared rendering resources for shadow maps
-   create_shadow_map_renderpass(s);
-   create_shadow_map_pipelines(s);
+   assert(sl->shadow.shadow_map.image);
+   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
-   // Create per-light resources
-   for (uint32_t i = 0; i < s->lights.size(); i++) {
-      VkdfSceneLight *sl = s->lights[i];
-      create_shadow_map_framebuffer(s, sl);
-   }
-}
-
-/**
- * Processess scene contents and sets things up for optimal rendering
- */
-void
-vkdf_scene_prepare(VkdfScene *s)
-{
-   prepare_scene_objects(s);
-   prepare_scene_lights(s);
-}
-
-static VkCommandBuffer
-record_scene_resource_updates(VkdfScene *s)
-{
-   if (!s->lights_dirty)
-      return 0;
-
-   uint32_t num_lights = s->lights.size();
-
-   VkCommandBuffer cmd_buf;
-   vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[0],
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
-
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-   // FIXME: maybe a single update of the entire buffer is faster if we have
-   // too many dirty lights
-
-   // First we update dirty light descriptions
-   VkDeviceSize light_inst_size = ALIGN(sizeof(VkdfLight), 16);
-   for (uint32_t i = 0; i < num_lights; i++) {
-      VkdfSceneLight *sl = s->lights[i];
-      if (!vkdf_light_is_dirty(sl->light))
-         continue;
-      VkDeviceSize offset = i * light_inst_size;
-      vkCmdUpdateBuffer(cmd_buf, s->ubo.light.buf.buf,
-                        offset, light_inst_size, sl->light);
-   }
-
-   // Next we update dirty shadow mapping descriptions
-   if (s->shadow_maps_dirty) {
-      VkDeviceSize base_offset = num_lights * light_inst_size;
-      VkDeviceSize shadow_map_inst_size =
-         ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
-      for (uint32_t i = 0; i < num_lights; i++) {
-         VkdfSceneLight *sl = s->lights[i];
-         if (!vkdf_light_casts_shadows(sl->light))
-            continue;
-         if (!vkdf_light_has_dirty_shadows(sl->light))
-            continue;
-
-         struct _shadow_map_ubo_data data;
-         compute_light_view_projection(sl);
-         memcpy(&data.light_viewproj[0][0],
-                &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
-         memcpy(&data.shadow_map_size,
-                &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
-         memcpy(&data.pfc_kernel_size,
-                &sl->shadow.spec.pfc_kernel_size, sizeof(uint32_t));
-
-         VkDeviceSize offset = base_offset + i * shadow_map_inst_size;
-         vkCmdUpdateBuffer(cmd_buf, s->ubo.light.buf.buf,
-                           offset, shadow_map_inst_size, &data);
-      }
-   }
-
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
-}
-
-static void
-thread_update_cmd_bufs(void *arg)
-{
-   struct ThreadData *data = (struct ThreadData *) arg;
-
-   VkdfScene *s = data->s;
-
-   VkdfBox *visible_box = data->visible_box;
-   VkdfPlane *fplanes = data->fplanes;
-
-   uint32_t first_idx = data->first_idx;
-   uint32_t last_idx = data->last_idx;
-
-   // Find visible tiles
-   GList *prev_visible = data->visible;
-   GList *cur_visible =
-      find_visible_tiles(s, first_idx, last_idx, visible_box, fplanes);
-
-   // Identify new invisible tiles
-   data->cmd_buf_changes = false;
-   GList *iter = prev_visible;
-   while (iter) {
-      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-      if (!g_list_find(cur_visible, t)) {
-         new_inactive_tile(data, t);
-         data->cmd_buf_changes = true;
-      }
-      iter = g_list_next(iter);
-   }
-
-   // Identify new visible tiles
-   iter = cur_visible;
-   while (iter) {
-      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-      if (t->obj_count > 0 && !g_list_find(prev_visible, t)) {
-         new_active_tile(data, t);
-         data->cmd_buf_changes = true;
-      }
-      iter = g_list_next(iter);
-   }
-
-   // Attach the new list of visible tiles
-   g_list_free(data->visible);
-   data->visible = cur_visible;
-}
-
-static bool
-update_cmd_bufs(VkdfScene *s)
-{
-   VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
-   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
-
-   for (uint32_t thread_idx = 0;
-        thread_idx < s->thread.num_threads;
-        thread_idx++) {
-      s->thread.data[thread_idx].visible_box = cam_box;
-      s->thread.data[thread_idx].fplanes = cam_planes;
-      s->thread.data[thread_idx].cmd_buf_changes = false;
-   }
-
-   if (s->thread.pool) {
-      for (uint32_t thread_idx = 0;
-           thread_idx < s->thread.num_threads;
-           thread_idx++) {
-         vkdf_thread_pool_add_job(s->thread.pool,
-                                  thread_update_cmd_bufs,
-                                  &s->thread.data[thread_idx]);
-      }
-      vkdf_thread_pool_wait(s->thread.pool);
-   } else {
-      thread_update_cmd_bufs(&s->thread.data[0]);
-   }
-
-   bool cmd_buf_changes = s->thread.data[0].cmd_buf_changes;
-   for (uint32_t thread_idx = 1;
-        cmd_buf_changes == false && thread_idx < s->thread.num_threads;
-        thread_idx++) {
-      cmd_buf_changes = cmd_buf_changes ||
-                        s->thread.data[thread_idx].cmd_buf_changes;
-   }
-
-   return cmd_buf_changes;
-}
-
-static void
-record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
-{
    vkdf_create_command_buffer(s->ctx,
                               s->cmd_buf.pool[0],
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
                               1, &sl->shadow.cmd_buf);
 
    vkdf_command_buffer_begin(sl->shadow.cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
    VkClearValue clear_values[1];
    clear_values[0].depthStencil.depth = 1.0f;
@@ -1925,6 +1951,7 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
                VkdfMesh *mesh = model->meshes[i];
 
                // Bind pipeline
+               // FIXME: can we do without a hashtable lookup here?
                uint32_t vertex_data_stride =
                   vkdf_mesh_get_vertex_data_stride(mesh);
                VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
@@ -1975,32 +2002,671 @@ record_shadow_map_cmd_buf(VkdfScene *s, VkdfSceneLight *sl)
       tile_iter = g_list_next(tile_iter);
    }
 
+   // Render dynamic objects
+   vkCmdBindDescriptorSets(sl->shadow.cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->shadows.pipeline.layout,
+                           0,                                   // First decriptor set
+                           1,                                   // Descriptor set count
+                           &s->shadows.pipeline.dyn_models_set, // Descriptor sets
+                           0,                                   // Dynamic offset count
+                           NULL);                               // Dynamic offsets
+
+   char *set_id;
+   VkdfSceneSetInfo *set_info;
+   GHashTableIter set_iter;
+   g_hash_table_iter_init(&set_iter, dyn_sets);
+   while (g_hash_table_iter_next(&set_iter, (void **)&set_id, (void **)&set_info)) {
+      if (!set_info || set_info->shadow_caster_count == 0)
+         continue;
+
+      // Grab the model (it is shared across all objects in the same type)
+      VkdfObject *obj = (VkdfObject *) set_info->objs->data;
+      VkdfModel *model = obj->model;
+      assert(model);
+
+      // For each mesh in this model...
+      for (uint32_t i = 0; i < model->meshes.size(); i++) {
+         VkdfMesh *mesh = model->meshes[i];
+
+         // Bind pipeline
+         // FIXME: can we do without a hashtable lookup here?
+         uint32_t vertex_data_stride =
+            vkdf_mesh_get_vertex_data_stride(mesh);
+         VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
+         void *hash = GINT_TO_POINTER(
+            hash_shadow_map_pipeline_spec(vertex_data_stride, primitive));
+         VkPipeline pipeline = (VkPipeline)
+            g_hash_table_lookup(s->shadows.pipeline.pipelines, hash);
+         assert(pipeline);
+
+         if (pipeline != current_pipeline) {
+            vkCmdBindPipeline(sl->shadow.cmd_buf,
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              pipeline);
+            current_pipeline = pipeline;
+         }
+
+         // Draw all instances
+         const VkDeviceSize offsets[1] = { 0 };
+         vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
+                                0,                       // Start Binding
+                                1,                       // Binding Count
+                                &mesh->vertex_buf.buf,   // Buffers
+                                offsets);                // Offsets
+
+         if (!mesh->index_buf.buf) {
+            vkCmdDraw(sl->shadow.cmd_buf,
+                      mesh->vertices.size(),                // vertex count
+                      set_info->shadow_caster_count,        // instance count
+                      0,                                    // first vertex
+                      set_info->shadow_caster_start_index); // first instance
+         } else {
+            vkCmdBindIndexBuffer(sl->shadow.cmd_buf,
+                                 mesh->index_buf.buf,       // Buffer
+                                 0,                         // Offset
+                                 VK_INDEX_TYPE_UINT32);     // Index type
+
+            vkCmdDrawIndexed(sl->shadow.cmd_buf,
+                             mesh->indices.size(),                 // index count
+                             set_info->shadow_caster_count,        // instance count
+                             0,                                    // first index
+                             0,                                    // first vertex
+                             set_info->shadow_caster_start_index); // first instance
+         }
+      }
+   }
+
    vkCmdEndRenderPass(sl->shadow.cmd_buf);
 
    vkdf_command_buffer_end(sl->shadow.cmd_buf);
 }
 
-/**
- * Record shadow map command buffer for dirty shadow casting lights
- */
-static void
-update_shadow_map_cmd_bufs(VkdfScene *s)
+static inline void
+check_for_dirty_lights(VkdfScene *s)
 {
+   s->lights_dirty = false;
+   s->shadow_maps_dirty = false;
+   for (uint32_t i = 0;
+        !(s->lights_dirty && s->shadow_maps_dirty) && i < s->lights.size();
+        i++) {
+      VkdfLight *l = s->lights[i]->light;
+      if (vkdf_light_is_dirty(l))
+         s->lights_dirty = true;
+      if (vkdf_light_has_dirty_shadows(l))
+         s->shadow_maps_dirty = true;
+   }
+}
+
+static bool
+record_scene_light_resource_updates(VkdfScene *s)
+{
+   if (!s->lights_dirty || !s->shadow_maps_dirty)
+      return false;
+
+   uint32_t num_lights = s->lights.size();
+
+   // First we update dirty light descriptions
+   //
+   // FIXME: maybe a single update of the entire buffer is faster if we have
+   // too many dirty lights
+   VkDeviceSize light_inst_size = ALIGN(sizeof(VkdfLight), 16);
+   if (s->lights_dirty) {
+      for (uint32_t i = 0; i < num_lights; i++) {
+         VkdfSceneLight *sl = s->lights[i];
+         if (!vkdf_light_is_dirty(sl->light))
+            continue;
+
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->ubo.light.buf.buf,
+                           i * light_inst_size, light_inst_size,
+                           sl->light);
+      }
+   }
+
+   // Next we update dirty shadow mapping descriptions
+   if (s->shadow_maps_dirty) {
+      VkDeviceSize base_offset = num_lights * light_inst_size;
+      VkDeviceSize shadow_map_inst_size =
+         ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
+      for (uint32_t i = 0; i < num_lights; i++) {
+         VkdfSceneLight *sl = s->lights[i];
+         if (!vkdf_light_casts_shadows(sl->light))
+            continue;
+         if (!vkdf_light_has_dirty_shadows(sl->light))
+            continue;
+
+         struct _shadow_map_ubo_data data;
+         memcpy(&data.light_viewproj[0][0],
+                &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
+         memcpy(&data.shadow_map_size,
+                &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
+         memcpy(&data.pfc_kernel_size,
+                &sl->shadow.spec.pfc_kernel_size, sizeof(uint32_t));
+
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->ubo.light.buf.buf,
+                           base_offset + i * shadow_map_inst_size,
+                           shadow_map_inst_size,
+                           &data);
+      }
+   }
+
+   s->cmd_buf.have_resource_updates = true;
+   return true;
+}
+
+static GHashTable *
+find_dynamic_objects_for_light(VkdfScene *s,
+                               VkdfSceneLight *sl,
+                               bool *has_dirty_objects)
+{
+   // If a dynamic objects is not dirty it doesn't invalidate an existing
+   // shadow map. If no dynamic object invalidates it we can skip its update.
+   *has_dirty_objects = false;
+
+   GHashTable *dyn_sets =
+      g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+
+   // Go through the list of dynamic objects and check if any of them is
+   // inside in any of the visible tiles for this light
+   GHashTableIter iter;
+   char *id;
+   VkdfSceneSetInfo *info;
+
+   // Notice that in order to test if a dynamic objects is visible to a light
+   // we can't rely on the know list of vible tiles for the light. This is
+   // because tile boxes are shrunk to fit the objects in it, so it could be
+   // that a dynamic object is inside the tile but not inside its box, or even
+   // that the object is inside a tile that is visible to the light but that is
+   // not in its list of visible tiles because it doesn't have any static
+   // objects or it doesn't have any visible to the light. Therefore,
+   // we need to test for visibility by doing frustum testing for each object.
+
+   // FIXME: We only support spotlights for now
+   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+
+   VkdfBox *light_box = scene_light_get_frustum_box(sl);
+   VkdfPlane *light_planes = scene_light_get_frustum_planes(sl);
+
+   uint32_t start_index = 0;
+   g_hash_table_iter_init(&iter, s->dynamic.sets);
+   while (g_hash_table_iter_next(&iter, (void **)&id, (void **)&info)) {
+      if (!info || info->count == 0)
+         continue;
+
+      VkdfSceneSetInfo *dyn_info = g_new0(VkdfSceneSetInfo, 1);
+      g_hash_table_replace(dyn_sets, g_strdup(id), dyn_info);
+      dyn_info->shadow_caster_start_index = start_index;
+
+      GList *obj_iter = info->objs;
+      while (obj_iter) {
+         VkdfObject *obj = (VkdfObject *) obj_iter->data;
+         if (vkdf_object_casts_shadows(obj)) {
+            VkdfBox *obj_box = vkdf_object_get_box(obj);
+            if (frustum_contains_box(obj_box, light_box, light_planes) != OUTSIDE) {
+               dyn_info->objs = g_list_prepend(dyn_info->objs, obj);
+               dyn_info->shadow_caster_count++;
+               start_index++;
+
+               if (vkdf_object_is_dirty(obj))
+                  *has_dirty_objects = true;
+            }
+         }
+         obj_iter = g_list_next(obj_iter);
+      }
+   }
+
+   return dyn_sets;
+}
+
+static bool
+record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
+                                                 GList *dirty_shadow_maps)
+{
+   if (!dirty_shadow_maps)
+      return false;
+
+   // Generate host buffer with data
+   //
+   // We store visible objects to each light contiguously so we can use
+   // instanced rendering. Because the same object can be seen by multiple
+   // lights, we may have to replicate object data for each light.
+   uint8_t *mem = (uint8_t *) s->dynamic.ubo.shadow_map.host_buf;
+   VkDeviceSize offset = 0;
+
+   GList *sm_iter = dirty_shadow_maps;
+   while (sm_iter) {
+      struct _DirtyShadowMap *ds = (struct _DirtyShadowMap *) sm_iter->data;
+      uint32_t count = 0;
+
+      char *id;
+      VkdfSceneSetInfo *info;
+      GHashTableIter set_iter;
+      g_hash_table_iter_init(&set_iter, ds->dyn_sets);
+      while (g_hash_table_iter_next(&set_iter, (void **)&id, (void **)&info)) {
+         if (!info || info->shadow_caster_count == 0)
+            continue;
+
+         // Sanity check
+         assert(count == info->start_index);
+
+         GList *obj_iter = info->objs;
+         while (obj_iter) {
+            VkdfObject *obj = (VkdfObject *) obj_iter->data;
+
+            // Model matrix
+            glm::mat4 model = vkdf_object_get_model_matrix(obj);
+            memcpy(mem + offset,
+                   &model[0][0], sizeof(glm::mat4));
+            offset += sizeof(glm::mat4);
+
+            offset = ALIGN(offset, 16);
+
+            count++;
+            obj_iter = g_list_next(obj_iter);
+         }
+      }
+
+      sm_iter = g_list_next(sm_iter);
+   }
+
+   // If we got this far we should have at least one light that requires a
+   // new shadow map because of dynamic objects, so we should have recorded
+   // at least one such object above.
+   assert(offset > 0);
+
+   vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                     s->dynamic.ubo.shadow_map.buf.buf,
+                     0, offset, mem);
+
+   s->cmd_buf.have_resource_updates = true;
+   return true;
+}
+
+static inline void
+free_dirty_shadow_maps(VkdfScene *s)
+{
+   if (!s->dirty_shadow_maps)
+      return;
+
+   GList *iter = s->dirty_shadow_maps;
+   do {
+      struct _DirtyShadowMap *ds = (struct _DirtyShadowMap *) iter->data;
+      g_hash_table_foreach(ds->dyn_sets, destroy_set, NULL);
+      g_hash_table_destroy(ds->dyn_sets);
+      g_free(ds);
+      iter = g_list_next(iter);
+   } while (iter);
+   g_list_free(s->dirty_shadow_maps);
+   s->dirty_shadow_maps = NULL;
+}
+
+static void
+update_dirty_lights(VkdfScene *s)
+{
+   assert(s->dirty_shadow_maps == NULL);
+
+   if (s->lights.size() == 0)
+      return;
+
+   // Check if we have dirty lights and shadow maps. If we have dirty shadow
+   // maps, update lists of visible tiles and/or dynamic objects affected
+   // by the light. We'll need this data to render the shadow maps.
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
+      VkdfLight *l = sl->light;
 
-      if (!vkdf_light_casts_shadows(sl->light))
+      if (vkdf_light_is_dirty(l))
+         s->lights_dirty = true;
+
+      if (vkdf_light_has_dirty_shadows(l))
+         sl->frustum.dirty = true;
+
+      if (!vkdf_light_casts_shadows(l))
          continue;
 
-      if (!vkdf_light_has_dirty_shadows(sl->light))
-         continue;
+      // FIXME: for spolights, if neither the spotlight nor its area of
+      // influence are visible to the camera, then we can skip shadow map
+      // updates. This requires frustum vs frustum testing or maybe a
+      // cone vs frustum collision test. For point lights we could probably
+      // use a similar check.
 
-      assert(sl->shadow.shadow_map.image);
-      assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+      // FIXME: maybe we should use multiple threads for these updates,
+      // at least if the number of dirty lights is large
 
-      compute_visible_tiles_for_light(s, sl);
-      record_shadow_map_cmd_buf(s, sl);
+      // If the light has dirty shadows it means that its area of influence
+      // has changed and we need to recompute its list of visible tiles.
+      bool needs_new_shadow_map;
+      if (vkdf_light_has_dirty_shadows(l)) {
+         needs_new_shadow_map = true;
+         compute_light_view_projection(sl);
+         compute_visible_tiles_for_light(s, sl);
+      }
+
+      // Whether the area of influence has changed or not, we need to check if
+      // we need to regen shadow maps due to dynamic objects anyway. If the
+      // light has dynamic objects in its area of influence then we also need
+      // an updated list of objects so we can render them to the shadow map
+      bool has_dirty_objects;
+      GHashTable *dyn_sets =
+         find_dynamic_objects_for_light(s, sl, &has_dirty_objects);
+
+      needs_new_shadow_map = needs_new_shadow_map || has_dirty_objects;
+
+      if (needs_new_shadow_map) {
+         // FIXME: merge this in the resource updates command? Shadow map
+         // cmd bufs need to go in their own command buffers since each have
+         // their own render target, however, we could merge the first one into
+         // an existing resource update command and save one submit.
+         record_shadow_map_cmd_buf(s, sl, dyn_sets);
+
+         struct _DirtyShadowMap *ds = g_new(struct _DirtyShadowMap, 1);
+         ds->sl = sl;
+         ds->dyn_sets = dyn_sets;
+         s->dirty_shadow_maps = g_list_prepend(s->dirty_shadow_maps, ds);
+      }
    }
+
+   // Record the commands to update scene light resources for rendering
+   record_scene_light_resource_updates(s);
+
+   // Record commands to update dynamic shadow map resources for each light
+   record_scene_dynamic_shadow_map_resource_updates(s, s->dirty_shadow_maps);
+}
+
+/**
+ * Prepares state and resources required by light sources:
+ * - Prepares rendering resources for shadow maps
+ */
+static void
+prepare_scene_lights(VkdfScene *s)
+{
+   check_for_dirty_lights(s);
+   if (!s->shadow_maps_dirty)
+      return;
+
+   // Create shared rendering resources for shadow maps
+   create_shadow_map_renderpass(s);
+   create_shadow_map_pipelines(s);
+
+   // Create per-light resources
+   for (uint32_t i = 0; i < s->lights.size(); i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      create_shadow_map_framebuffer(s, sl);
+   }
+}
+
+/**
+ * Processess scene contents and sets things up for optimal rendering
+ */
+void
+vkdf_scene_prepare(VkdfScene *s)
+{
+   prepare_scene_objects(s);
+   prepare_scene_lights(s);
+}
+
+static void
+update_dirty_objects(VkdfScene *s)
+{
+   // Only need to do anything if we have dynamic objects
+   if (s->obj_count == s->static_obj_count)
+      return;
+
+   VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
+   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
+
+   // Keep track of the number of visible dynamic objects in the scene so we
+   // can compute start indices for each visible set in the UBO with the
+   // dynamic object data
+   s->dynamic.visible_obj_count = 0;
+   s->dynamic.visible_shadow_caster_count = 0;
+
+   // Go through all dynamic objects in the scene and update visible sets
+   // and their material data
+   uint8_t *obj_mem = (uint8_t *) s->dynamic.ubo.obj.host_buf;
+   uint8_t *mat_mem = (uint8_t *) s->dynamic.ubo.material.host_buf;
+
+   uint32_t model_index = 0;
+   GList *set_id_iter = s->set_ids;
+   GList *model_iter = s->models;
+   VkDeviceSize obj_offset = 0;
+   VkDeviceSize mat_offset;
+   while (set_id_iter) {
+      const char *id = (const char *) set_id_iter->data;
+      VkdfSceneSetInfo *info =
+         (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.sets, id);
+
+      // Reset visible information for this set
+      VkdfSceneSetInfo *vis_info =
+         (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.visible, id);
+      if (!vis_info) {
+         vis_info = g_new0(VkdfSceneSetInfo, 1);
+         g_hash_table_replace(s->dynamic.visible, g_strdup(id), vis_info);
+      } else if (vis_info->objs) {
+         g_list_free(vis_info->objs);
+         memset(vis_info, 0, sizeof(VkdfSceneSetInfo));
+      }
+
+      if (info) {
+         // Update visible objects for this set
+         vis_info->start_index = s->dynamic.visible_obj_count;
+         vis_info->shadow_caster_start_index =
+            s->dynamic.visible_shadow_caster_count;
+
+         GList *obj_iter = info->objs;
+         while (obj_iter) {
+            VkdfObject *obj = (VkdfObject *) obj_iter->data;
+
+            // We know these are dynamic objects so they might be dirty,
+            // make sure we compute updated dirty information that requires
+            // to be recomputed. If we don't do this here, we can't mark the
+            // object as not being dirty below and we know we are going to need
+            // this updated anyway.
+            glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
+
+            // FIXME: Maybe we want to wrap objects into sceneobjects so we
+            // can keep track of whether they are visible to the camera and the
+            // lights and their slots in the UBOs. Then here and in other
+            // similar updates, if the object is known to already be in the UBO
+            // and in the same slot as we would put it now, we can skip
+            // the memcpy's with the purpose of having the update command
+            // start at an offset > 0.
+            //
+            // FIXME: The above would enable another optimization: we could
+            // skip the frustum testing if we know that the object is not dirty
+            // (or maybe more procisely, it has not moved) and the
+            // camera is not dirty and the object was visible in the previous
+            // frame.
+            VkdfBox *obj_box = vkdf_object_get_box(obj);
+            if (frustum_contains_box(obj_box, cam_box, cam_planes) != OUTSIDE) {
+               // Update host buffer for UBO upload
+
+               // Model matrix
+               memcpy(obj_mem + obj_offset,
+                      &model_matrix[0][0], sizeof(glm::mat4));
+               obj_offset += sizeof(glm::mat4);
+
+               // Base material index
+               memcpy(obj_mem + obj_offset,
+                      &obj->material_idx_base, sizeof(uint32_t));
+               obj_offset += sizeof(uint32_t);
+
+               // Model index
+               memcpy(obj_mem + obj_offset,
+                      &model_index, sizeof(uint32_t));
+               obj_offset += sizeof(uint32_t);
+
+               // Receives shadows
+               uint32_t receives_shadows = (uint32_t) obj->receives_shadows;
+               memcpy(obj_mem + obj_offset,
+                      &receives_shadows, sizeof(uint32_t));
+               obj_offset += sizeof(uint32_t);
+
+               obj_offset = ALIGN(obj_offset, 16);
+
+               // Add the object to the viisble list and update visibility counters
+               vis_info->objs = g_list_prepend(vis_info->objs, obj);
+               vis_info->count++;
+               if (vkdf_object_casts_shadows) {
+                  vis_info->shadow_caster_count++;
+                  s->dynamic.visible_shadow_caster_count++;
+               }
+               s->dynamic.visible_obj_count++;
+            }
+
+            // This object is no longer dirty
+            vkdf_object_set_dirty(obj, false);
+
+            obj_iter = g_list_next(obj_iter);
+         }
+      }
+
+      // Update material data for this set
+      // FIXME: if we do not have new setids in the scene then we don't have
+      // to update material data at all, unless we have changes the existing
+      // materials. We sohould have dirty materials like we do for objects so
+      // we can trim down these updates if possible.
+      uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
+      mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
+      VkdfModel *model = (VkdfModel *) model_iter->data;
+      uint32_t num_materials = model->materials.size();
+      assert(num_materials <= MAX_MATERIALS_PER_MODEL);
+      for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
+         VkdfMaterial *m = &model->materials[mat_idx];
+         memcpy(mat_mem + mat_offset, m, material_size);
+         mat_offset += material_size;
+      }
+
+      // Move to the next set
+      set_id_iter = g_list_next(set_id_iter);
+      model_iter = g_list_next(model_iter);
+      model_index++;
+   }
+
+   // Record dynamic resource update command buffer for dynamic objects and
+   // materials
+   //
+   // FIXME: Maybe we can skip this if we have an efficient way to know that
+   // it has not changed from the previous frame ahead. For now,
+   // we update every frame.
+   if (s->dynamic.visible_obj_count > 0) {
+      s->cmd_buf.have_resource_updates = true;
+
+      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                        s->dynamic.ubo.obj.buf.buf,
+                        0, obj_offset,
+                        s->dynamic.ubo.obj.host_buf);
+
+      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                        s->dynamic.ubo.material.buf.buf,
+                        0, mat_offset,
+                        s->dynamic.ubo.material.host_buf);
+   }
+
+   // Record dynamic object rendering command buffer
+   //
+   // FIXME: For this to be a primary command buffer, it would have to go into
+   // a separate render pass instance too. At the moment, however, the app is
+   // the one that defines the single renderpass instance to use, so we can't
+   // do it like this. Thus, for now we record this as a secondary and
+   // rewrite the primary on every frame with it.
+   if (s->cmd_buf.dynamic) {
+      new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.dynamic);
+   }
+   if (s->dynamic.visible_obj_count > 0) {
+      s->cmd_buf.dynamic =
+         s->callbacks.record_commands(s->ctx, s->cmd_buf.pool[0],
+                                      s->framebuffer, s->fb_width, s->fb_height,
+                                      s->dynamic.sets, true, s->callbacks.data);
+   } else {
+      s->cmd_buf.dynamic = 0;
+   }
+}
+
+static void
+thread_update_cmd_bufs(void *arg)
+{
+   struct ThreadData *data = (struct ThreadData *) arg;
+
+   VkdfScene *s = data->s;
+
+   VkdfBox *visible_box = data->visible_box;
+   VkdfPlane *fplanes = data->fplanes;
+
+   uint32_t first_idx = data->first_idx;
+   uint32_t last_idx = data->last_idx;
+
+   // Find visible tiles
+   GList *prev_visible = data->visible;
+   GList *cur_visible =
+      find_visible_tiles(s, first_idx, last_idx, visible_box, fplanes);
+
+   // Identify new invisible tiles
+   data->cmd_buf_changes = false;
+   GList *iter = prev_visible;
+   while (iter) {
+      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+      if (!g_list_find(cur_visible, t)) {
+         new_inactive_tile(data, t);
+         data->cmd_buf_changes = true;
+      }
+      iter = g_list_next(iter);
+   }
+
+   // Identify new visible tiles
+   iter = cur_visible;
+   while (iter) {
+      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+      if (t->obj_count > 0 && !g_list_find(prev_visible, t)) {
+         new_active_tile(data, t);
+         data->cmd_buf_changes = true;
+      }
+      iter = g_list_next(iter);
+   }
+
+   // Attach the new list of visible tiles
+   g_list_free(data->visible);
+   data->visible = cur_visible;
+}
+
+static bool
+update_cmd_bufs(VkdfScene *s)
+{
+   VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
+   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
+
+   for (uint32_t thread_idx = 0;
+        thread_idx < s->thread.num_threads;
+        thread_idx++) {
+      s->thread.data[thread_idx].visible_box = cam_box;
+      s->thread.data[thread_idx].fplanes = cam_planes;
+      s->thread.data[thread_idx].cmd_buf_changes = false;
+   }
+
+   if (s->thread.pool) {
+      for (uint32_t thread_idx = 0;
+           thread_idx < s->thread.num_threads;
+           thread_idx++) {
+         vkdf_thread_pool_add_job(s->thread.pool,
+                                  thread_update_cmd_bufs,
+                                  &s->thread.data[thread_idx]);
+      }
+      vkdf_thread_pool_wait(s->thread.pool);
+   } else {
+      thread_update_cmd_bufs(&s->thread.data[0]);
+   }
+
+   bool cmd_buf_changes = s->thread.data[0].cmd_buf_changes;
+   for (uint32_t thread_idx = 1;
+        cmd_buf_changes == false && thread_idx < s->thread.num_threads;
+        thread_idx++) {
+      cmd_buf_changes = cmd_buf_changes ||
+                        s->thread.data[thread_idx].cmd_buf_changes;
+   }
+
+   return cmd_buf_changes;
 }
 
 void
@@ -2011,40 +2677,31 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
    if (check_fences(s))
       free_inactive_command_buffers(s);
 
-   // Record the command buffer that updates application rendering resources
-   if (s->cmd_buf.update_resources)
-      new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.update_resources);
-   s->cmd_buf.update_resources = record_resource_updates(s);
+   // Start recording command buffer with resource updates for this frame
+   start_recording_resource_updates(s);
 
-   // Check for dirty lights
-   check_for_dirty_lights(s);
+   // Record resource updates from the application
+   record_client_resource_updates(s);
 
-   // Record the command buffer that updates scene rendering resources
-   // FIXME: maybe we should use multiple threads for these updates,
-   // at least if the number of dirty lights is large
-   if (s->cmd_buf.update_scene_resources)
-      new_inactive_cmd_buf(&s->thread.data[0],
-                           s->cmd_buf.update_scene_resources);
-   s->cmd_buf.update_scene_resources = record_scene_resource_updates(s);
+   // Process scene element changes (this may also record resource updates)
+   update_dirty_objects(s);
+   update_dirty_lights(s);
 
-   // Record new shadow map command buffers if needed
-   if (s->shadow_maps_dirty)
-      update_shadow_map_cmd_bufs(s);
+   // At this point we are done recording resource updates
+   stop_recording_resource_updates(s);
 
-   // If the camera didn't change there is nothing to update
-   // FIXME: once we have dynamic objects, we would need to check for those too
-   if (!vkdf_camera_is_dirty(s->camera))
-      return;
+   // If the camera didn't change, then our active tiles remain the same and
+   // we don't need to re-record secondaries for them
+   if (vkdf_camera_is_dirty(s->camera))
+      update_cmd_bufs(s);
 
-   // Update the list of active secondary command buffers
-   bool cmd_buf_changes = update_cmd_bufs(s);
-
-   // If any secondary has changed, we need to re-record the primary
-   if (cmd_buf_changes || !s->cmd_buf.primary) {
-      if (s->cmd_buf.primary)
-         new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.primary);
-      s->cmd_buf.primary = build_primary_cmd_buf(s);
-   }
+   // FIXME: We always need to re-record the primary to include the updated
+   // secondary command buffer for dynamic objects. This is bad, we should
+   // probably have a separate render pass for dynamic objects so we can
+   // avoid this.
+   if (s->cmd_buf.primary)
+      new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.primary);
+   s->cmd_buf.primary = build_primary_cmd_buf(s);
 }
 
 VkSemaphore
@@ -2062,6 +2719,12 @@ vkdf_scene_draw(VkdfScene *s)
          status = vkWaitForFences(s->ctx->device,
                                   1, &s->sync.draw_fence,
                                   true, 1000ull);
+#if ENABLE_DEBUG
+         if (status == VK_NOT_READY || status == VK_TIMEOUT) {
+            vkdf_info("debug: perf: scene: warning: "
+                      "gpu busy, cpu stall before draw\n");
+         }
+#endif
       } while (status == VK_NOT_READY || status == VK_TIMEOUT);
       vkResetFences(s->ctx->device, 1, &s->sync.draw_fence);
       s->sync.draw_fence_active = false;
@@ -2069,21 +2732,13 @@ vkdf_scene_draw(VkdfScene *s)
    }
 
    // If we have resource update commands, execute them first
-   if (s->cmd_buf.update_resources || s->cmd_buf.update_scene_resources) {
-      VkCommandBuffer cmd_bufs[2];
-      uint32_t cmd_buf_idx = 0;
-      if (s->cmd_buf.update_resources)
-         cmd_bufs[cmd_buf_idx++] = s->cmd_buf.update_resources;
-      if (s->cmd_buf.update_scene_resources)
-         cmd_bufs[cmd_buf_idx++] = s->cmd_buf.update_scene_resources;
-
+   if (s->cmd_buf.have_resource_updates) {
       VkPipelineStageFlags resources_wait_stage = 0;
-      vkdf_command_buffer_execute_many(s->ctx,
-                                       cmd_bufs,
-                                       cmd_buf_idx,
-                                       &resources_wait_stage,
-                                       0, NULL,
-                                       1, &s->sync.update_resources_sem);
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.update_resources,
+                                  &resources_wait_stage,
+                                  0, NULL,
+                                  1, &s->sync.update_resources_sem);
 
       wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
       wait_sem_count = 1;
@@ -2098,23 +2753,24 @@ vkdf_scene_draw(VkdfScene *s)
    //
    // This is the last stage for handling dirty lights in the scene, so we
    // mark all of them them as not being dirty after this step.
-   if (s->shadow_maps_dirty) {
+   if (s->dirty_shadow_maps) {
+      assert(s->shadow_maps_dirty == true);
       VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, s->lights.size());
       uint32_t count = 0;
-      for (uint32_t i = 0; i < s->lights.size(); i++) {
-         VkdfSceneLight *sl = s->lights[i];
+      GList *iter = s->dirty_shadow_maps;
+      while (iter) {
+         struct _DirtyShadowMap *ds = (_DirtyShadowMap *) iter->data;
+         VkdfSceneLight *sl = ds->sl;
 
-         // Nothing to do if the light doesn't need a shadow map
-         if (!vkdf_light_casts_shadows(sl->light))
-            continue;
-
-         // If the shadow map is not dirty, nothing to udate
-         if (!vkdf_light_has_dirty_shadows(sl->light))
-            continue;
+         assert(vkdf_light_casts_shadows(sl->light));
+         assert(sl->shadow.cmd_buf != 0);
 
          cmd_bufs[count++] = sl->shadow.cmd_buf;
+
          vkdf_light_set_dirty_shadows(sl->light, false);
          vkdf_light_set_dirty(sl->light, false);
+
+         iter = g_list_next(iter);
       }
 
       assert(count > 0);
@@ -2126,6 +2782,7 @@ vkdf_scene_draw(VkdfScene *s)
                                        1, &s->sync.shadow_maps_sem);
 
       g_free(cmd_bufs);
+      free_dirty_shadow_maps(s);
 
       wait_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
       wait_sem_count = 1;

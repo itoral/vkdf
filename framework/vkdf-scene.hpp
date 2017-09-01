@@ -24,6 +24,12 @@ typedef struct {
       VkCommandBuffer cmd_buf;
       GList *visible;
    } shadow;
+   struct {
+      bool dirty;
+      VkdfBox box;
+      glm::vec3 vertices[8];
+      VkdfPlane planes[6];
+   } frustum;
 } VkdfSceneLight;
 
 typedef struct _VkdfSceneTile VkdfSceneTile;
@@ -62,8 +68,13 @@ struct _VkdfSceneTile {
    VkdfSceneTile *subtiles;      // Subtiles within this tile
 };
 
-typedef VkCommandBuffer (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandPool, void *);
-typedef VkCommandBuffer (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandPool, VkFramebuffer, uint32_t, uint32_t, GHashTable *sets, void *);
+struct _DirtyShadowMap {
+   VkdfSceneLight *sl;
+   GHashTable *dyn_sets;
+};
+
+typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
+typedef VkCommandBuffer (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandPool, VkFramebuffer, uint32_t, uint32_t, GHashTable *sets, bool, void *);
 typedef void (*VkdfSceneRenderPassBeginInfoCB)(VkdfContext *, VkRenderPassBeginInfo *, VkFramebuffer, uint32_t, uint32_t, void *);
 
 struct _dim {
@@ -116,13 +127,15 @@ struct _VkdfScene {
 
    struct _cache *cache;
 
-   bool dirty;
-   bool lights_dirty;
-   bool shadow_maps_dirty;
+   bool dirty;                          // Dirty static objects (initialization)
+   bool objs_dirty;                     // Dirty dynamic objects
+   bool lights_dirty;                   // Dirty light sources
+   bool shadow_maps_dirty;              // Dirty shadow maps
    uint32_t obj_count;                  // Total object count (static + dynamic)
    uint32_t static_obj_count;           // Number of static (tiled) objects
    uint32_t static_shadow_caster_count; // Number of static objects that are shadow casters
-   bool has_shadow_caster_lights;
+   bool has_shadow_caster_lights;       // If we have any static objects that can cast shadows
+   GList *dirty_shadow_maps;            // List of lights with dirty shadow maps for the current frame
 
    /** 
     * active    : list of secondary command buffers that are active (that is,
@@ -143,9 +156,10 @@ struct _VkdfScene {
       VkCommandPool *pool;
       GList **active;
       GList **free;
-      VkCommandBuffer primary;
-      VkCommandBuffer update_resources;       // Resources updated by the app
-      VkCommandBuffer update_scene_resources; // Resources updated by the scene
+      VkCommandBuffer primary;           // Command buffer for rendering static objs
+      VkCommandBuffer dynamic;           // Command buffer for rendering dynamic objs
+      VkCommandBuffer update_resources;  // Command buffer for resource updates
+      bool have_resource_updates;
    } cmd_buf;
 
    struct {
@@ -175,6 +189,7 @@ struct _VkdfScene {
       struct {
          VkDescriptorSetLayout models_set_layout;
          VkDescriptorSet models_set;
+         VkDescriptorSet dyn_models_set;
          VkPipelineLayout layout;
          GHashTable *pipelines;
       } pipeline;
@@ -206,6 +221,36 @@ struct _VkdfScene {
          VkDeviceSize size;
       } shadow_map;
    } ubo;
+
+   struct {
+      uint32_t visible_obj_count;            // Number of dynamic objects that are visible
+      uint32_t visible_shadow_caster_count;  // Number of visible dynamic objects that can cast shadows
+      GHashTable *sets;                      // Dynamic objects, these are not tiled
+      GHashTable *visible;                   // Dynamic objects that are visible
+      struct {
+         // UBO for dynamic object updates
+         struct {
+            VkdfBuffer buf;
+            VkDeviceSize inst_size;
+            VkDeviceSize size;
+            void *host_buf;
+         } obj;
+         // UBO for dynamic material updates
+         struct {
+            VkdfBuffer buf;
+            VkDeviceSize inst_size;
+            VkDeviceSize size;
+            void *host_buf;
+         } material;
+         // UBO for dynamic shadow map object updates
+         struct {
+            VkdfBuffer buf;
+            VkDeviceSize inst_size;
+            VkDeviceSize size;
+            void *host_buf;
+         } shadow_map;
+      } ubo;
+   } dynamic;
 };
 
 VkdfScene *
@@ -257,6 +302,18 @@ vkdf_scene_get_object_ubo_size(VkdfScene *s)
 }
 
 inline VkdfBuffer *
+vkdf_scene_get_dynamic_object_ubo(VkdfScene *s)
+{
+   return &s->dynamic.ubo.obj.buf;
+}
+
+inline VkDeviceSize
+vkdf_scene_get_dynamic_object_ubo_size(VkdfScene *s)
+{
+   return s->dynamic.ubo.obj.size;
+}
+
+inline VkdfBuffer *
 vkdf_scene_get_material_ubo(VkdfScene *s)
 {
    return &s->ubo.material.buf;
@@ -266,6 +323,18 @@ inline VkDeviceSize
 vkdf_scene_get_material_ubo_size(VkdfScene *s)
 {
    return s->ubo.material.size;
+}
+
+inline VkdfBuffer *
+vkdf_scene_get_dynamic_material_ubo(VkdfScene *s)
+{
+   return &s->dynamic.ubo.material.buf;
+}
+
+inline VkDeviceSize
+vkdf_scene_get_dynamic_material_ubo_size(VkdfScene *s)
+{
+   return s->dynamic.ubo.material.size;
 }
 
 inline uint32_t
@@ -328,10 +397,10 @@ vkdf_scene_get_object_count(VkdfScene *scene)
    return scene->obj_count;
 }
 
-inline GList *
-vkdf_scene_get_tile_object_set(VkdfSceneTile *t, const char *set_id)
+inline VkdfSceneSetInfo *
+vkdf_scene_get_dynamic_object_set(VkdfScene *s, const char *set_id)
 {
-   return (GList *) g_hash_table_lookup(t->sets, set_id);
+   return (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.sets, set_id);
 }
 
 inline uint32_t

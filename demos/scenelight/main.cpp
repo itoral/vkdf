@@ -53,6 +53,7 @@ typedef struct {
          VkDescriptorSet camera_view_set;
          VkDescriptorSetLayout obj_layout;
          VkDescriptorSet obj_set;
+         VkDescriptorSet dyn_obj_set;
          VkDescriptorSetLayout light_layout;
          VkDescriptorSet light_set;
          VkDescriptorSetLayout shadow_map_sampler_layout;
@@ -160,41 +161,30 @@ init_ubos(SceneResources *res)
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 }
 
-static VkCommandBuffer
+static bool
 record_update_resources_command(VkdfContext *ctx,
-                                VkCommandPool cmd_pool,
+                                VkCommandBuffer cmd_buf,
                                 void *data)
 {
    SceneResources *res = (SceneResources *) data;
 
    VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
    if (!vkdf_camera_is_dirty(camera))
-      return 0;
-
-   // FIXME: maybe use a different pool that has the
-   // VK_COMMAND_POOL_CREATE_TRANSIENT_BIT
-   VkCommandBuffer cmd_buf;
-   vkdf_create_command_buffer(ctx,
-                              cmd_pool,
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
-
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+      return false;
 
    glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
-   VkDeviceSize offset = 0;
-   vkCmdUpdateBuffer(cmd_buf, res->ubos.camera_view.buf.buf,
-                     offset, sizeof(glm::mat4), &view[0][0]);
-   offset += sizeof(glm::mat4);
+   vkCmdUpdateBuffer(cmd_buf,
+                     res->ubos.camera_view.buf.buf,
+                     0, sizeof(glm::mat4),
+                     &view[0][0]);
 
    glm::mat4 view_inv = glm::inverse(view);
-   vkCmdUpdateBuffer(cmd_buf, res->ubos.camera_view.buf.buf,
-                    offset, sizeof(glm::mat4), &view_inv[0][0]);
+   vkCmdUpdateBuffer(cmd_buf,
+                     res->ubos.camera_view.buf.buf,
+                     sizeof(glm::mat4), sizeof(glm::mat4),
+                     &view_inv[0][0]);
 
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
+   return true;
 }
 
 static void
@@ -266,7 +256,7 @@ record_scene_commands(VkdfContext *ctx,
                       VkCommandPool cmd_pool,
                       VkFramebuffer framebuffer,
                       uint32_t fb_width, uint32_t fb_height,
-                      GHashTable *sets,
+                      GHashTable *sets, bool is_dynamic,
                       void *data)
 {
    SceneResources *res = (SceneResources *) data;
@@ -324,7 +314,8 @@ record_scene_commands(VkdfContext *ctx,
    // Descriptors
    VkDescriptorSet descriptor_sets[] = {
       res->pipelines.descr.camera_view_set,
-      res->pipelines.descr.obj_set,
+      !is_dynamic ? res->pipelines.descr.obj_set :
+                    res->pipelines.descr.dyn_obj_set,
       res->pipelines.descr.light_set,
       res->pipelines.descr.shadow_map_sampler_set
    };
@@ -346,7 +337,7 @@ record_scene_commands(VkdfContext *ctx,
       if (!set_info || set_info->count == 0)
          continue;
 
-      if (!strcmp(set_id, "cube")) {
+      if (!strcmp(set_id, "cube") || !strcmp(set_id, "dyn-cube")) {
          record_instanced_draw(cmd_buf,
                                res->pipelines.obj.pipeline,
                                res->cube_model,
@@ -503,6 +494,7 @@ init_pipeline_descriptors(SceneResources *res)
                                    NULL,
                                    &res->pipelines.layout.common));
 
+   // Camera descriptor
    res->pipelines.descr.camera_view_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
@@ -515,6 +507,7 @@ init_pipeline_descriptors(SceneResources *res)
                                      res->ubos.camera_view.buf.buf,
                                      0, 1, &ubo_offset, &ubo_size, false, true);
 
+   // Static objects descriptor
    res->pipelines.descr.obj_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
@@ -538,6 +531,31 @@ init_pipeline_descriptors(SceneResources *res)
                                      material_ubo->buf,
                                      1, 1, &ubo_offset, &ubo_size, false, true);
 
+   // Dynamic objects descriptor
+   res->pipelines.descr.dyn_obj_set =
+      create_descriptor_set(res->ctx,
+                            res->descriptor_pool.static_ubo_pool,
+                            res->pipelines.descr.obj_layout);
+
+   obj_ubo = vkdf_scene_get_dynamic_object_ubo(res->scene);
+   obj_ubo_size = vkdf_scene_get_dynamic_object_ubo_size(res->scene);
+   ubo_offset = 0;
+   ubo_size = obj_ubo_size;
+   vkdf_descriptor_set_buffer_update(res->ctx,
+                                     res->pipelines.descr.dyn_obj_set,
+                                     obj_ubo->buf,
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
+
+   material_ubo = vkdf_scene_get_dynamic_material_ubo(res->scene);
+   material_ubo_size = vkdf_scene_get_dynamic_material_ubo_size(res->scene);
+   ubo_offset = 0;
+   ubo_size = material_ubo_size;
+   vkdf_descriptor_set_buffer_update(res->ctx,
+                                     res->pipelines.descr.dyn_obj_set,
+                                     material_ubo->buf,
+                                     1, 1, &ubo_offset, &ubo_size, false, true);
+
+   // Lihgts descriptor
    res->pipelines.descr.light_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
@@ -551,12 +569,14 @@ init_pipeline_descriptors(SceneResources *res)
                                      0, 1, &ubo_offset, &ubo_size, false, true);
 
 
+   // Shadow map data descriptor
    vkdf_scene_get_shadow_map_ubo_range(res->scene, &ubo_offset, &ubo_size);
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
                                      light_ubo->buf,
                                      1, 1, &ubo_offset, &ubo_size, false, true);
 
+   // Shadow map sampler descriptors
    res->pipelines.descr.shadow_map_sampler_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.sampler_pool,
@@ -849,6 +869,15 @@ init_objects(SceneResources *res)
    vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_material_idx_base(obj, 3);
    vkdf_scene_add_object(res->scene, "cube", obj);
+
+   // Dynamic cube
+   pos = glm::vec3(0.0f, 8.0f, 6.0f);
+   obj = vkdf_object_new_from_model(pos, res->cube_model);
+   vkdf_object_set_rotation(obj, glm::vec3(45.0f, 45.0f, 45.0f));
+   vkdf_object_set_lighting_behavior(obj, true, true);
+   vkdf_object_set_material_idx_base(obj, 0);
+   vkdf_object_set_dynamic(obj, true);
+   vkdf_scene_add_object(res->scene, "dyn-cube", obj);
 
    // Trees
    pos = glm::vec3(5.0f, 3.0f, -5.0f);
@@ -1246,6 +1275,26 @@ update_camera(SceneResources *res)
 }
 
 static void
+update_objects(SceneResources *res)
+{
+   VkdfSceneSetInfo *info =
+      vkdf_scene_get_dynamic_object_set(res->scene, "dyn-cube");
+   if (!info || info->count == 0)
+      return;
+
+   GList *iter = info->objs;
+   while (iter) {
+      VkdfObject *obj = (VkdfObject *) iter->data;
+      glm::vec3 rot = obj->rot;
+      rot.x += 0.1f;
+      rot.y += 0.5f;
+      rot.z += 1.0f;
+      vkdf_object_set_rotation(obj, rot);
+      iter = g_list_next(iter);
+   }
+}
+
+static void
 update_lights(SceneResources *res)
 {
    const float rot_speeds[NUM_LIGHTS] = { 1.5f, 2.0f };
@@ -1268,6 +1317,7 @@ scene_update(VkdfContext *ctx, void *data)
    SceneResources *res = (SceneResources *) data;
 
    update_camera(res); // FIXME: this should be a callback called from the scene
+   update_objects(res);
    update_lights(res);
 
    vkdf_scene_update_cmd_bufs(res->scene, res->cmd_pool);
@@ -1348,6 +1398,9 @@ destroy_pipelines(SceneResources *res)
    vkFreeDescriptorSets(res->ctx->device,
                         res->descriptor_pool.static_ubo_pool,
                         1, &res->pipelines.descr.obj_set);
+   vkFreeDescriptorSets(res->ctx->device,
+                        res->descriptor_pool.static_ubo_pool,
+                        1, &res->pipelines.descr.dyn_obj_set);
    vkDestroyDescriptorSetLayout(res->ctx->device,
                                 res->pipelines.descr.obj_layout, NULL);
 
@@ -1452,7 +1505,7 @@ main()
    VkdfContext ctx;
    SceneResources resources;
 
-   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, ENABLE_DEBUG);
+   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
    vkdf_event_loop_run(&ctx, scene_update, scene_render, &resources);
