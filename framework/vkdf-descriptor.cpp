@@ -59,6 +59,41 @@ vkdf_create_ubo_descriptor_set_layout(VkdfContext *ctx,
 }
 
 VkDescriptorSetLayout
+vkdf_create_ssbo_descriptor_set_layout(VkdfContext *ctx,
+                                       uint32_t binding,
+                                       uint32_t count,
+                                       VkShaderStageFlags stages,
+                                       bool is_dynamic)
+{
+   assert(count < 16);
+
+   VkDescriptorSetLayoutBinding set_layout_binding[16];
+   for (uint32_t i = 0; i < count; i++) {
+      set_layout_binding[i].binding = binding + i;
+      set_layout_binding[i].descriptorType = is_dynamic ?
+         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC :
+         VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+      set_layout_binding[i].descriptorCount = 1;
+      set_layout_binding[i].stageFlags = stages;
+      set_layout_binding[i].pImmutableSamplers = NULL;
+   }
+
+   VkDescriptorSetLayoutCreateInfo set_layout_info;
+   set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+   set_layout_info.pNext = NULL;
+   set_layout_info.bindingCount = count;
+   set_layout_info.pBindings = set_layout_binding;
+   set_layout_info.flags = 0;
+
+   VkDescriptorSetLayout set_layout;
+   VK_CHECK(vkCreateDescriptorSetLayout(ctx->device,
+                                        &set_layout_info,
+                                        NULL,
+                                        &set_layout));
+   return set_layout;
+}
+
+VkDescriptorSetLayout
 vkdf_create_sampler_descriptor_set_layout(VkdfContext *ctx,
                                           uint32_t binding,
                                           uint32_t count,
@@ -98,7 +133,8 @@ vkdf_descriptor_set_buffer_update(VkdfContext *ctx,
                                   uint32_t count,
                                   VkDeviceSize *offsets,
                                   VkDeviceSize *ranges,
-                                  bool is_dynamic)
+                                  bool is_dynamic,
+                                  bool is_uniform_buffer)
 {
    assert(count < 16);
 
@@ -116,9 +152,12 @@ vkdf_descriptor_set_buffer_update(VkdfContext *ctx,
    writes.dstBinding = binding;
    writes.dstArrayElement = 0;
    writes.descriptorCount = count;
-   writes.descriptorType = is_dynamic ?
-      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC :
-      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   writes.descriptorType =
+      is_uniform_buffer ?
+         (is_dynamic ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC :
+                       VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) :
+         (is_dynamic ? VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC :
+                       VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
    writes.pBufferInfo = buffer_info;
    writes.pImageInfo = NULL;
    writes.pTexelBufferView = NULL;

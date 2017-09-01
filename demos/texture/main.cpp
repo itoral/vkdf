@@ -492,7 +492,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    VkDeviceSize ubo_offset = 0;
    VkDeviceSize ubo_size = sizeof(res->mvp);
    vkdf_descriptor_set_buffer_update(ctx, res->descriptor_set_ubo, res->ubo.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
 
    // Descriptor set (Sampler)
    res->set_layout_sampler =

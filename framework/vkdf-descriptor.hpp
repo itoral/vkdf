@@ -14,6 +14,13 @@ vkdf_create_ubo_descriptor_set_layout(VkdfContext *ctx,
                                       bool is_dynamic);
 
 VkDescriptorSetLayout
+vkdf_create_ssbo_descriptor_set_layout(VkdfContext *ctx,
+                                       uint32_t binding,
+                                       uint32_t count,
+                                       VkShaderStageFlags stages,
+                                       bool is_dynamic);
+
+VkDescriptorSetLayout
 vkdf_create_sampler_descriptor_set_layout(VkdfContext *ctx,
                                           uint32_t binding,
                                           uint32_t count,
@@ -27,7 +34,8 @@ vkdf_descriptor_set_buffer_update(VkdfContext *ctx,
                                   uint32_t count,
                                   VkDeviceSize *offsets,
                                   VkDeviceSize *ranges,
-                                  bool is_dynamic);
+                                  bool is_dynamic,
+                                  bool is_uniform_buffer);
 
 void
 vkdf_descriptor_set_sampler_update(VkdfContext *ctx,

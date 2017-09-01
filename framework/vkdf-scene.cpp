@@ -1503,7 +1503,7 @@ create_shadow_map_pipelines(VkdfScene *s)
    vkdf_descriptor_set_buffer_update(s->ctx,
                                      s->shadows.pipeline.models_set,
                                      s->ubo.shadow_map.buf.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
 
    // Pipeline layout: 2 push constant ranges and 1 set layout
    VkPushConstantRange pcb_ranges[1];

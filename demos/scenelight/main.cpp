@@ -513,7 +513,7 @@ init_pipeline_descriptors(SceneResources *res)
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.camera_view_set,
                                      res->ubos.camera_view.buf.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
 
    res->pipelines.descr.obj_set =
       create_descriptor_set(res->ctx,
@@ -527,7 +527,7 @@ init_pipeline_descriptors(SceneResources *res)
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.obj_set,
                                      obj_ubo->buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
 
    VkdfBuffer *material_ubo = vkdf_scene_get_material_ubo(res->scene);
    VkDeviceSize material_ubo_size = vkdf_scene_get_material_ubo_size(res->scene);
@@ -536,7 +536,7 @@ init_pipeline_descriptors(SceneResources *res)
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.obj_set,
                                      material_ubo->buf,
-                                     1, 1, &ubo_offset, &ubo_size, false);
+                                     1, 1, &ubo_offset, &ubo_size, false, true);
 
    res->pipelines.descr.light_set =
       create_descriptor_set(res->ctx,
@@ -548,14 +548,14 @@ init_pipeline_descriptors(SceneResources *res)
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
                                      light_ubo->buf,
-                                     0, 1, &ubo_offset, &ubo_size, false);
+                                     0, 1, &ubo_offset, &ubo_size, false, true);
 
 
    vkdf_scene_get_shadow_map_ubo_range(res->scene, &ubo_offset, &ubo_size);
    vkdf_descriptor_set_buffer_update(res->ctx,
                                      res->pipelines.descr.light_set,
                                      light_ubo->buf,
-                                     1, 1, &ubo_offset, &ubo_size, false);
+                                     1, 1, &ubo_offset, &ubo_size, false, true);
 
    res->pipelines.descr.shadow_map_sampler_set =
       create_descriptor_set(res->ctx,
