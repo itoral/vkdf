@@ -1246,12 +1246,9 @@ update_camera(SceneResources *res)
 }
 
 static void
-scene_update(VkdfContext *ctx, void *data)
+update_lights(SceneResources *res)
 {
    const float rot_speeds[NUM_LIGHTS] = { 1.5f, 2.0f };
-   SceneResources *res = (SceneResources *) data;
-
-   update_camera(res); // FIXME: this should be a callback called from the scene
 
    for (uint32_t i = 0; i < NUM_LIGHTS; i++) {
       if (LIGHT_IS_DYNAMIC[i]) {
@@ -1263,6 +1260,15 @@ scene_update(VkdfContext *ctx, void *data)
          vkdf_light_set_rotation(l, rot);
       }
    }
+}
+
+static void
+scene_update(VkdfContext *ctx, void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+
+   update_camera(res); // FIXME: this should be a callback called from the scene
+   update_lights(res);
 
    vkdf_scene_update_cmd_bufs(res->scene, res->cmd_pool);
    vkdf_camera_set_dirty(res->camera, false); // FIXME: this should be done by the scene
