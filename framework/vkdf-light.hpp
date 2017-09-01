@@ -275,6 +275,7 @@ vkdf_light_get_view_matrix(VkdfLight *l)
 void inline
 vkdf_light_set_dirty(VkdfLight *l, bool dirty)
 {
+   assert(dirty || l->dirty_shadows == false);
    l->dirty = (uint32_t) dirty;
 }
 
@@ -282,7 +283,12 @@ void inline
 vkdf_light_set_dirty_shadows(VkdfLight *l, bool dirty)
 {
    l->dirty_shadows = (uint32_t) dirty;
-   l->dirty = (uint32_t) dirty;
+
+   /* If we the shadow map data is dirty then the light is too, but
+    * otherwise we want to keep the dirty flag
+    */
+   if (dirty)
+      l->dirty = (uint32_t) dirty;
 }
 
 bool inline

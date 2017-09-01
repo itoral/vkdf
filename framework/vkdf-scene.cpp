@@ -2103,7 +2103,6 @@ vkdf_scene_draw(VkdfScene *s)
       uint32_t count = 0;
       for (uint32_t i = 0; i < s->lights.size(); i++) {
          VkdfSceneLight *sl = s->lights[i];
-         vkdf_light_set_dirty(sl->light, false);
 
          // Nothing to do if the light doesn't need a shadow map
          if (!vkdf_light_casts_shadows(sl->light))
@@ -2115,6 +2114,7 @@ vkdf_scene_draw(VkdfScene *s)
 
          cmd_bufs[count++] = sl->shadow.cmd_buf;
          vkdf_light_set_dirty_shadows(sl->light, false);
+         vkdf_light_set_dirty(sl->light, false);
       }
 
       assert(count > 0);
