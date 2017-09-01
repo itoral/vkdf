@@ -7,7 +7,9 @@ typedef struct {
    glm::vec3 scale;
 
    VkdfModel *model;
+
    VkdfBox box;
+   glm::mat4 model_matrix;
 
    // In theory each mesh in a model has at most 1 material. However, it is
    // useful to add variants of the materials, for example, to have different
@@ -18,10 +20,21 @@ typedef struct {
    uint32_t material_idx_base;
 
    bool is_dynamic;
+   bool dirty;
+   bool dirty_model_matrix;
+   bool dirty_box;
 
    bool receives_shadows;
    bool casts_shadows;
 } VkdfObject;
+
+#define SET_FIELD(obj, field, value)   \
+{                                      \
+   field = value;                      \
+   obj->dirty = true;                  \
+   obj->dirty_model_matrix = true;     \
+   obj->dirty_box = true;              \
+}
 
 VkdfObject *
 vkdf_object_new_from_mesh(const glm::vec3 &pos, VkdfMesh *mesh);
@@ -38,19 +51,19 @@ vkdf_object_free(VkdfObject *obj);
 inline void
 vkdf_object_set_position(VkdfObject *obj, const glm::vec3 &pos)
 {
-   obj->pos = pos;
+   SET_FIELD(obj, obj->pos, pos)
 }
 
 inline void
 vkdf_object_set_rotation(VkdfObject *obj, const glm::vec3 &rot)
 {
-   obj->rot = rot;
+   SET_FIELD(obj, obj->rot, rot)
 }
 
 inline void
 vkdf_object_set_scale(VkdfObject *obj, const glm::vec3 &scale)
 {
-   obj->scale = scale;
+   SET_FIELD(obj, obj->scale, scale)
 }
 
 inline void
@@ -86,14 +99,8 @@ vkdf_object_depth(VkdfObject *obj)
    return obj->model->size.d * obj->scale.z;
 }
 
-void
-vkdf_object_compute_box(VkdfObject *obj);
-
-inline VkdfBox *
-vkdf_object_get_box(VkdfObject *obj)
-{
-   return &obj->box;
-}
+VkdfBox *
+vkdf_object_get_box(VkdfObject *obj);
 
 inline void
 vkdf_object_set_dynamic(VkdfObject *obj, bool dynamic)
@@ -127,5 +134,56 @@ vkdf_object_receives_shadows(VkdfObject *obj)
 {
    return obj->receives_shadows;
 }
+
+inline void
+vkdf_object_set_dirty(VkdfObject *obj, bool dirty)
+{
+   assert(dirty || (!obj->dirty_model_matrix && !obj->dirty_box));
+   obj->dirty = dirty;
+   if (dirty)
+      obj->dirty_model_matrix = dirty;
+   if (dirty)
+      obj->dirty_box = dirty;
+}
+
+inline void
+vkdf_object_set_dirty_model_matrix(VkdfObject *obj, bool dirty)
+{
+   obj->dirty_model_matrix = dirty;
+   if (dirty)
+      obj->dirty_box = dirty;
+   if (dirty)
+      obj->dirty = dirty;
+}
+
+inline void
+vkdf_object_set_dirty_box(VkdfObject *obj, bool dirty)
+{
+   obj->dirty_box = dirty;
+   if (dirty)
+      obj->dirty_model_matrix = dirty;
+   if (dirty)
+      obj->dirty = dirty;
+}
+
+inline bool
+vkdf_object_is_dirty(VkdfObject *obj)
+{
+   return obj->dirty;
+}
+
+inline bool
+vkdf_object_has_dirty_model_matrix(VkdfObject *obj)
+{
+   return obj->dirty_model_matrix;
+}
+
+inline bool
+vkdf_object_has_dirty_box(VkdfObject *obj)
+{
+   return obj->dirty_box;
+}
+
+#undef SET_FIELD
 
 #endif

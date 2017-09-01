@@ -443,7 +443,6 @@ add_static_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    tile->dirty = true;
 
    // Update the tile's box to fit this object
-   vkdf_object_compute_box(obj);
    VkdfBox *box = vkdf_object_get_box(obj);
    glm::vec3 min_box = box->center - glm::vec3(box->w, box->h, box->d);
    glm::vec3 max_box = box->center + glm::vec3(box->w, box->h, box->d);
