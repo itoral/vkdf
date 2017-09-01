@@ -417,14 +417,9 @@ set_id_is_registered(VkdfScene *s, const char *id)
    return false;
 }
 
-void
-vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
+static void
+add_static_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
 {
-   assert(obj->model);
-
-   // FIXME: we don't support dynamic objects yet
-   assert(vkdf_object_is_dynamic(obj) == false);
-
    if (!set_id_is_registered(s, set_id)) {
       s->set_ids = g_list_prepend(s->set_ids, g_strdup(set_id));
       s->models = g_list_prepend(s->models, obj->model);
@@ -484,10 +479,22 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    if (is_shadow_caster)
       info->shadow_caster_count++;
 
-   s->obj_count++;
+   s->static_obj_count++;
    if (is_shadow_caster)
-      s->shadow_caster_count++;
-   s->dirty = true;   
+      s->static_shadow_caster_count++;
+   s->dirty = true;
+}
+
+void
+vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
+{
+   assert(obj->model);
+
+   // FIXME: we don't support dynamic objects yet
+   assert(vkdf_object_is_dynamic(obj) == false);
+
+   add_static_object(s, set_id, obj);
+   s->obj_count++;
 }
 
 static inline VkdfImage
@@ -980,7 +987,7 @@ static void
 create_static_object_ubo(VkdfScene *s)
 {
    // Per-instance data: model matrix, base material index
-   uint32_t num_objects = vkdf_scene_get_num_objects(s);
+   uint32_t num_objects = vkdf_scene_get_static_object_count(s);
    s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
    s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
    s->ubo.obj.buf =
@@ -1093,7 +1100,7 @@ create_static_shadow_map_ubo(VkdfScene *s)
    // Build per-instance data for each shadow caster object
    s->ubo.shadow_map.inst_size = ALIGN(sizeof(glm::mat4), 16);
    s->ubo.shadow_map.size =
-      s->ubo.shadow_map.inst_size * s->shadow_caster_count;
+      s->ubo.shadow_map.inst_size * s->static_shadow_caster_count;
    s->ubo.shadow_map.buf =
       vkdf_create_buffer(s->ctx, 0,
                          s->ubo.shadow_map.size,

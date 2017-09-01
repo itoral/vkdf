@@ -119,8 +119,9 @@ struct _VkdfScene {
    bool dirty;
    bool lights_dirty;
    bool shadow_maps_dirty;
-   uint32_t obj_count;
-   uint32_t shadow_caster_count;
+   uint32_t obj_count;                  // Total object count (static + dynamic)
+   uint32_t static_obj_count;           // Number of static (tiled) objects
+   uint32_t static_shadow_caster_count; // Number of static objects that are shadow casters
    bool has_shadow_caster_lights;
 
    /** 
@@ -316,7 +317,13 @@ vkdf_scene_light_get_shadow_map_image(VkdfScene *s, uint32_t index)
 }
 
 inline uint32_t
-vkdf_scene_get_num_objects(VkdfScene *scene)
+vkdf_scene_get_static_object_count(VkdfScene *scene)
+{
+   return scene->static_obj_count;
+}
+
+inline uint32_t
+vkdf_scene_get_object_count(VkdfScene *scene)
 {
    return scene->obj_count;
 }
