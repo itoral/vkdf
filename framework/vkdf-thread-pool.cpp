@@ -1,5 +1,7 @@
 #include "vkdf.hpp"
 
+#include <time.h>
+
 static void
 binary_sem_set(VkdfBinarySemaphore *sem, uint32_t value)
 {
@@ -141,9 +143,13 @@ threads_init(VkdfThreadPool *pool, uint32_t num_threads)
 {
    pool->num_threads = num_threads;
    pool->threads = g_new0(VkdfThread, pool->num_threads);
+
    for (uint32_t i = 0; i < num_threads; i++)
       thread_init(pool, &pool->threads[i], i);
-   while (pool->num_alive != pool->num_threads) {}
+
+   struct timespec wait_time = { 0, 1000 };
+   while (pool->num_alive != pool->num_threads)
+      nanosleep(&wait_time, NULL);
 }
 
 VkdfThreadPool *
