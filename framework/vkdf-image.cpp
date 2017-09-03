@@ -51,11 +51,12 @@ vkdf_create_image(VkdfContext *ctx,
    mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
    mem_alloc.pNext = NULL;
    mem_alloc.allocationSize = mem_reqs.size;
-   assert(vkdf_memory_type_from_properties(ctx,
-                                           mem_reqs.memoryTypeBits,
-                                           mem_props,
-                                           &mem_alloc.memoryTypeIndex));
-
+   bool result =
+      vkdf_memory_type_from_properties(ctx,
+                                       mem_reqs.memoryTypeBits,
+                                       mem_props,
+                                       &mem_alloc.memoryTypeIndex);
+   assert(result);
    VK_CHECK(vkAllocateMemory(ctx->device, &mem_alloc, NULL, &image.mem));
    VK_CHECK(vkBindImageMemory(ctx->device, image.image, image.mem, 0));
 

@@ -29,10 +29,11 @@ vkdf_create_buffer(VkdfContext *ctx,
    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
    alloc_info.pNext = NULL;
    alloc_info.allocationSize = buffer.mem_reqs.size;
-   assert(vkdf_memory_type_from_properties(ctx, buffer.mem_reqs.memoryTypeBits,
-                                           mem_props,
-                                           &alloc_info.memoryTypeIndex));
-
+   bool result =
+      vkdf_memory_type_from_properties(ctx, buffer.mem_reqs.memoryTypeBits,
+                                       mem_props,
+                                       &alloc_info.memoryTypeIndex);
+   assert(result);
    buffer.mem_props = mem_props;
 
    // Allocate and bind memory
