@@ -33,8 +33,8 @@ libvkdf_la_SOURCES = \
 libvkdf_la_CXXFLAGS = \
     -DPREFIX=$(prefix) \
     -D_GNU_SOURCE \
+    @VKDF_DEFINES@ \
     -DVKDF_DATA_DIR=\"$(abs_top_builddir)/data/\"
-    @VKDF_DEFINES@
 
 libvkdf_la_LIBADD = \
     @VKDF_DEPS_LIBS@ \
