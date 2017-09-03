@@ -1791,20 +1791,14 @@ thread_update_cmd_bufs(void *arg)
 static bool
 update_cmd_bufs(VkdfScene *s)
 {
-   glm::vec3 f[8];
-   vkdf_camera_get_frustum_vertices(s->camera, f);
-
-   VkdfBox visible_box;
-   vkdf_compute_frustum_clip_box(f, &visible_box);
-
-   VkdfPlane fplanes[6];
-   vkdf_compute_frustum_planes(f, fplanes);
+   VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
+   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
 
    for (uint32_t thread_idx = 0;
         thread_idx < s->thread.num_threads;
         thread_idx++) {
-      s->thread.data[thread_idx].visible_box = &visible_box;
-      s->thread.data[thread_idx].fplanes = fplanes;
+      s->thread.data[thread_idx].visible_box = cam_box;
+      s->thread.data[thread_idx].fplanes = cam_planes;
       s->thread.data[thread_idx].cmd_buf_changes = false;
    }
 

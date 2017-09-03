@@ -9,9 +9,25 @@ typedef struct {
       float aspect_ratio;
       glm::mat4 matrix;
    } proj;
+
    glm::vec3 pos;
    glm::vec3 rot;
+
+   glm::vec3 viewdir;
+   glm::mat4 view_matrix;
+   glm::mat4 rot_matrix;
+
+   struct {
+      VkdfBox box;            // frustum's box
+      glm::vec3 vertices[8];  // frustum vertices
+      VkdfPlane planes[6];    // frustum planes
+   } frustum;
+
    bool dirty;
+   bool dirty_viewdir;
+   bool dirty_view_matrix;
+   bool dirty_rot_matrix;
+   bool dirty_frustum;
 } VkdfCamera;
 
 enum {
@@ -72,12 +88,6 @@ vkdf_camera_move(VkdfCamera *cam, float dx, float dy, float dz);
 void
 vkdf_camera_rotate(VkdfCamera *cam, float rx, float ry, float rz);
 
-inline glm::vec3
-vkdf_camera_get_viewdir(VkdfCamera *cam)
-{
-   return vkdf_compute_viewdir(cam->rot);
-}
-
 void
 vkdf_camera_step(VkdfCamera *cam, float d, int stepX, int stepY, int stepZ);
 void
@@ -98,59 +108,19 @@ vkdf_camera_set_dirty(VkdfCamera *cam, bool dirty)
    cam->dirty = dirty;
 }
 
-inline glm::mat4
-vkdf_camera_get_view_matrix(VkdfCamera *cam)
-{
-   return vkdf_compute_view_matrix_for_rotation(cam->pos, cam->rot);
-}
+glm::mat4
+vkdf_camera_get_view_matrix(VkdfCamera *cam);
 
-inline glm::mat4
-vkdf_camera_get_rotation_matrix(VkdfCamera *cam)
-{
-   return vkdf_compute_rotation_matrix(cam->rot);
-}
+glm::mat4
+vkdf_camera_get_rotation_matrix(VkdfCamera *cam);
 
-inline void
-vkdf_camera_get_frustum_vertices_at_distance(VkdfCamera *cam,
-                                             float dist,
-                                             glm::vec3 *f)
-{
-   vkdf_compute_frustum_vertices(
-      cam->pos, cam->rot,
-      cam->proj.near_plane, dist,
-      cam->proj.fov, cam->proj.aspect_ratio,
-      f);
-}
+glm::vec3 *
+vkdf_camera_get_frustum_vertices(VkdfCamera *cam);
 
-inline void
-vkdf_camera_get_frustum_vertices(VkdfCamera *cam, glm::vec3 *f)
-{
-   vkdf_camera_get_frustum_vertices_at_distance(cam, cam->proj.far_plane, f);
-}
+VkdfBox *
+vkdf_camera_get_frustum_box(VkdfCamera *cam);
 
-void
-vkdf_camera_get_clip_box_at_distance(VkdfCamera *cam, float dist, VkdfBox *box);
-
-inline void
-vkdf_camera_get_clip_box(VkdfCamera *cam, VkdfBox *box)
-{
-   return vkdf_camera_get_clip_box_at_distance(cam, cam->proj.far_plane, box);
-}
-
-inline void
-vkdf_camera_get_frustum_planes_at_distance(VkdfCamera *cam,
-                                           float dist, VkdfPlane *p)
-
-{
-   glm::vec3 f[8];
-   vkdf_camera_get_frustum_vertices_at_distance(cam, cam->proj.far_plane, f);
-   vkdf_compute_frustum_planes(f, p);
-}
-
-inline void
-vkdf_camera_get_frustum_planes(VkdfCamera *cam, VkdfPlane *p)
-{
-   vkdf_camera_get_frustum_planes_at_distance(cam, cam->proj.far_plane, p);
-}
+VkdfPlane *
+vkdf_camera_get_frustum_planes(VkdfCamera *cam);
 
 #endif
