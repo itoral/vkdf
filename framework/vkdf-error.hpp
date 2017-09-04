@@ -1,12 +1,13 @@
 #ifndef __VKDF_ERROR_H__
 #define __VKDF_ERROR_H__
 
-#define S(x) #x
+#define S(x) str(x)
+#define str(x) #x
 
 #if ENABLE_DEBUG
    #define VK_CHECK(cmd) \
       if (cmd != VK_SUCCESS) \
-         printf(__FILE__ ":" S(__LINE__) ": failed to execute vulkan command.");
+         printf(__FILE__ ":" S(__LINE__) ": failed to execute vulkan command.\n");
 #else
    #define VK_CHECK(cmd) cmd
 #endif
