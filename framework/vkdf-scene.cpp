@@ -2728,7 +2728,6 @@ vkdf_scene_draw(VkdfScene *s)
       } while (status == VK_NOT_READY || status == VK_TIMEOUT);
       vkResetFences(s->ctx->device, 1, &s->sync.draw_fence);
       s->sync.draw_fence_active = false;
-      free_inactive_command_buffers(s);
    }
 
    // If we have resource update commands, execute them first
@@ -2799,6 +2798,7 @@ vkdf_scene_draw(VkdfScene *s)
                                           s->sync.draw_fence);
 
    s->sync.draw_fence_active = true;
+   free_inactive_command_buffers(s);
 
    return s->sync.draw_sem;
 }
