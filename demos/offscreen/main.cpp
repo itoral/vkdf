@@ -487,22 +487,13 @@ scene_render(VkdfContext *ctx, void *data)
                                0, NULL,
                                1, &res->offscreen_draw_sem);
 
-   // Copying from the offscreen image to the presentation image requires
-   // that we have acquired the presentation image and that we have completed
-   // rendering to the offscreen image
-   VkSemaphore copy_wait_sems[2] = {
-      ctx->acquired_sem[ctx->swap_chain_index],
-      res->offscreen_draw_sem
-   };
-   VkPipelineStageFlags pipeline_stages_present[2] = {
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-   };
-   vkdf_command_buffer_execute(ctx,
-                               res->present_cmd_bufs[ctx->swap_chain_index],
-                               pipeline_stages_present,
-                               2, copy_wait_sems,
-                               1, &ctx->draw_sem[ctx->swap_chain_index]);
+   // Copy the offscreen image to the next swapchain image that will be
+   // used for presentation. We will wait on the offscreen draw semaphore
+   // before copying.
+   vkdf_copy_to_swapchain(ctx,
+                          res->present_cmd_bufs,
+                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                          res->offscreen_draw_sem);
 }
 
 static void
@@ -575,7 +566,7 @@ main()
    vkdf_init(&ctx, 800, 600, false, false, ENABLE_DEBUG);
    init_resources(&ctx, &resources);
 
-   vkdf_event_loop_run(&ctx, scene_update, scene_render, &resources);
+   vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
 
    cleanup_resources(&ctx, &resources);
    vkdf_cleanup(&ctx);

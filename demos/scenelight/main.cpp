@@ -1342,19 +1342,10 @@ scene_render(VkdfContext *ctx, void *data)
                                1, &res->debug.draw_sem);
 
    // Present
-   VkSemaphore present_wait_sems[2] = {
-      ctx->acquired_sem[ctx->swap_chain_index],
-      res->debug.draw_sem
-   };
-   VkPipelineStageFlags present_wait_stages[2] = {
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-   };
-   vkdf_command_buffer_execute(ctx,
-                               res->present_cmd_bufs[ctx->swap_chain_index],
-                               present_wait_stages,
-                               2, present_wait_sems,
-                               1, &ctx->draw_sem[ctx->swap_chain_index]);
+   vkdf_copy_to_swapchain(ctx,
+                          res->present_cmd_bufs,
+                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                          res->debug.draw_sem);
 }
 
 static void
@@ -1508,7 +1499,7 @@ main()
    vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
-   vkdf_event_loop_run(&ctx, scene_update, scene_render, &resources);
+   vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
 
    cleanup_resources(&resources);
    vkdf_cleanup(&ctx);

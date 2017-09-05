@@ -1970,19 +1970,10 @@ scene_render(VkdfContext *ctx, void *data)
    }
 
    // Copy to swap chain image
-   VkSemaphore copy_wait_sems[2] = {
-      ctx->acquired_sem[ctx->swap_chain_index],
-      res->scene_complete_sem
-   };
-   VkPipelineStageFlags pipeline_stages_present[2] = {
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
-   };
-   vkdf_command_buffer_execute(ctx,
-                               res->present_cmd_bufs[ctx->swap_chain_index],
-                               pipeline_stages_present,
-                               2, copy_wait_sems,
-                               1, &ctx->draw_sem[ctx->swap_chain_index]);
+   vkdf_copy_to_swapchain(ctx,
+                          res->present_cmd_bufs,
+                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                          res->scene_complete_sem);
 }
 
 static void
@@ -2193,7 +2184,7 @@ main()
 
    init_resources(&ctx, &resources);
 
-   vkdf_event_loop_run(&ctx, scene_update, scene_render, &resources);
+   vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
 
    cleanup_resources(&ctx, &resources);
    vkdf_cleanup(&ctx);

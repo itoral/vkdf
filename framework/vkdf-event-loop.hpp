@@ -6,6 +6,7 @@ typedef void (vkdf_event_loop_render_func)(VkdfContext *ctx, void *data);
 
 void
 vkdf_event_loop_run(VkdfContext *ctx,
+                    bool offscreen_rendering,
                     vkdf_event_loop_update_func update_func,
                     vkdf_event_loop_render_func render_func,
                     void *data);
@@ -23,6 +24,12 @@ vkdf_set_rebuild_swapchain_cbs(VkdfContext *ctx,
 
 void
 vkdf_rebuild_swap_chain(VkdfContext *ctx);
+
+void
+vkdf_copy_to_swapchain(VkdfContext *ctx,
+                       VkCommandBuffer *copy_cmd_bufs,
+                       VkPipelineStageFlags wait_stage,
+                       VkSemaphore wait_sem);
 
 #endif
 
