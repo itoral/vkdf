@@ -20,16 +20,6 @@ typedef struct {
 
    VkdfCamera *camera;
 
-   VkRenderPass render_pass;
-   VkClearValue clear_values[2];
-
-   VkFramebuffer framebuffer;
-
-   struct {
-      VkdfImage color;
-      VkdfImage depth;
-   } images;
-
    struct {
       VkDescriptorPool static_ubo_pool;
    } descriptor_pool;
@@ -131,75 +121,12 @@ record_update_resources_command(VkdfContext *ctx,
 }
 
 static void
-record_render_pass_begin(VkdfContext *ctx,
-                         VkRenderPassBeginInfo *rp_begin,
-                         VkFramebuffer framebuffer,
-                         uint32_t fb_width, uint32_t fb_height,
-                         void *data)
-{
-   SceneResources *res = (SceneResources *) data;
-
-   rp_begin->sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-   rp_begin->pNext = NULL;
-   rp_begin->renderPass = res->render_pass;
-   rp_begin->framebuffer = framebuffer;
-   rp_begin->renderArea.offset.x = 0;
-   rp_begin->renderArea.offset.y = 0;
-   rp_begin->renderArea.extent.width = fb_width;
-   rp_begin->renderArea.extent.height = fb_height;
-   rp_begin->clearValueCount = 2;
-   rp_begin->pClearValues = res->clear_values;
-}
-
-static VkCommandBuffer
 record_scene_commands(VkdfContext *ctx,
-                      VkCommandPool cmd_pool,
-                      VkFramebuffer framebuffer,
-                      uint32_t fb_width, uint32_t fb_height,
+                      VkCommandBuffer cmd_buf,
                       GHashTable *sets, bool is_dynamic,
                       void *data)
 {
    SceneResources *res = (SceneResources *) data;
-
-   // Record command buffer
-   VkCommandBuffer cmd_buf;
-   vkdf_create_command_buffer(ctx,
-                              cmd_pool,
-                              VK_COMMAND_BUFFER_LEVEL_SECONDARY,
-                              1, &cmd_buf);
-
-   VkCommandBufferUsageFlags flags =
-      VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT |
-      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-
-   VkCommandBufferInheritanceInfo inheritance_info;
-   inheritance_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-   inheritance_info.pNext = NULL;
-   inheritance_info.renderPass = res->render_pass;
-   inheritance_info.subpass = 0;
-   inheritance_info.framebuffer = framebuffer;
-   inheritance_info.occlusionQueryEnable = 0;
-   inheritance_info.queryFlags = 0;
-   inheritance_info.pipelineStatistics = 0;
-
-   vkdf_command_buffer_begin_secondary(cmd_buf, flags, &inheritance_info);
-
-   // Vieport aand scissor
-   VkViewport viewport;
-   viewport.width = fb_width;
-   viewport.height = fb_height;
-   viewport.minDepth = 0.0f;
-   viewport.maxDepth = 1.0f;
-   viewport.x = 0;
-   viewport.y = 0;
-   vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
-
-   VkRect2D scissor;
-   scissor.extent.width = fb_width;
-   scissor.extent.height = fb_height;
-   scissor.offset.x = 0;
-   scissor.offset.y = 0;
-   vkCmdSetScissor(cmd_buf, 0, 1, &scissor);
 
    // Pipeline
    vkCmdBindPipeline(cmd_buf,
@@ -254,10 +181,6 @@ record_scene_commands(VkdfContext *ctx,
                 0,                                   // first vertex
                 cube_info->start_index);             // first instance
    }
-
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
 }
 
 static void
@@ -271,45 +194,6 @@ init_scene(SceneResources *res)
    vkdf_camera_set_projection(res->camera,
                               45.0f, 0.1f, 2000.0f, WIN_WIDTH / WIN_HEIGHT);
 
-   res->images.color =
-      vkdf_create_image(ctx,
-                        ctx->width,
-                        ctx->height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        ctx->surface_format,
-                        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
-                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_COLOR_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
-
-   res->images.depth =
-      vkdf_create_image(ctx,
-                        ctx->width,
-                        ctx->height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        VK_FORMAT_D32_SFLOAT,
-                        0,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_DEPTH_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
-
-   res->render_pass =
-      vkdf_renderpass_simple_new(ctx,
-                                 res->images.color.format,
-                                 res->images.depth.format);
-
-   res->framebuffer =
-      vkdf_create_framebuffer(ctx,
-                              res->render_pass,
-                              res->images.color.view,
-                              ctx->width, ctx->height,
-                              1, &res->images.depth);
-
    glm::vec3 scene_origin = glm::vec3(-500.0f, -500.0f, -500.0f);
    glm::vec3 scene_size = glm::vec3(1000.0f, 1000.0f, 1000.0f);
    glm::vec3 tile_size = glm::vec3(250.0f, 250.0f, 250.0f);
@@ -318,10 +202,9 @@ init_scene(SceneResources *res)
                                res->camera,
                                scene_origin, scene_size, tile_size, 2,
                                cache_size, 4);
-   vkdf_scene_set_render_target(res->scene, res->framebuffer, ctx->width, ctx->height);
+
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,
-                                  record_render_pass_begin,
                                   record_scene_commands,
                                   res);
 }
@@ -436,6 +319,8 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
    vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
    vi_attribs[1].offset = 12;
 
+   VkRenderPass renderpass = vkdf_scene_get_static_render_pass(res->scene);
+
    VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(res->cube_mesh);
    res->pipelines.obj.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
@@ -445,7 +330,7 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
                                2,
                                vi_attribs,
                                true,
-                               res->render_pass,
+                               renderpass,
                                res->pipelines.obj.layout,
                                primitive,
                                VK_CULL_MODE_BACK_BIT,
@@ -459,9 +344,10 @@ init_cmd_bufs(SceneResources *res)
    if (!res->cmd_pool)
       res->cmd_pool = vkdf_create_gfx_command_pool(res->ctx, 0);
 
+   VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
    res->present_cmd_bufs =
       vkdf_command_buffer_create_for_present(res->ctx, res->cmd_pool,
-                                             res->images.color.image);
+                                             color_image->image);
 }
 
 static void
@@ -538,18 +424,19 @@ init_objects(SceneResources *res)
       vkdf_object_set_material_idx_base(obj, mat_idx);
    }
 
-   vkdf_scene_prepare(res->scene);
-}
+   VkClearValue color_clear;
+   color_clear.color.float32[0] = 0.0f;
+   color_clear.color.float32[1] = 0.0f;
+   color_clear.color.float32[2] = 0.0f;
+   color_clear.color.float32[3] = 1.0f;
 
-static void
-init_clear_values(SceneResources *res)
-{
-   res->clear_values[0].color.float32[0] = 0.0f;
-   res->clear_values[0].color.float32[1] = 0.0f;
-   res->clear_values[0].color.float32[2] = 0.0f;
-   res->clear_values[0].color.float32[3] = 1.0f;
-   res->clear_values[1].depthStencil.depth = 1.0f;
-   res->clear_values[1].depthStencil.stencil = 0;
+   VkClearValue depth_clear;
+   depth_clear.depthStencil.depth = 1.0f;
+   depth_clear.depthStencil.stencil = 0;
+
+   vkdf_scene_set_clear_values(res->scene, &color_clear, &depth_clear);
+
+   vkdf_scene_prepare(res->scene);
 }
 
 static void
@@ -567,7 +454,6 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 
    res->ctx = ctx;
 
-   init_clear_values(res);
    init_scene(res);
    init_meshes(res);
    init_objects(res);
@@ -701,37 +587,15 @@ destroy_ubos(SceneResources *res)
    vkFreeMemory(res->ctx->device, res->ubos.camera_view.buf.mem, NULL);
 }
 
-static void
-destroy_images(SceneResources *res)
-{
-   vkdf_destroy_image(res->ctx, &res->images.color);
-   vkdf_destroy_image(res->ctx, &res->images.depth);
-}
-
-static void
-destroy_framebuffers(SceneResources *res)
-{
-   vkDestroyFramebuffer(res->ctx->device, res->framebuffer, NULL);
-}
-
-static void
-destroy_renderpasses(SceneResources *res)
-{
-   vkDestroyRenderPass(res->ctx->device, res->render_pass, NULL);
-}
-
 void
 cleanup_resources(SceneResources *res)
 {
    vkdf_scene_free(res->scene);
-   destroy_images(res);
    destroy_models(res);
    destroy_cmd_bufs(res);
    destroy_shader_modules(res);
    destroy_pipelines(res);
    destroy_ubos(res);
-   destroy_renderpasses(res);
-   destroy_framebuffers(res);
 
    vkdf_camera_free(res->camera);
 }

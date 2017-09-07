@@ -3,7 +3,15 @@
 VkRenderPass
 vkdf_renderpass_simple_new(VkdfContext *ctx,
                            VkFormat color_format,
-                           VkFormat depth_format)
+                           VkAttachmentLoadOp color_load,
+                           VkAttachmentStoreOp color_store,
+                           VkImageLayout color_initial_layout,
+                           VkImageLayout color_final_layout,
+                           VkFormat depth_format,
+                           VkAttachmentLoadOp depth_load,
+                           VkAttachmentStoreOp depth_store,
+                           VkImageLayout depth_initial_layout,
+                           VkImageLayout depth_final_layout)
 {
    VkAttachmentDescription atts[2];
 
@@ -15,12 +23,12 @@ vkdf_renderpass_simple_new(VkdfContext *ctx,
    if (color_format != VK_FORMAT_UNDEFINED) {
       atts[idx].format = color_format;
       atts[idx].samples = VK_SAMPLE_COUNT_1_BIT;
-      atts[idx].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-      atts[idx].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+      atts[idx].loadOp = color_load;
+      atts[idx].storeOp = color_store;
       atts[idx].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
       atts[idx].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-      atts[idx].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-      atts[idx].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+      atts[idx].initialLayout = color_initial_layout;
+      atts[idx].finalLayout = color_final_layout;
       atts[idx].flags = 0;
 
       color_idx = idx++;
@@ -30,12 +38,12 @@ vkdf_renderpass_simple_new(VkdfContext *ctx,
    if (depth_format != VK_FORMAT_UNDEFINED) {
       atts[idx].format = depth_format;
       atts[idx].samples = VK_SAMPLE_COUNT_1_BIT;
-      atts[idx].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-      atts[idx].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+      atts[idx].loadOp = depth_load;
+      atts[idx].storeOp = depth_store;
       atts[idx].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
       atts[idx].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-      atts[idx].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-      atts[idx].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      atts[idx].initialLayout = depth_initial_layout;
+      atts[idx].finalLayout = depth_final_layout;
       atts[idx].flags = 0;
 
       depth_idx = idx++;

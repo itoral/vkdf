@@ -74,8 +74,7 @@ struct _DirtyShadowMap {
 };
 
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
-typedef VkCommandBuffer (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandPool, VkFramebuffer, uint32_t, uint32_t, GHashTable *sets, bool, void *);
-typedef void (*VkdfSceneRenderPassBeginInfoCB)(VkdfContext *, VkRenderPassBeginInfo *, VkFramebuffer, uint32_t, uint32_t, void *);
+typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, void *);
 
 struct _dim {
    float w;
@@ -99,6 +98,27 @@ struct _VkdfScene {
    GList *models;
 
    // Render target
+   struct {
+      uint32_t width;
+      uint32_t height;
+      VkdfImage color;
+      VkdfImage depth;
+   } rt;
+
+   // Render passes
+   struct {
+      VkClearValue clear_values[2];
+      bool do_color_clear;
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } static_geom;
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } dynamic_geom;
+   } rp;
+
    VkFramebuffer framebuffer;
    uint32_t fb_width;
    uint32_t fb_height;
@@ -165,6 +185,7 @@ struct _VkdfScene {
    struct {
       VkSemaphore update_resources_sem;
       VkSemaphore shadow_maps_sem;
+      VkSemaphore draw_static_sem;
       VkSemaphore draw_sem;
       VkFence draw_fence;
       bool draw_fence_active;
@@ -172,7 +193,6 @@ struct _VkdfScene {
 
    struct {
       VkdfSceneUpdateResourcesCB update_resources;
-      VkdfSceneRenderPassBeginInfoCB render_pass_begin_info;
       VkdfSceneCommandsCB record_commands;
       void *data;
    } callbacks;
@@ -266,17 +286,6 @@ vkdf_scene_new(VkdfContext *ctx,
 void
 vkdf_scene_free(VkdfScene *s);
 
-inline void
-vkdf_scene_set_render_target(VkdfScene *s,
-                             VkFramebuffer fb,
-                             uint32_t width,
-                             uint32_t height)
-{
-   s->framebuffer = fb;
-   s->fb_width = width;
-   s->fb_height = height;
-}
-
 inline VkdfCamera *
 vkdf_scene_get_camera(VkdfScene *scene)
 {
@@ -287,7 +296,36 @@ void
 vkdf_scene_add_object(VkdfScene *scene, const char *set_id, VkdfObject *obj);
 
 void
+vkdf_scene_set_clear_values(VkdfScene *scene,
+                            VkClearValue *color,
+                            VkClearValue *depth);
+
+void
 vkdf_scene_prepare(VkdfScene *scene);
+
+inline VkRenderPass
+vkdf_scene_get_static_render_pass(VkdfScene *s)
+{
+   return s->rp.static_geom.renderpass;
+}
+
+inline VkRenderPass
+vkdf_scene_get_dynamic_render_pass(VkdfScene *s)
+{
+   return s->rp.dynamic_geom.renderpass;
+}
+
+inline VkdfImage *
+vkdf_scene_get_color_render_target(VkdfScene *s)
+{
+   return &s->rt.color;
+}
+
+inline VkdfImage *
+vkdf_scene_get_depth_render_target(VkdfScene *s)
+{
+   return &s->rt.depth;
+}
 
 inline VkdfBuffer *
 vkdf_scene_get_object_ubo(VkdfScene *s)
@@ -417,12 +455,10 @@ vkdf_scene_add_light(VkdfScene *s,
 inline void
 vkdf_scene_set_scene_callbacks(VkdfScene *s,
                                VkdfSceneUpdateResourcesCB ur_cb,
-                               VkdfSceneRenderPassBeginInfoCB rp_cb,
                                VkdfSceneCommandsCB cmd_cb,
                                void *data)
 {
    s->callbacks.update_resources = ur_cb;
-   s->callbacks.render_pass_begin_info = rp_cb;
    s->callbacks.record_commands = cmd_cb;
    s->callbacks.data = data;
 }

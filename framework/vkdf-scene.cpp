@@ -78,6 +78,43 @@ init_subtiles(VkdfScene *s, VkdfSceneTile *t)
    }
 }
 
+static void
+create_render_target(VkdfScene *s,
+                     uint32_t width,
+                     uint32_t height,
+                     VkFormat color_format)
+{
+   s->rt.width = width;
+   s->rt.height = height;
+
+   s->rt.color =
+      vkdf_create_image(s->ctx,
+                        s->rt.width,
+                        s->rt.height,
+                        1,
+                        VK_IMAGE_TYPE_2D,
+                        color_format,
+                        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_VIEW_TYPE_2D);
+
+   s->rt.depth =
+      vkdf_create_image(s->ctx,
+                        s->rt.width,
+                        s->rt.height,
+                        1,
+                        VK_IMAGE_TYPE_2D,
+                        VK_FORMAT_D32_SFLOAT,
+                        0,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        VK_IMAGE_ASPECT_DEPTH_BIT,
+                        VK_IMAGE_VIEW_TYPE_2D);
+}
+
 VkdfScene *
 vkdf_scene_new(VkdfContext *ctx,
                VkdfCamera *camera,
@@ -194,6 +231,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.update_resources_sem = vkdf_create_semaphore(s->ctx);
    s->sync.shadow_maps_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_fence = vkdf_create_fence(s->ctx);
 
    s->ubo.static_pool =
@@ -203,6 +241,8 @@ vkdf_scene_new(VkdfContext *ctx,
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
    s->dynamic.visible =
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+
+   create_render_target(s, s->ctx->width, s->ctx->height, s->ctx->surface_format);
 
    return s;
 }
@@ -301,6 +341,15 @@ vkdf_scene_free(VkdfScene *s)
       vkdf_thread_pool_free(s->thread.pool);
    }
 
+   vkdf_destroy_image(s->ctx, &s->rt.color);
+   vkdf_destroy_image(s->ctx, &s->rt.depth);
+
+   vkDestroyRenderPass(s->ctx->device, s->rp.static_geom.renderpass, NULL);
+   vkDestroyRenderPass(s->ctx->device, s->rp.dynamic_geom.renderpass, NULL);
+
+   vkDestroyFramebuffer(s->ctx->device, s->rp.static_geom.framebuffer, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->rp.dynamic_geom.framebuffer, NULL);
+
    for (uint32_t i = 0; i < s->thread.num_threads; i++)
       g_list_free(s->thread.data[i].visible);
    g_free(s->thread.data);
@@ -328,6 +377,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.update_resources_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.shadow_maps_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.draw_static_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.draw_fence, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++) {
@@ -404,7 +454,6 @@ vkdf_scene_free(VkdfScene *s)
    }
 
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
-
 
    g_free(s);
 }
@@ -674,20 +723,17 @@ build_primary_cmd_buf(VkdfScene *s)
    vkdf_command_buffer_begin(cmd_buf,
                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
-   VkRenderPassBeginInfo rp_begin;
-   s->callbacks.render_pass_begin_info(s->ctx,
-                                       &rp_begin,
-                                       s->framebuffer,
-                                       s->fb_width, s->fb_height,
-                                       s->callbacks.data);
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->rp.static_geom.renderpass,
+                                s->rp.static_geom.framebuffer,
+                                0, 0, s->rt.width, s->rt.height,
+                                2, s->rp.clear_values);
 
    vkCmdBeginRenderPass(cmd_buf,
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
    uint32_t cmd_buf_count = g_list_length(active);
-   if (s->cmd_buf.dynamic)
-      cmd_buf_count++;
 
    if (cmd_buf_count > 0) {
       VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, cmd_buf_count);
@@ -699,11 +745,6 @@ build_primary_cmd_buf(VkdfScene *s)
          cmd_bufs[idx++] = t->cmd_buf;
          iter = g_list_next(iter);
       }
-      if (s->cmd_buf.dynamic) {
-         assert(idx == cmd_buf_count - 1);
-         cmd_bufs[idx] = s->cmd_buf.dynamic;
-      }
-
       vkCmdExecuteCommands(cmd_buf, cmd_buf_count, cmd_bufs);
       g_free(cmd_bufs);
    }
@@ -777,6 +818,28 @@ remove_from_cache(struct ThreadData *data, VkdfSceneTile *t)
 }
 
 static void
+record_viewport_and_scissor_commands(VkCommandBuffer cmd_buf,
+                                     uint32_t width,
+                                     uint32_t height)
+{
+   VkViewport viewport;
+   viewport.width = width;
+   viewport.height = height;
+   viewport.minDepth = 0.0f;
+   viewport.maxDepth = 1.0f;
+   viewport.x = 0;
+   viewport.y = 0;
+   vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
+
+   VkRect2D scissor;
+   scissor.extent.width = width;
+   scissor.extent.height = height;
+   scissor.offset.x = 0;
+   scissor.offset.y = 0;
+   vkCmdSetScissor(cmd_buf, 0, 1, &scissor);
+}
+
+static void
 new_active_tile(struct ThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
@@ -794,10 +857,35 @@ new_active_tile(struct ThreadData *data, VkdfSceneTile *t)
       }
    }
 
-   VkCommandBuffer cmd_buf =
-      s->callbacks.record_commands(s->ctx, s->cmd_buf.pool[thread_id],
-                                   s->framebuffer, s->fb_width, s->fb_height,
-                                   t->sets, false, s->callbacks.data);
+   VkCommandBuffer cmd_buf;
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[thread_id],
+                              VK_COMMAND_BUFFER_LEVEL_SECONDARY,
+                              1, &cmd_buf);
+
+   VkCommandBufferUsageFlags flags =
+      VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT |
+      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+
+   VkCommandBufferInheritanceInfo inheritance_info;
+   inheritance_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+   inheritance_info.pNext = NULL;
+   inheritance_info.renderPass = s->rp.static_geom.renderpass;
+   inheritance_info.subpass = 0;
+   inheritance_info.framebuffer = s->rp.static_geom.framebuffer;
+   inheritance_info.occlusionQueryEnable = 0;
+   inheritance_info.queryFlags = 0;
+   inheritance_info.pipelineStatistics = 0;
+
+   vkdf_command_buffer_begin_secondary(cmd_buf, flags, &inheritance_info);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   s->callbacks.record_commands(s->ctx, cmd_buf, t->sets, false,
+                                s->callbacks.data);
+
+   vkdf_command_buffer_end(cmd_buf);
+
    t->cmd_buf = cmd_buf;
    s->cmd_buf.active[thread_id] =
       g_list_prepend(s->cmd_buf.active[thread_id], t);
@@ -1886,21 +1974,9 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                         VK_SUBPASS_CONTENTS_INLINE);
 
    // Dynamic viewport / scissor / depth bias
-   VkViewport viewport;
-   viewport.width = shadow_map_size;
-   viewport.height = shadow_map_size;
-   viewport.minDepth = 0.0f;
-   viewport.maxDepth = 1.0f;
-   viewport.x = 0;
-   viewport.y = 0;
-   vkCmdSetViewport(sl->shadow.cmd_buf, 0, 1, &viewport);
-
-   VkRect2D scissor;
-   scissor.extent.width = shadow_map_size;
-   scissor.extent.height = shadow_map_size;
-   scissor.offset.x = 0;
-   scissor.offset.y = 0;
-   vkCmdSetScissor(sl->shadow.cmd_buf, 0, 1, &scissor);
+   record_viewport_and_scissor_commands(sl->shadow.cmd_buf,
+                                        shadow_map_size,
+                                        shadow_map_size);
 
    vkCmdSetDepthBias(sl->shadow.cmd_buf,
                      sl->shadow.spec.depth_bias_const_factor,
@@ -2397,6 +2473,75 @@ prepare_scene_lights(VkdfScene *s)
    }
 }
 
+void
+vkdf_scene_set_clear_values(VkdfScene *s,
+                            VkClearValue *color,
+                            VkClearValue *depth)
+{
+   // Color clear is optional, depth is mandatory
+   assert(depth != NULL);
+   s->rp.do_color_clear = color != NULL;
+
+   if (color) {
+      s->rp.clear_values[0] = *color;
+   } else {
+      VkClearValue color_clear;
+      color_clear.color.float32[0] = 0.0f;
+      color_clear.color.float32[1] = 0.0f;
+      color_clear.color.float32[2] = 0.0f;
+      color_clear.color.float32[3] = 1.0f;
+      s->rp.clear_values[0] = color_clear;
+   }
+
+   s->rp.clear_values[1] = *depth;
+}
+
+static void
+prepare_scene_render_passes(VkdfScene *s)
+{
+   s->rp.static_geom.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->rt.color.format,
+                                 s->rp.do_color_clear ?
+                                    VK_ATTACHMENT_LOAD_OP_CLEAR :
+                                    VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 s->rt.depth.format,
+                                 VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+   s->rp.static_geom.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->rp.static_geom.renderpass,
+                              s->rt.color.view,
+                              s->rt.width, s->rt.height,
+                              1, &s->rt.depth);
+
+   s->rp.dynamic_geom.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->rt.color.format,
+                                 VK_ATTACHMENT_LOAD_OP_LOAD,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 s->rt.depth.format,
+                                 VK_ATTACHMENT_LOAD_OP_LOAD,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+   s->rp.dynamic_geom.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->rp.dynamic_geom.renderpass,
+                              s->rt.color.view,
+                              s->rt.width, s->rt.height,
+                              1, &s->rt.depth);
+}
+
 /**
  * Processess scene contents and sets things up for optimal rendering
  */
@@ -2405,6 +2550,7 @@ vkdf_scene_prepare(VkdfScene *s)
 {
    prepare_scene_objects(s);
    prepare_scene_lights(s);
+   prepare_scene_render_passes(s);
 }
 
 static void
@@ -2566,20 +2712,37 @@ update_dirty_objects(VkdfScene *s)
    }
 
    // Record dynamic object rendering command buffer
-   //
-   // FIXME: For this to be a primary command buffer, it would have to go into
-   // a separate render pass instance too. At the moment, however, the app is
-   // the one that defines the single renderpass instance to use, so we can't
-   // do it like this. Thus, for now we record this as a secondary and
-   // rewrite the primary on every frame with it.
    if (s->cmd_buf.dynamic) {
       new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.dynamic);
    }
    if (s->dynamic.visible_obj_count > 0) {
-      s->cmd_buf.dynamic =
-         s->callbacks.record_commands(s->ctx, s->cmd_buf.pool[0],
-                                      s->framebuffer, s->fb_width, s->fb_height,
-                                      s->dynamic.sets, true, s->callbacks.data);
+      VkCommandBuffer cmd_buf;
+      vkdf_create_command_buffer(s->ctx,
+                                 s->cmd_buf.pool[0],
+                                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                 1, &cmd_buf);
+
+      vkdf_command_buffer_begin(cmd_buf,
+                                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+      VkRenderPassBeginInfo rp_begin =
+         vkdf_renderpass_begin_new(s->rp.dynamic_geom.renderpass,
+                                   s->rp.dynamic_geom.framebuffer,
+                                   0, 0, s->rt.width, s->rt.height,
+                                   0, NULL);
+
+      vkCmdBeginRenderPass(cmd_buf, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+
+      record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+      s->callbacks.record_commands(s->ctx, cmd_buf, s->dynamic.sets, true,
+                                   s->callbacks.data);
+
+      vkCmdEndRenderPass(cmd_buf);
+
+      vkdf_command_buffer_end(cmd_buf);
+
+      s->cmd_buf.dynamic = cmd_buf;
    } else {
       s->cmd_buf.dynamic = 0;
    }
@@ -2692,16 +2855,15 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
 
    // If the camera didn't change, then our active tiles remain the same and
    // we don't need to re-record secondaries for them
-   if (vkdf_camera_is_dirty(s->camera))
-      update_cmd_bufs(s);
+   if (vkdf_camera_is_dirty(s->camera)) {
+      bool cmd_buf_changes = update_cmd_bufs(s);
 
-   // FIXME: We always need to re-record the primary to include the updated
-   // secondary command buffer for dynamic objects. This is bad, we should
-   // probably have a separate render pass for dynamic objects so we can
-   // avoid this.
-   if (s->cmd_buf.primary)
-      new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.primary);
-   s->cmd_buf.primary = build_primary_cmd_buf(s);
+      if (!s->cmd_buf.primary || cmd_buf_changes) {
+         if (s->cmd_buf.primary)
+            new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.primary);
+         s->cmd_buf.primary = build_primary_cmd_buf(s);
+      }
+   }
 }
 
 VkSemaphore
@@ -2788,14 +2950,31 @@ vkdf_scene_draw(VkdfScene *s)
       wait_sem = &s->sync.shadow_maps_sem;
    }
 
-   // Execute scene primary command. Use a fence so we know when the
-   // secondaries in the primary are no longer in use
-   vkdf_command_buffer_execute_with_fence(s->ctx,
-                                          s->cmd_buf.primary,
-                                          &wait_stage,
-                                          wait_sem_count, wait_sem,
-                                          1, &s->sync.draw_sem,
-                                          s->sync.draw_fence);
+   // Execute rendering commands for static and dynamic geametry
+   if (!s->cmd_buf.dynamic) {
+      vkdf_command_buffer_execute_with_fence(s->ctx,
+                                             s->cmd_buf.primary,
+                                             &wait_stage,
+                                             wait_sem_count, wait_sem,
+                                             1, &s->sync.draw_sem,
+                                             s->sync.draw_fence);
+   } else {
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.primary,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.draw_static_sem);
+
+      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.draw_static_sem;
+      vkdf_command_buffer_execute_with_fence(s->ctx,
+                                             s->cmd_buf.dynamic,
+                                             &wait_stage,
+                                             wait_sem_count, wait_sem,
+                                             1, &s->sync.draw_sem,
+                                             s->sync.draw_fence);
+   }
 
    s->sync.draw_fence_active = true;
    free_inactive_command_buffers(s);

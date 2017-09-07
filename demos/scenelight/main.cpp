@@ -28,16 +28,6 @@ typedef struct {
    VkdfCamera *camera;
    VkdfLight *lights[NUM_LIGHTS];
 
-   VkRenderPass render_pass;
-   VkClearValue clear_values[2];
-
-   VkFramebuffer framebuffer;
-
-   struct {
-      VkdfImage color;
-      VkdfImage depth;
-   } images;
-
    struct {
       VkDescriptorPool static_ubo_pool;
       VkDescriptorPool sampler_pool;
@@ -65,13 +55,12 @@ typedef struct {
       } layout;
 
       struct {
-         VkPipeline pipeline;
-         VkPipelineCache cache;
+         VkPipeline static_pipeline;
+         VkPipeline dynamic_pipeline;
       } obj;
 
       struct {
          VkPipeline pipeline;
-         VkPipelineCache cache;
       } floor;
    } pipelines;
 
@@ -188,27 +177,6 @@ record_update_resources_command(VkdfContext *ctx,
 }
 
 static void
-record_render_pass_begin(VkdfContext *ctx,
-                         VkRenderPassBeginInfo *rp_begin,
-                         VkFramebuffer framebuffer,
-                         uint32_t fb_width, uint32_t fb_height,
-                         void *data)
-{
-   SceneResources *res = (SceneResources *) data;
-
-   rp_begin->sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-   rp_begin->pNext = NULL;
-   rp_begin->renderPass = res->render_pass;
-   rp_begin->framebuffer = framebuffer;
-   rp_begin->renderArea.offset.x = 0;
-   rp_begin->renderArea.offset.y = 0;
-   rp_begin->renderArea.extent.width = fb_width;
-   rp_begin->renderArea.extent.height = fb_height;
-   rp_begin->clearValueCount = 2;
-   rp_begin->pClearValues = res->clear_values;
-}
-
-static void
 record_instanced_draw(VkCommandBuffer cmd_buf,
                       VkPipeline pipeline,
                       VkdfModel *model,
@@ -251,55 +219,11 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
    }
 }
 
-static VkCommandBuffer
-record_scene_commands(VkdfContext *ctx,
-                      VkCommandPool cmd_pool,
-                      VkFramebuffer framebuffer,
-                      uint32_t fb_width, uint32_t fb_height,
-                      GHashTable *sets, bool is_dynamic,
-                      void *data)
+static void
+record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
+                      GHashTable *sets, bool is_dynamic, void *data)
 {
    SceneResources *res = (SceneResources *) data;
-
-   // Record command buffer
-   VkCommandBuffer cmd_buf;
-   vkdf_create_command_buffer(ctx,
-                              cmd_pool,
-                              VK_COMMAND_BUFFER_LEVEL_SECONDARY,
-                              1, &cmd_buf);
-
-   VkCommandBufferUsageFlags flags =
-      VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT |
-      VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-
-   VkCommandBufferInheritanceInfo inheritance_info;
-   inheritance_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-   inheritance_info.pNext = NULL;
-   inheritance_info.renderPass = res->render_pass;
-   inheritance_info.subpass = 0;
-   inheritance_info.framebuffer = framebuffer;
-   inheritance_info.occlusionQueryEnable = 0;
-   inheritance_info.queryFlags = 0;
-   inheritance_info.pipelineStatistics = 0;
-
-   vkdf_command_buffer_begin_secondary(cmd_buf, flags, &inheritance_info);
-
-   // Vieport and scissor
-   VkViewport viewport;
-   viewport.width = fb_width;
-   viewport.height = fb_height;
-   viewport.minDepth = 0.0f;
-   viewport.maxDepth = 1.0f;
-   viewport.x = 0;
-   viewport.y = 0;
-   vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
-
-   VkRect2D scissor;
-   scissor.extent.width = fb_width;
-   scissor.extent.height = fb_height;
-   scissor.offset.x = 0;
-   scissor.offset.y = 0;
-   vkCmdSetScissor(cmd_buf, 0, 1, &scissor);
 
    // Push constants
    struct PCBData pcb_data;
@@ -338,8 +262,12 @@ record_scene_commands(VkdfContext *ctx,
          continue;
 
       if (!strcmp(set_id, "cube") || !strcmp(set_id, "dyn-cube")) {
+         VkPipeline *pipeline = is_dynamic ?
+                                   &res->pipelines.obj.dynamic_pipeline :
+                                   &res->pipelines.obj.static_pipeline;
+
          record_instanced_draw(cmd_buf,
-                               res->pipelines.obj.pipeline,
+                               *pipeline,
                                res->cube_model,
                                set_info->count, set_info->start_index);
          continue;
@@ -347,7 +275,7 @@ record_scene_commands(VkdfContext *ctx,
 
       if (!strcmp(set_id, "tree")) {
          record_instanced_draw(cmd_buf,
-                               res->pipelines.obj.pipeline,
+                               res->pipelines.obj.static_pipeline,
                                res->tree_model,
                                set_info->count, set_info->start_index);
          continue;
@@ -363,10 +291,6 @@ record_scene_commands(VkdfContext *ctx,
 
       assert(!"unkown object category");
    }
-
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
 }
 
 static void
@@ -381,45 +305,6 @@ init_scene(SceneResources *res)
                               45.0f, 0.1f, 500.0f, WIN_WIDTH / WIN_HEIGHT);
    vkdf_camera_look_at(res->camera, 0.0f, 3.0f, 0.0f);
 
-   res->images.color =
-      vkdf_create_image(ctx,
-                        ctx->width,
-                        ctx->height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        ctx->surface_format,
-                        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
-                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_COLOR_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
-
-   res->images.depth =
-      vkdf_create_image(ctx,
-                        ctx->width,
-                        ctx->height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        VK_FORMAT_D32_SFLOAT,
-                        0,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_DEPTH_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
-
-   res->render_pass =
-      vkdf_renderpass_simple_new(ctx,
-                                 res->images.color.format,
-                                 res->images.depth.format);
-
-   res->framebuffer =
-      vkdf_create_framebuffer(ctx,
-                              res->render_pass,
-                              res->images.color.view,
-                              ctx->width, ctx->height,
-                              1, &res->images.depth);
-
    glm::vec3 scene_origin = glm::vec3(-50.0f, -50.0f, -50.0f);
    glm::vec3 scene_size = glm::vec3(100.0f, 100.0f, 100.0f);
    glm::vec3 tile_size = glm::vec3(25.0f, 25.0f, 25.0f);
@@ -429,10 +314,8 @@ init_scene(SceneResources *res)
                                scene_origin, scene_size, tile_size, 2,
                                cache_size, 1);
 
-   vkdf_scene_set_render_target(res->scene, res->framebuffer, ctx->width, ctx->height);
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,
-                                  record_render_pass_begin,
                                   record_scene_commands,
                                   res);
 }
@@ -599,19 +482,8 @@ init_pipeline_descriptors(SceneResources *res)
 }
 
 static void
-init_obj_pipeline(SceneResources *res, bool init_cache)
+init_obj_pipeline(SceneResources *res, bool dynamic)
 {
-   if (init_cache) {
-      VkPipelineCacheCreateInfo info;
-      info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-      info.pNext = NULL;
-      info.initialDataSize = 0;
-      info.pInitialData = NULL;
-      info.flags = 0;
-      VK_CHECK(vkCreatePipelineCache(res->ctx->device, &info, NULL,
-                                     &res->pipelines.obj.cache));
-   }
-
    VkVertexInputBindingDescription vi_bindings[1];
    VkVertexInputAttributeDescription vi_attribs[3];
 
@@ -643,15 +515,23 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
    vi_attribs[2].format = VK_FORMAT_R32_UINT;
    vi_attribs[2].offset = 24;
 
-   res->pipelines.obj.pipeline =
+   VkPipeline *pipeline = dynamic ?
+         &res->pipelines.obj.dynamic_pipeline :
+         &res->pipelines.obj.static_pipeline;
+
+   VkRenderPass renderpass = dynamic ?
+         vkdf_scene_get_dynamic_render_pass(res->scene) :
+         vkdf_scene_get_static_render_pass(res->scene);
+
+   *pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
-                               &res->pipelines.obj.cache,
+                               NULL,
                                1,
                                vi_bindings,
                                3,
                                vi_attribs,
                                true,
-                               res->render_pass,
+                               renderpass,
                                res->pipelines.layout.common,
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                VK_CULL_MODE_BACK_BIT,
@@ -662,17 +542,6 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
 static void
 init_floor_pipeline(SceneResources *res, bool init_cache)
 {
-   if (init_cache) {
-      VkPipelineCacheCreateInfo info;
-      info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-      info.pNext = NULL;
-      info.initialDataSize = 0;
-      info.pInitialData = NULL;
-      info.flags = 0;
-      VK_CHECK(vkCreatePipelineCache(res->ctx->device, &info, NULL,
-                                     &res->pipelines.floor.cache));
-   }
-
    VkVertexInputBindingDescription vi_bindings[1];
    VkVertexInputAttributeDescription vi_attribs[3];
 
@@ -701,13 +570,13 @@ init_floor_pipeline(SceneResources *res, bool init_cache)
 
    res->pipelines.floor.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
-                               &res->pipelines.floor.cache,
+                               NULL,
                                1,
                                vi_bindings,
                                3,
                                vi_attribs,
                                true,
-                               res->render_pass,
+                               vkdf_scene_get_static_render_pass(res->scene),
                                res->pipelines.layout.common,
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                VK_CULL_MODE_BACK_BIT,
@@ -721,9 +590,10 @@ init_cmd_bufs(SceneResources *res)
    if (!res->cmd_pool)
       res->cmd_pool = vkdf_create_gfx_command_pool(res->ctx, 0);
 
+   VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
    res->present_cmd_bufs =
       vkdf_command_buffer_create_for_present(res->ctx, res->cmd_pool,
-                                             res->images.color.image);
+                                             color_image->image);
 }
 
 static void
@@ -747,6 +617,7 @@ static inline void
 init_pipelines(SceneResources *res)
 {
    init_pipeline_descriptors(res);
+   init_obj_pipeline(res, false);
    init_obj_pipeline(res, true);
    init_floor_pipeline(res, true);
 }
@@ -906,6 +777,18 @@ init_objects(SceneResources *res)
    vkdf_scene_add_object(res->scene, "floor", floor);
    vkdf_object_set_material_idx_base(floor, 0);
 
+   VkClearValue color_clear;
+   color_clear.color.float32[0] = 0.0f;
+   color_clear.color.float32[1] = 0.0f;
+   color_clear.color.float32[2] = 0.0f;
+   color_clear.color.float32[3] = 1.0f;
+
+   VkClearValue depth_clear;
+   depth_clear.depthStencil.depth = 1.0f;
+   depth_clear.depthStencil.stencil = 0;
+
+   vkdf_scene_set_clear_values(res->scene, &color_clear, &depth_clear);
+
    vkdf_scene_prepare(res->scene);
 }
 
@@ -962,17 +845,6 @@ init_lights(SceneResources *res)
    shadow_spec.depth_bias_slope_factor = 1.5f;
    shadow_spec.pfc_kernel_size = 2;
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
-}
-
-static void
-init_clear_values(SceneResources *res)
-{
-   res->clear_values[0].color.float32[0] = 0.0f;
-   res->clear_values[0].color.float32[1] = 0.0f;
-   res->clear_values[0].color.float32[2] = 0.0f;
-   res->clear_values[0].color.float32[3] = 1.0f;
-   res->clear_values[1].depthStencil.depth = 1.0f;
-   res->clear_values[1].depthStencil.stencil = 0;
 }
 
 static void
@@ -1165,8 +1037,8 @@ create_debug_tile_renderpass(SceneResources *res)
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-   attachments[0].initialLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-   attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+   attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+   attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
    attachments[0].flags = 0;
 
    VkAttachmentReference color_ref;
@@ -1208,10 +1080,11 @@ init_debug_tile_resources(SceneResources *res)
    res->debug.renderpass =
       create_debug_tile_renderpass(res);
 
+   VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
    res->debug.framebuffer =
       vkdf_create_framebuffer(res->ctx,
                               res->debug.renderpass,
-                              res->images.color.view,
+                              color_image->view,
                               res->ctx->width, res->ctx->height,
                               0, NULL);
 
@@ -1229,7 +1102,6 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 
    res->ctx = ctx;
 
-   init_clear_values(res);
    init_scene(res);
    init_lights(res);
    init_meshes(res);
@@ -1372,10 +1244,8 @@ destroy_cmd_bufs(SceneResources *res)
 static void
 destroy_pipelines(SceneResources *res)
 {
-   vkDestroyPipelineCache(res->ctx->device, res->pipelines.obj.cache, NULL);
-   vkDestroyPipeline(res->ctx->device, res->pipelines.obj.pipeline, NULL);
-
-   vkDestroyPipelineCache(res->ctx->device, res->pipelines.floor.cache, NULL);
+   vkDestroyPipeline(res->ctx->device, res->pipelines.obj.static_pipeline, NULL);
+   vkDestroyPipeline(res->ctx->device, res->pipelines.obj.dynamic_pipeline, NULL);
    vkDestroyPipeline(res->ctx->device, res->pipelines.floor.pipeline, NULL);
 
    vkDestroyPipelineLayout(res->ctx->device, res->pipelines.layout.common, NULL);
@@ -1432,25 +1302,6 @@ destroy_ubos(SceneResources *res)
 }
 
 static void
-destroy_images(SceneResources *res)
-{
-   vkdf_destroy_image(res->ctx, &res->images.color);
-   vkdf_destroy_image(res->ctx, &res->images.depth);
-}
-
-static void
-destroy_framebuffers(SceneResources *res)
-{
-   vkDestroyFramebuffer(res->ctx->device, res->framebuffer, NULL);
-}
-
-static void
-destroy_renderpasses(SceneResources *res)
-{
-   vkDestroyRenderPass(res->ctx->device, res->render_pass, NULL);
-}
-
-static void
 destroy_debug_tile_resources(SceneResources *res)
 {
    vkDestroyShaderModule(res->ctx->device, res->debug.shaders.vs, NULL);
@@ -1478,14 +1329,11 @@ cleanup_resources(SceneResources *res)
 {
    vkdf_scene_free(res->scene);
    destroy_debug_tile_resources(res);
-   destroy_images(res);
    destroy_models(res);
    destroy_cmd_bufs(res);
    destroy_shader_modules(res);
    destroy_pipelines(res);
    destroy_ubos(res);
-   destroy_renderpasses(res);
-   destroy_framebuffers(res);
 
    vkdf_camera_free(res->camera);
 }

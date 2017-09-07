@@ -173,11 +173,20 @@ present_commands(VkdfContext *ctx,
                  VkCommandBuffer *cmd_bufs,
                  uint32_t index)
 {
-   // Transition presentation image to transfer destination layout
+   // Transition presentation image to transfer destination layout and source
+   // image transfer source layout
    VkImageSubresourceRange subresource_range =
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
 
-   VkImageMemoryBarrier barrier =
+   VkImageMemoryBarrier src_barrier =
+      vkdf_create_image_barrier(VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                                VK_ACCESS_TRANSFER_READ_BIT,
+                                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                image,
+                                subresource_range);
+
+   VkImageMemoryBarrier dst_barrier =
       vkdf_create_image_barrier(0,
                                 VK_ACCESS_TRANSFER_WRITE_BIT,
                                 VK_IMAGE_LAYOUT_UNDEFINED,
@@ -185,13 +194,18 @@ present_commands(VkdfContext *ctx,
                                 ctx->swap_chain_images[index].image,
                                 subresource_range);
 
+   VkImageMemoryBarrier barriers[2] = {
+      src_barrier,
+      dst_barrier
+   };
+
    vkCmdPipelineBarrier(cmd_bufs[index],
                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
                         0,
                         0, NULL,
                         0, NULL,
-                        1, &barrier);
+                        2, barriers);
 
    // Copy color image to presentation image
    VkImageSubresourceLayers subresource_layers =
@@ -211,7 +225,7 @@ present_commands(VkdfContext *ctx,
                   &region);
 
    // Transition presentation image to presentation layout
-   barrier =
+   VkImageMemoryBarrier present_barrier =
       vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
                                 VK_ACCESS_MEMORY_READ_BIT,
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -225,7 +239,7 @@ present_commands(VkdfContext *ctx,
                         0,
                         0, NULL,
                         0, NULL,
-                        1, &barrier);
+                        1, &present_barrier);
 }
 
 /**
