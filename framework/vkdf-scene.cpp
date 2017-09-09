@@ -2596,18 +2596,18 @@ update_dirty_objects(VkdfScene *s)
       VkdfSceneSetInfo *info =
          (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.sets, id);
 
-      // Reset visible information for this set
-      VkdfSceneSetInfo *vis_info =
-         (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.visible, id);
-      if (!vis_info) {
-         vis_info = g_new0(VkdfSceneSetInfo, 1);
-         g_hash_table_replace(s->dynamic.visible, g_strdup(id), vis_info);
-      } else if (vis_info->objs) {
-         g_list_free(vis_info->objs);
-         memset(vis_info, 0, sizeof(VkdfSceneSetInfo));
-      }
-
       if (info) {
+         // Reset visible information for this set
+         VkdfSceneSetInfo *vis_info =
+            (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.visible, id);
+         if (!vis_info) {
+            vis_info = g_new0(VkdfSceneSetInfo, 1);
+            g_hash_table_replace(s->dynamic.visible, g_strdup(id), vis_info);
+         } else if (vis_info->objs) {
+            g_list_free(vis_info->objs);
+            memset(vis_info, 0, sizeof(VkdfSceneSetInfo));
+         }
+
          // Update visible objects for this set
          vis_info->start_index = s->dynamic.visible_obj_count;
          vis_info->shadow_caster_start_index =
