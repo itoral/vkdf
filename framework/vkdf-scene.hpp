@@ -190,8 +190,8 @@ struct _VkdfScene {
       VkSemaphore draw_static_sem;
       VkSemaphore draw_sem;
       VkSemaphore postprocess_sem;
-      VkFence draw_fence;
-      bool draw_fence_active;
+      VkFence present_fence;
+      bool present_fence_active;
    } sync;
 
    struct {

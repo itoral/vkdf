@@ -233,7 +233,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
-   s->sync.draw_fence = vkdf_create_fence(s->ctx);
+   s->sync.present_fence = vkdf_create_fence(s->ctx);
 
    s->ubo.static_pool =
       vkdf_create_descriptor_pool(s->ctx, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 8);
@@ -326,15 +326,15 @@ destroy_shadow_map_pipeline(gpointer key, gpointer value, gpointer data)
 void
 vkdf_scene_free(VkdfScene *s)
 {
-   while (s->sync.draw_fence_active) {
+   while (s->sync.present_fence_active) {
       VkResult status;
       do {
          status = vkWaitForFences(s->ctx->device,
-                                  1, &s->sync.draw_fence,
+                                  1, &s->sync.present_fence,
                                   true, 1000ull);
       } while (status == VK_NOT_READY || status == VK_TIMEOUT);
-      vkResetFences(s->ctx->device, 1, &s->sync.draw_fence);
-      s->sync.draw_fence_active = false;
+      vkResetFences(s->ctx->device, 1, &s->sync.present_fence);
+      s->sync.present_fence_active = false;
    }
 
    if (s->thread.pool) {
@@ -380,7 +380,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_static_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
-   vkDestroyFence(s->ctx->device, s->sync.draw_fence, NULL);
+   vkDestroyFence(s->ctx->device, s->sync.present_fence, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++) {
       g_list_free(s->cache[i].cached);
@@ -764,10 +764,10 @@ static bool
 check_fences(VkdfScene *s)
 {
    bool new_signaled = false;
-   if (s->sync.draw_fence_active &&
-       vkGetFenceStatus(s->ctx->device, s->sync.draw_fence) == VK_SUCCESS) {
-      vkResetFences(s->ctx->device, 1, &s->sync.draw_fence);
-      s->sync.draw_fence_active = false;
+   if (s->sync.present_fence_active &&
+       vkGetFenceStatus(s->ctx->device, s->sync.present_fence) == VK_SUCCESS) {
+      vkResetFences(s->ctx->device, 1, &s->sync.present_fence);
+      s->sync.present_fence_active = false;
       new_signaled = true;
    }
 
@@ -2885,24 +2885,14 @@ vkdf_scene_draw(VkdfScene *s)
    uint32_t wait_sem_count;
    VkSemaphore *wait_sem;
 
-   // If we are still rendering the previous frame we have to wait or we
-   // might corrupt its rendering
-   while (s->sync.draw_fence_active) {
-      VkResult status;
-      do {
-         status = vkWaitForFences(s->ctx->device,
-                                  1, &s->sync.draw_fence,
-                                  true, 1000ull);
-#if ENABLE_DEBUG
-         if (status == VK_NOT_READY || status == VK_TIMEOUT) {
-            vkdf_info("debug: perf: scene: warning: "
-                      "gpu busy, cpu stall before draw\n");
-         }
-#endif
-      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
-      vkResetFences(s->ctx->device, 1, &s->sync.draw_fence);
-      s->sync.draw_fence_active = false;
-   }
+   /* ========== Submit resource updates for the current frame ========== */
+
+   // Since we always have to wait for the rendering to the render target
+   // to finish before we submit the presentation job, we are certain that by
+   // the time we get here, rendering to the render target for the previous
+   // frame is completed and presentation for the previous frame might still
+   // be ongoing. This means that we can safely submit command buffers that
+   // do not render to the render target, such us any resource update.
 
    // If we have resource update commands, execute them first
    if (s->cmd_buf.have_resource_updates) {
@@ -2962,6 +2952,29 @@ vkdf_scene_draw(VkdfScene *s)
       wait_sem = &s->sync.shadow_maps_sem;
    }
 
+   /* ========== Submit rendering jobs for the current frame ========== */
+
+   // If we are still presenting the previous frame (actually, copying the
+   // previous frame to the swapchain) we have to wait for that to finish
+   // before rendering the new one. Otherwise we would probably corrupt the
+   // copy of the previous frame to the swapchain.
+   while (s->sync.present_fence_active) {
+      VkResult status;
+      do {
+         status = vkWaitForFences(s->ctx->device,
+                                  1, &s->sync.present_fence,
+                                  true, 1000ull);
+#if ENABLE_DEBUG
+         if (status == VK_NOT_READY || status == VK_TIMEOUT) {
+            vkdf_info("debug: perf: scene: warning: "
+                      "gpu busy, cpu stall before draw\n");
+         }
+#endif
+      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
+      vkResetFences(s->ctx->device, 1, &s->sync.present_fence);
+      s->sync.present_fence_active = false;
+   }
+
    // Execute rendering commands for static and dynamic geometry
    if (!s->cmd_buf.dynamic) {
       vkdf_command_buffer_execute(s->ctx,
@@ -3003,15 +3016,16 @@ vkdf_scene_draw(VkdfScene *s)
       wait_sem = &s->sync.postprocess_sem;
    }
 
-   // Copy result to swapchain for presentation
+   /* ========== Copy rendering result to swapchain ========== */
+
    assert(wait_sem_count == 1);
    vkdf_copy_to_swapchain(s->ctx,
                           s->cmd_buf.present,
                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                           *wait_sem,
-                          s->sync.draw_fence);
+                          s->sync.present_fence);
 
-   s->sync.draw_fence_active = true;
+   s->sync.present_fence_active = true;
    free_inactive_command_buffers(s);
 
    return s->sync.draw_sem;
