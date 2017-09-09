@@ -2679,28 +2679,30 @@ update_dirty_objects(VkdfScene *s)
 
             obj_iter = g_list_next(obj_iter);
          }
-      }
 
-      // Update material data for this set
-      // FIXME: if we do not have new setids in the scene then we don't have
-      // to update material data at all, unless we have changes the existing
-      // materials. We sohould have dirty materials like we do for objects so
-      // we can trim down these updates if possible.
-      uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
-      mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
-      VkdfModel *model = (VkdfModel *) model_iter->data;
-      uint32_t num_materials = model->materials.size();
-      assert(num_materials <= MAX_MATERIALS_PER_MODEL);
-      for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
-         VkdfMaterial *m = &model->materials[mat_idx];
-         memcpy(mat_mem + mat_offset, m, material_size);
-         mat_offset += material_size;
+         // Update material data for this set
+         //
+         // FIXME: if we do not have new setids in the scene then we don't have
+         // to update material data at all, unless the materials themselves
+         // are dirty. We should check for that and only update dirty materials
+         // if needed.
+         uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
+         mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
+         VkdfModel *model = (VkdfModel *) model_iter->data;
+         uint32_t num_materials = model->materials.size();
+         assert(num_materials <= MAX_MATERIALS_PER_MODEL);
+         for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
+            VkdfMaterial *m = &model->materials[mat_idx];
+            memcpy(mat_mem + mat_offset, m, material_size);
+            mat_offset += material_size;
+         }
+
+         model_index++;
       }
 
       // Move to the next set
       set_id_iter = g_list_next(set_id_iter);
       model_iter = g_list_next(model_iter);
-      model_index++;
    }
 
    // Record dynamic resource update command buffer for dynamic objects and
