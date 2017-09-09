@@ -75,6 +75,7 @@ struct _DirtyShadowMap {
 
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, void *);
+typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
 
 struct _dim {
    float w;
@@ -180,6 +181,7 @@ struct _VkdfScene {
       VkCommandBuffer dynamic;           // Command buffer for rendering dynamic objs
       VkCommandBuffer update_resources;  // Command buffer for resource updates
       bool have_resource_updates;
+      VkCommandBuffer *present;          // Command buffer rt -> swapchin copies
    } cmd_buf;
 
    struct {
@@ -187,6 +189,7 @@ struct _VkdfScene {
       VkSemaphore shadow_maps_sem;
       VkSemaphore draw_static_sem;
       VkSemaphore draw_sem;
+      VkSemaphore postprocess_sem;
       VkFence draw_fence;
       bool draw_fence_active;
    } sync;
@@ -194,6 +197,7 @@ struct _VkdfScene {
    struct {
       VkdfSceneUpdateResourcesCB update_resources;
       VkdfSceneCommandsCB record_commands;
+      VkdfScenePostprocessCB postprocess;
       void *data;
    } callbacks;
 
@@ -456,10 +460,12 @@ inline void
 vkdf_scene_set_scene_callbacks(VkdfScene *s,
                                VkdfSceneUpdateResourcesCB ur_cb,
                                VkdfSceneCommandsCB cmd_cb,
+                               VkdfScenePostprocessCB postprocess_cb,
                                void *data)
 {
    s->callbacks.update_resources = ur_cb;
    s->callbacks.record_commands = cmd_cb;
+   s->callbacks.postprocess = postprocess_cb;
    s->callbacks.data = data;
 }
 

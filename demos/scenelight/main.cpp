@@ -35,8 +35,6 @@ typedef struct {
 
    VkCommandPool cmd_pool;
 
-   VkCommandBuffer *present_cmd_bufs;
-
    struct {
       struct {
          VkDescriptorSetLayout camera_view_layout;
@@ -96,7 +94,6 @@ typedef struct {
       VkRenderPass renderpass;
       VkFramebuffer framebuffer;
       VkCommandBuffer cmd_buf;
-      VkSemaphore draw_sem;
    } debug;
 
    VkdfMesh *cube_mesh;
@@ -113,6 +110,12 @@ typedef struct {
 typedef struct {
    glm::vec4 pos;
 } VertexData;
+
+static void
+postprocess_draw(VkdfContext *ctx,
+                 VkSemaphore scene_draw_sem,
+                 VkSemaphore postprocess_draw_sem,
+                 void *data);
 
 static inline VkdfBuffer
 create_ubo(VkdfContext *ctx, uint32_t size, uint32_t usage, uint32_t mem_props)
@@ -317,6 +320,7 @@ init_scene(SceneResources *res)
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,
                                   record_scene_commands,
+                                  postprocess_draw,
                                   res);
 }
 
@@ -589,11 +593,6 @@ init_cmd_bufs(SceneResources *res)
 {
    if (!res->cmd_pool)
       res->cmd_pool = vkdf_create_gfx_command_pool(res->ctx, 0);
-
-   VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
-   res->present_cmd_bufs =
-      vkdf_command_buffer_create_for_present(res->ctx, res->cmd_pool,
-                                             color_image->image);
 }
 
 static void
@@ -1091,8 +1090,6 @@ init_debug_tile_resources(SceneResources *res)
    create_debug_tile_pipeline(res);
 
    record_debug_tile_cmd_buf(res);
-
-   res->debug.draw_sem = vkdf_create_semaphore(res->ctx);
 }
 
 static void
@@ -1197,12 +1194,12 @@ scene_update(VkdfContext *ctx, void *data)
 }
 
 static void
-scene_render(VkdfContext *ctx, void *data)
+postprocess_draw(VkdfContext *ctx,
+                 VkSemaphore scene_draw_sem,
+                 VkSemaphore postprocess_draw_sem,
+                 void *data)
 {
    SceneResources *res = (SceneResources *) data;
-
-   // Render scene
-   VkSemaphore scene_draw_sem = vkdf_scene_draw(res->scene);
 
    // Render debug tile
    VkPipelineStageFlags debug_tile_wait_stages =
@@ -1211,13 +1208,14 @@ scene_render(VkdfContext *ctx, void *data)
                                res->debug.cmd_buf,
                                &debug_tile_wait_stages,
                                1, &scene_draw_sem,
-                               1, &res->debug.draw_sem);
+                               1, &postprocess_draw_sem);
+}
 
-   // Present
-   vkdf_copy_to_swapchain(ctx,
-                          res->present_cmd_bufs,
-                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                          res->debug.draw_sem);
+static void
+scene_render(VkdfContext *ctx, void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   vkdf_scene_draw(res->scene);
 }
 
 static void
@@ -1232,12 +1230,6 @@ destroy_models(SceneResources *res)
 static void
 destroy_cmd_bufs(SceneResources *res)
 {
-   vkFreeCommandBuffers(res->ctx->device,
-                        res->cmd_pool,
-                        res->ctx->swap_chain_length,
-                        res->present_cmd_bufs);
-   g_free(res->present_cmd_bufs);
-
    vkDestroyCommandPool(res->ctx->device, res->cmd_pool, NULL);
 }
 
@@ -1320,8 +1312,6 @@ destroy_debug_tile_resources(SceneResources *res)
                                 res->debug.pipeline.sampler_set_layout, NULL);
 
    vkDestroyFramebuffer(res->ctx->device, res->debug.framebuffer, NULL);
-
-   vkDestroySemaphore(res->ctx->device, res->debug.draw_sem, NULL);
 }
 
 void

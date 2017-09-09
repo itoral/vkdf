@@ -232,6 +232,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.shadow_maps_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_fence = vkdf_create_fence(s->ctx);
 
    s->ubo.static_pool =
@@ -378,6 +379,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.shadow_maps_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_static_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.draw_fence, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++) {
@@ -391,7 +393,7 @@ vkdf_scene_free(VkdfScene *s)
    g_free(s->cmd_buf.active);
    g_free(s->cmd_buf.free);
    g_free(s->cmd_buf.pool);
-
+   g_free(s->cmd_buf.present);
    g_free(s->tile_size);
 
    if (s->shadows.renderpass)
@@ -2542,6 +2544,15 @@ prepare_scene_render_passes(VkdfScene *s)
                               1, &s->rt.depth);
 }
 
+static void
+prepare_scene_present_command_buffers(VkdfScene *s)
+{
+   s->cmd_buf.present =
+      vkdf_command_buffer_create_for_present(s->ctx,
+                                             s->cmd_buf.pool[0],
+                                             s->rt.color.image);
+}
+
 /**
  * Processess scene contents and sets things up for optimal rendering
  */
@@ -2551,6 +2562,7 @@ vkdf_scene_prepare(VkdfScene *s)
    prepare_scene_objects(s);
    prepare_scene_lights(s);
    prepare_scene_render_passes(s);
+   prepare_scene_present_command_buffers(s);
 }
 
 static void
@@ -2975,6 +2987,31 @@ vkdf_scene_draw(VkdfScene *s)
                                              1, &s->sync.draw_sem,
                                              s->sync.draw_fence);
    }
+
+   wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+   wait_sem_count = 1;
+   wait_sem = &s->sync.draw_sem;
+
+   // Execute postprocess callback
+   if (s->callbacks.postprocess) {
+      assert(wait_sem_count == 1);
+      s->callbacks.postprocess(s->ctx,
+                               *wait_sem,
+                               s->sync.postprocess_sem,
+                               s->callbacks.data);
+
+      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.postprocess_sem;
+   }
+
+   // Copy result to swapchain for presentation
+   // FIXME: the draw fence should be here
+   assert(wait_sem_count == 1);
+   vkdf_copy_to_swapchain(s->ctx,
+                          s->cmd_buf.present,
+                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                          *wait_sem);
 
    s->sync.draw_fence_active = true;
    free_inactive_command_buffers(s);

@@ -24,10 +24,6 @@ typedef struct {
       VkDescriptorPool static_ubo_pool;
    } descriptor_pool;
 
-   VkCommandPool cmd_pool;
-
-   VkCommandBuffer *present_cmd_bufs;
-
    struct {
       struct {
          VkPipeline pipeline;
@@ -206,6 +202,7 @@ init_scene(SceneResources *res)
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,
                                   record_scene_commands,
+                                  NULL,
                                   res);
 }
 
@@ -339,18 +336,6 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
 }
 
 static void
-init_cmd_bufs(SceneResources *res)
-{
-   if (!res->cmd_pool)
-      res->cmd_pool = vkdf_create_gfx_command_pool(res->ctx, 0);
-
-   VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
-   res->present_cmd_bufs =
-      vkdf_command_buffer_create_for_present(res->ctx, res->cmd_pool,
-                                             color_image->image);
-}
-
-static void
 init_shaders(SceneResources *res)
 {
    res->shaders.obj.vs = vkdf_create_shader_module(res->ctx, "scene.vert.spv");
@@ -461,7 +446,6 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    init_shaders(res);
    init_descriptor_pools(res);
    init_pipelines(res);
-   init_cmd_bufs(res);
 }
 
 static void
@@ -502,7 +486,7 @@ scene_update(VkdfContext *ctx, void *data)
    SceneResources *res = (SceneResources *) data;
 
    update_camera(res); // FIXME: this should be a callback called from the scene
-   vkdf_scene_update_cmd_bufs(res->scene, res->cmd_pool);
+   vkdf_scene_update_cmd_bufs(res->scene, 0);
    vkdf_camera_set_dirty(res->camera, false); // FIXME: this should be done by the scene
 }
 
@@ -510,15 +494,8 @@ static void
 scene_render(VkdfContext *ctx, void *data)
 {
    SceneResources *res = (SceneResources *) data;
+   vkdf_scene_draw(res->scene);
 
-   // Render
-   VkSemaphore scene_draw_sem = vkdf_scene_draw(res->scene);
-
-   // Present
-   vkdf_copy_to_swapchain(ctx,
-                          res->present_cmd_bufs,
-                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                          scene_draw_sem);
 #if 0
    uint32_t total = 0;
    GList *iter = res->scene->visible;
@@ -535,18 +512,6 @@ static void
 destroy_models(SceneResources *res)
 {
    vkdf_model_free(res->ctx, res->cube_model);
-}
-
-static void
-destroy_cmd_bufs(SceneResources *res)
-{
-   vkFreeCommandBuffers(res->ctx->device,
-                        res->cmd_pool,
-                        res->ctx->swap_chain_length,
-                        res->present_cmd_bufs);
-   g_free(res->present_cmd_bufs);
-
-   vkDestroyCommandPool(res->ctx->device, res->cmd_pool, NULL);
 }
 
 static void
@@ -592,7 +557,6 @@ cleanup_resources(SceneResources *res)
 {
    vkdf_scene_free(res->scene);
    destroy_models(res);
-   destroy_cmd_bufs(res);
    destroy_shader_modules(res);
    destroy_pipelines(res);
    destroy_ubos(res);
