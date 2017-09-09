@@ -2327,7 +2327,7 @@ record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
             continue;
 
          // Sanity check
-         assert(count == info->start_index);
+         assert(count == info->shadow_caster_start_index);
 
          GList *obj_iter = info->objs;
          while (obj_iter) {
