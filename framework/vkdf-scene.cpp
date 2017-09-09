@@ -581,6 +581,10 @@ add_dynamic_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    if (!info) {
       info = g_new0(VkdfSceneSetInfo, 1);
       g_hash_table_replace(s->dynamic.sets, g_strdup(set_id), info);
+
+      // If this is the first time we added this type of dynamic object
+      // we will need to update the dynamic materials UBO
+      s->dynamic.materials_dirty = true;
    }
    info->objs = g_list_prepend(info->objs, obj);
    info->count++;
@@ -2680,21 +2684,23 @@ update_dirty_objects(VkdfScene *s)
          obj_iter = g_list_next(obj_iter);
       }
 
-      // Update material data for this set
+      // Update material data for this dynamic object set. We only need to
+      // upload material data for dynamic objects once unless we have added
+      // new set-ids or the materials have been updated (we don't really
+      // support that for now)
       //
-      // FIXME: if we do not have new setids in the scene then we don't have
-      // to update material data at all, unless the materials themselves
-      // are dirty. We should check for that and only update dirty materials
-      // if needed.
-      VkdfModel *model = ((VkdfObject *) info->objs->data)->model;
-      uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
-      mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
-      uint32_t num_materials = model->materials.size();
-      assert(num_materials <= MAX_MATERIALS_PER_MODEL);
-      for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
-         VkdfMaterial *m = &model->materials[mat_idx];
-         memcpy(mat_mem + mat_offset, m, material_size);
-         mat_offset += material_size;
+      // FIXME: support dirty materials for existing set-ids
+      if (s->dynamic.materials_dirty) {
+         VkdfModel *model = ((VkdfObject *) info->objs->data)->model;
+         uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
+         mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
+         uint32_t num_materials = model->materials.size();
+         assert(num_materials <= MAX_MATERIALS_PER_MODEL);
+         for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
+            VkdfMaterial *m = &model->materials[mat_idx];
+            memcpy(mat_mem + mat_offset, m, material_size);
+            mat_offset += material_size;
+         }
       }
 
       model_index++;
@@ -2714,11 +2720,16 @@ update_dirty_objects(VkdfScene *s)
                         0, obj_offset,
                         s->dynamic.ubo.obj.host_buf);
 
-      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
-                        s->dynamic.ubo.material.buf.buf,
-                        0, mat_offset,
-                        s->dynamic.ubo.material.host_buf);
+      if (s->dynamic.materials_dirty) {
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->dynamic.ubo.material.buf.buf,
+                           0, mat_offset,
+                           s->dynamic.ubo.material.host_buf);
+      }
    }
+
+   // We have processed all new materials by now
+   s->dynamic.materials_dirty = false;
 
    // Record dynamic object rendering command buffer
    if (s->cmd_buf.dynamic) {

@@ -251,6 +251,7 @@ struct _VkdfScene {
       uint32_t visible_shadow_caster_count;  // Number of visible dynamic objects that can cast shadows
       GHashTable *sets;                      // Dynamic objects, these are not tiled
       GHashTable *visible;                   // Dynamic objects that are visible
+      bool materials_dirty;
       struct {
          // UBO for dynamic object updates
          struct {
