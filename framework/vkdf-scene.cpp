@@ -2749,7 +2749,7 @@ update_dirty_objects(VkdfScene *s)
 
       record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
 
-      s->callbacks.record_commands(s->ctx, cmd_buf, s->dynamic.sets, true,
+      s->callbacks.record_commands(s->ctx, cmd_buf, s->dynamic.visible, true,
                                    s->callbacks.data);
 
       vkCmdEndRenderPass(cmd_buf);
