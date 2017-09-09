@@ -2621,13 +2621,6 @@ update_dirty_objects(VkdfScene *s)
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
 
-         // We know these are dynamic objects so they might be dirty,
-         // make sure we compute updated dirty information that requires
-         // to be recomputed. If we don't do this here, we can't mark the
-         // object as not being dirty below and we know we are going to need
-         // this updated anyway.
-         glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
-
          // FIXME: Maybe we want to wrap objects into sceneobjects so we
          // can keep track of whether they are visible to the camera and the
          // lights and their slots in the UBOs. Then here and in other
@@ -2644,6 +2637,7 @@ update_dirty_objects(VkdfScene *s)
          VkdfBox *obj_box = vkdf_object_get_box(obj);
          if (frustum_contains_box(obj_box, cam_box, cam_planes) != OUTSIDE) {
             // Update host buffer for UBO upload
+            glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
 
             // Model matrix
             memcpy(obj_mem + obj_offset,
@@ -2676,10 +2670,11 @@ update_dirty_objects(VkdfScene *s)
                s->dynamic.visible_shadow_caster_count++;
             }
             s->dynamic.visible_obj_count++;
-         }
 
-         // This object is no longer dirty
-         vkdf_object_set_dirty(obj, false);
+            // This object is no longer dirty. Notice that we skip processing
+            // updates for dirty objects that are not visible.
+            vkdf_object_set_dirty(obj, false);
+         }
 
          obj_iter = g_list_next(obj_iter);
       }
