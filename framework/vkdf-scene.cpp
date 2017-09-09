@@ -2585,124 +2585,119 @@ update_dirty_objects(VkdfScene *s)
    // and their material data
    uint8_t *obj_mem = (uint8_t *) s->dynamic.ubo.obj.host_buf;
    uint8_t *mat_mem = (uint8_t *) s->dynamic.ubo.material.host_buf;
-
-   uint32_t model_index = 0;
-   GList *set_id_iter = s->set_ids;
-   GList *model_iter = s->models;
    VkDeviceSize obj_offset = 0;
    VkDeviceSize mat_offset;
-   while (set_id_iter) {
-      const char *id = (const char *) set_id_iter->data;
-      VkdfSceneSetInfo *info =
-         (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.sets, id);
 
-      if (info) {
-         // Reset visible information for this set
-         VkdfSceneSetInfo *vis_info =
-            (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.visible, id);
-         if (!vis_info) {
-            vis_info = g_new0(VkdfSceneSetInfo, 1);
-            g_hash_table_replace(s->dynamic.visible, g_strdup(id), vis_info);
-         } else if (vis_info->objs) {
-            g_list_free(vis_info->objs);
-            memset(vis_info, 0, sizeof(VkdfSceneSetInfo));
-         }
+   uint32_t model_index = 0;
+   char *id;
+   VkdfSceneSetInfo *info;
+   GHashTableIter set_iter;
+   g_hash_table_iter_init(&set_iter, s->dynamic.sets);
+   while (g_hash_table_iter_next(&set_iter, (void **)&id, (void **)&info)) {
+      if (!info || info->count == 0)
+         continue;
 
-         // Update visible objects for this set
-         vis_info->start_index = s->dynamic.visible_obj_count;
-         vis_info->shadow_caster_start_index =
-            s->dynamic.visible_shadow_caster_count;
-
-         GList *obj_iter = info->objs;
-         while (obj_iter) {
-            VkdfObject *obj = (VkdfObject *) obj_iter->data;
-
-            // We know these are dynamic objects so they might be dirty,
-            // make sure we compute updated dirty information that requires
-            // to be recomputed. If we don't do this here, we can't mark the
-            // object as not being dirty below and we know we are going to need
-            // this updated anyway.
-            glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
-
-            // FIXME: Maybe we want to wrap objects into sceneobjects so we
-            // can keep track of whether they are visible to the camera and the
-            // lights and their slots in the UBOs. Then here and in other
-            // similar updates, if the object is known to already be in the UBO
-            // and in the same slot as we would put it now, we can skip
-            // the memcpy's with the purpose of having the update command
-            // start at an offset > 0.
-            //
-            // FIXME: The above would enable another optimization: we could
-            // skip the frustum testing if we know that the object is not dirty
-            // (or maybe more procisely, it has not moved) and the
-            // camera is not dirty and the object was visible in the previous
-            // frame.
-            VkdfBox *obj_box = vkdf_object_get_box(obj);
-            if (frustum_contains_box(obj_box, cam_box, cam_planes) != OUTSIDE) {
-               // Update host buffer for UBO upload
-
-               // Model matrix
-               memcpy(obj_mem + obj_offset,
-                      &model_matrix[0][0], sizeof(glm::mat4));
-               obj_offset += sizeof(glm::mat4);
-
-               // Base material index
-               memcpy(obj_mem + obj_offset,
-                      &obj->material_idx_base, sizeof(uint32_t));
-               obj_offset += sizeof(uint32_t);
-
-               // Model index
-               memcpy(obj_mem + obj_offset,
-                      &model_index, sizeof(uint32_t));
-               obj_offset += sizeof(uint32_t);
-
-               // Receives shadows
-               uint32_t receives_shadows = (uint32_t) obj->receives_shadows;
-               memcpy(obj_mem + obj_offset,
-                      &receives_shadows, sizeof(uint32_t));
-               obj_offset += sizeof(uint32_t);
-
-               obj_offset = ALIGN(obj_offset, 16);
-
-               // Add the object to the viisble list and update visibility counters
-               vis_info->objs = g_list_prepend(vis_info->objs, obj);
-               vis_info->count++;
-               if (vkdf_object_casts_shadows) {
-                  vis_info->shadow_caster_count++;
-                  s->dynamic.visible_shadow_caster_count++;
-               }
-               s->dynamic.visible_obj_count++;
-            }
-
-            // This object is no longer dirty
-            vkdf_object_set_dirty(obj, false);
-
-            obj_iter = g_list_next(obj_iter);
-         }
-
-         // Update material data for this set
-         //
-         // FIXME: if we do not have new setids in the scene then we don't have
-         // to update material data at all, unless the materials themselves
-         // are dirty. We should check for that and only update dirty materials
-         // if needed.
-         uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
-         mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
-         VkdfModel *model = (VkdfModel *) model_iter->data;
-         uint32_t num_materials = model->materials.size();
-         assert(num_materials <= MAX_MATERIALS_PER_MODEL);
-         for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
-            VkdfMaterial *m = &model->materials[mat_idx];
-            memcpy(mat_mem + mat_offset, m, material_size);
-            mat_offset += material_size;
-         }
-
-         model_index++;
+      // Reset visible information for this set
+      VkdfSceneSetInfo *vis_info =
+         (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.visible, id);
+      if (!vis_info) {
+         vis_info = g_new0(VkdfSceneSetInfo, 1);
+         g_hash_table_replace(s->dynamic.visible, g_strdup(id), vis_info);
+      } else if (vis_info->objs) {
+         g_list_free(vis_info->objs);
+         memset(vis_info, 0, sizeof(VkdfSceneSetInfo));
       }
 
-      // Move to the next set
-      set_id_iter = g_list_next(set_id_iter);
-      model_iter = g_list_next(model_iter);
+      // Update visible objects for this set
+      vis_info->start_index = s->dynamic.visible_obj_count;
+      vis_info->shadow_caster_start_index =
+         s->dynamic.visible_shadow_caster_count;
+
+      GList *obj_iter = info->objs;
+      while (obj_iter) {
+         VkdfObject *obj = (VkdfObject *) obj_iter->data;
+
+         // We know these are dynamic objects so they might be dirty,
+         // make sure we compute updated dirty information that requires
+         // to be recomputed. If we don't do this here, we can't mark the
+         // object as not being dirty below and we know we are going to need
+         // this updated anyway.
+         glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
+
+         // FIXME: Maybe we want to wrap objects into sceneobjects so we
+         // can keep track of whether they are visible to the camera and the
+         // lights and their slots in the UBOs. Then here and in other
+         // similar updates, if the object is known to already be in the UBO
+         // and in the same slot as we would put it now, we can skip
+         // the memcpy's with the purpose of having the update command
+         // start at an offset > 0.
+         //
+         // FIXME: The above would enable another optimization: we could
+         // skip the frustum testing if we know that the object is not dirty
+         // (or maybe more procisely, it has not moved) and the
+         // camera is not dirty and the object was visible in the previous
+         // frame.
+         VkdfBox *obj_box = vkdf_object_get_box(obj);
+         if (frustum_contains_box(obj_box, cam_box, cam_planes) != OUTSIDE) {
+            // Update host buffer for UBO upload
+
+            // Model matrix
+            memcpy(obj_mem + obj_offset,
+                   &model_matrix[0][0], sizeof(glm::mat4));
+            obj_offset += sizeof(glm::mat4);
+
+            // Base material index
+            memcpy(obj_mem + obj_offset,
+                   &obj->material_idx_base, sizeof(uint32_t));
+            obj_offset += sizeof(uint32_t);
+
+            // Model index
+            memcpy(obj_mem + obj_offset,
+                   &model_index, sizeof(uint32_t));
+            obj_offset += sizeof(uint32_t);
+
+            // Receives shadows
+            uint32_t receives_shadows = (uint32_t) obj->receives_shadows;
+            memcpy(obj_mem + obj_offset,
+                   &receives_shadows, sizeof(uint32_t));
+            obj_offset += sizeof(uint32_t);
+
+            obj_offset = ALIGN(obj_offset, 16);
+
+            // Add the object to the viisble list and update visibility counters
+            vis_info->objs = g_list_prepend(vis_info->objs, obj);
+            vis_info->count++;
+            if (vkdf_object_casts_shadows) {
+               vis_info->shadow_caster_count++;
+               s->dynamic.visible_shadow_caster_count++;
+            }
+            s->dynamic.visible_obj_count++;
+         }
+
+         // This object is no longer dirty
+         vkdf_object_set_dirty(obj, false);
+
+         obj_iter = g_list_next(obj_iter);
+      }
+
+      // Update material data for this set
+      //
+      // FIXME: if we do not have new setids in the scene then we don't have
+      // to update material data at all, unless the materials themselves
+      // are dirty. We should check for that and only update dirty materials
+      // if needed.
+      VkdfModel *model = ((VkdfObject *) info->objs->data)->model;
+      uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
+      mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
+      uint32_t num_materials = model->materials.size();
+      assert(num_materials <= MAX_MATERIALS_PER_MODEL);
+      for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
+         VkdfMaterial *m = &model->materials[mat_idx];
+         memcpy(mat_mem + mat_offset, m, material_size);
+         mat_offset += material_size;
+      }
+
+      model_index++;
    }
 
    // Record dynamic resource update command buffer for dynamic objects and
