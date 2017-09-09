@@ -2962,14 +2962,13 @@ vkdf_scene_draw(VkdfScene *s)
       wait_sem = &s->sync.shadow_maps_sem;
    }
 
-   // Execute rendering commands for static and dynamic geametry
+   // Execute rendering commands for static and dynamic geometry
    if (!s->cmd_buf.dynamic) {
-      vkdf_command_buffer_execute_with_fence(s->ctx,
-                                             s->cmd_buf.primary,
-                                             &wait_stage,
-                                             wait_sem_count, wait_sem,
-                                             1, &s->sync.draw_sem,
-                                             s->sync.draw_fence);
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.primary,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.draw_sem);
    } else {
       vkdf_command_buffer_execute(s->ctx,
                                   s->cmd_buf.primary,
@@ -2980,12 +2979,11 @@ vkdf_scene_draw(VkdfScene *s)
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.draw_static_sem;
-      vkdf_command_buffer_execute_with_fence(s->ctx,
-                                             s->cmd_buf.dynamic,
-                                             &wait_stage,
-                                             wait_sem_count, wait_sem,
-                                             1, &s->sync.draw_sem,
-                                             s->sync.draw_fence);
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.dynamic,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.draw_sem);
    }
 
    wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -3006,12 +3004,12 @@ vkdf_scene_draw(VkdfScene *s)
    }
 
    // Copy result to swapchain for presentation
-   // FIXME: the draw fence should be here
    assert(wait_sem_count == 1);
    vkdf_copy_to_swapchain(s->ctx,
                           s->cmd_buf.present,
                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                          *wait_sem);
+                          *wait_sem,
+                          s->sync.draw_fence);
 
    s->sync.draw_fence_active = true;
    free_inactive_command_buffers(s);

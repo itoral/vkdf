@@ -153,12 +153,16 @@ vkdf_event_loop_run(VkdfContext *ctx,
  * The function receives the list of copy command buffers for all swapchain
  * images and selects the correct one to use after aquiring the next image
  * from the swapchain.
+ *
+ * The fence is used so that clients can know when presentation has been
+ * completed.
  */
 void
 vkdf_copy_to_swapchain(VkdfContext *ctx,
                        VkCommandBuffer *copy_cmd_bufs,
                        VkPipelineStageFlags wait_stage,
-                       VkSemaphore wait_sem)
+                       VkSemaphore wait_sem,
+                       VkFence fence)
 {
    acquire_next_image(ctx);
 
@@ -172,9 +176,11 @@ vkdf_copy_to_swapchain(VkdfContext *ctx,
       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
    };
 
-   vkdf_command_buffer_execute(ctx,
-                               copy_cmd_bufs[ctx->swap_chain_index],
-                               wait_stages,
-                               2, wait_sems,
-                               1, &ctx->draw_sem[ctx->swap_chain_index]);
+   vkdf_command_buffer_execute_with_fence(
+      ctx,
+      copy_cmd_bufs[ctx->swap_chain_index],
+      wait_stages,
+      2, wait_sems,
+      1, &ctx->draw_sem[ctx->swap_chain_index],
+      fence);
 }

@@ -29,7 +29,8 @@ void
 vkdf_copy_to_swapchain(VkdfContext *ctx,
                        VkCommandBuffer *copy_cmd_bufs,
                        VkPipelineStageFlags wait_stage,
-                       VkSemaphore wait_sem);
+                       VkSemaphore wait_sem,
+                       VkFence fence);
 
 #endif
 

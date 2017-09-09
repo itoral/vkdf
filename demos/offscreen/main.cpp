@@ -23,6 +23,8 @@ typedef struct {
    VkDescriptorPool descriptor_pool;
    VkDescriptorSet descriptor_set;
    VkSemaphore offscreen_draw_sem;
+   VkFence present_fence;
+   bool present_fence_active;
 
    glm::mat4 clip;
    glm::mat4 view;
@@ -441,6 +443,10 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    // buffer that renders to the offscreen image and the command buffer that
    // copies from the offscreen image to the presentation image.
    res->offscreen_draw_sem = vkdf_create_semaphore(ctx);
+
+   // Presentation fence
+   res->present_fence = vkdf_create_fence(ctx);
+   res->present_fence_active = false;
 }
 
 static void
@@ -477,10 +483,22 @@ scene_render(VkdfContext *ctx, void *data)
 {
    DemoResources *res = (DemoResources *) data;
 
+   // Wait for presentation from the offscreen image to finish
+   if (res->present_fence_active) {
+      VkResult status;
+      do {
+         status = vkWaitForFences(ctx->device,
+                                  1, &res->present_fence,
+                                  true, 1000ull);
+      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
+      vkResetFences(ctx->device, 1, &res->present_fence);
+      res->present_fence_active = false;
+   }
+
+   // Render to the offscreen image
    VkPipelineStageFlags pipeline_stages_offscreen =
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
-   // We can render to the offscreen image right away
    vkdf_command_buffer_execute(ctx,
                                res->render_cmd_buf,
                                &pipeline_stages_offscreen,
@@ -489,11 +507,14 @@ scene_render(VkdfContext *ctx, void *data)
 
    // Copy the offscreen image to the next swapchain image that will be
    // used for presentation. We will wait on the offscreen draw semaphore
-   // before copying.
+   // before copying and signal when presentation has been completed by
+   // using a fence.
    vkdf_copy_to_swapchain(ctx,
                           res->present_cmd_bufs,
                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                          res->offscreen_draw_sem);
+                          res->offscreen_draw_sem,
+                          res->present_fence);
+   res->present_fence_active = true;
 }
 
 static void
@@ -545,6 +566,7 @@ destroy_ubo_resources(VkdfContext *ctx, DemoResources *res)
 void
 cleanup_resources(VkdfContext *ctx, DemoResources *res)
 {
+   vkDestroyFence(ctx->device, res->present_fence, NULL);
    vkDestroySemaphore(ctx->device, res->offscreen_draw_sem, NULL);
    destroy_pipeline_resources(ctx, res);
    vkDestroyRenderPass(ctx->device, res->render_pass, NULL);

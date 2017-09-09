@@ -75,6 +75,8 @@ typedef struct {
    // Main scene draw semaphore
    VkSemaphore scene_draw_sem;
    VkSemaphore scene_complete_sem;
+   VkFence present_fence;
+   bool present_fence_active;
 
    // View/Projection matrices
    glm::mat4 view;
@@ -1481,10 +1483,12 @@ create_shadow_framebuffer(VkdfContext *ctx, SceneResources *res)
 }
 
 static inline void
-create_scene_semaphores(VkdfContext *ctx, SceneResources *res)
+create_scene_sync_objects(VkdfContext *ctx, SceneResources *res)
 {
    res->scene_draw_sem = vkdf_create_semaphore(ctx);
    res->scene_complete_sem = vkdf_create_semaphore(ctx);
+   res->present_fence = vkdf_create_fence(ctx);
+   res->present_fence_active = false;
 }
 
 static void
@@ -1850,7 +1854,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    create_present_command_buffers(ctx, res);
 
    // Semaphores
-   create_scene_semaphores(ctx, res);
+   create_scene_sync_objects(ctx, res);
    res->shadow_draw_sem = vkdf_create_semaphore(ctx);
 }
 
@@ -1948,6 +1952,20 @@ scene_render(VkdfContext *ctx, void *data)
                                0, NULL,
                                1, &res->shadow_draw_sem);
 
+
+   // Wait for presentation from the render target image to finish
+   // before we update it for this frame
+   if (res->present_fence_active) {
+      VkResult status;
+      do {
+         status = vkWaitForFences(ctx->device,
+                                  1, &res->present_fence,
+                                  true, 1000ull);
+      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
+      vkResetFences(ctx->device, 1, &res->present_fence);
+      res->present_fence_active = false;
+   }
+
    // Render scene
    VkPipelineStageFlags scene_wait_stage =
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -1973,7 +1991,9 @@ scene_render(VkdfContext *ctx, void *data)
    vkdf_copy_to_swapchain(ctx,
                           res->present_cmd_bufs,
                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                          res->scene_complete_sem);
+                          res->scene_complete_sem,
+                          res->present_fence);
+   res->present_fence_active = true;
 }
 
 static void
@@ -2080,10 +2100,11 @@ destroy_ubo_resources(VkdfContext *ctx, SceneResources *res)
 }
 
 static void
-destroy_scene_semaphores(VkdfContext *ctx, SceneResources *res)
+destroy_scene_sync_objects(VkdfContext *ctx, SceneResources *res)
 {
    vkDestroySemaphore(ctx->device, res->scene_draw_sem, NULL);
    vkDestroySemaphore(ctx->device, res->scene_complete_sem, NULL);
+   vkDestroyFence(ctx->device, res->present_fence, NULL);
 }
 
 void
@@ -2114,7 +2135,7 @@ cleanup_resources(VkdfContext *ctx, SceneResources *res)
    destroy_shader_resources(ctx, res);
    destroy_command_buffer_resources(ctx, res);
    vkDestroyCommandPool(ctx->device, res->cmd_pool, NULL);
-   destroy_scene_semaphores(ctx, res);
+   destroy_scene_sync_objects(ctx, res);
    vkDestroySemaphore(ctx->device, res->shadow_draw_sem, NULL);
    g_free(res->light);
 }
@@ -2131,7 +2152,7 @@ before_rebuild_swap_chain_cb(VkdfContext *ctx, void *user_data)
    vkdf_destroy_image(ctx, &res->color_image);
    vkdf_destroy_image(ctx, &res->depth_image);
    destroy_command_buffer_resources(ctx, res);
-   destroy_scene_semaphores(ctx, res);
+   destroy_scene_sync_objects(ctx, res);
 }
 
 static void
@@ -2150,7 +2171,7 @@ after_rebuild_swap_chain_cb(VkdfContext *ctx, void *user_data)
    create_command_buffers(ctx, res);
    create_ui_tile_command_buffers(ctx, res);
    create_present_command_buffers(ctx, res);
-   create_scene_semaphores(ctx, res);
+   create_scene_sync_objects(ctx, res);
 }
 
 static void
