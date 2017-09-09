@@ -2868,8 +2868,10 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
    record_client_resource_updates(s);
 
    // Process scene element changes (this may also record resource updates)
-   update_dirty_objects(s);
+   // We want to update dirty lights first so we can know if any dirty objects
+   // are visible to them (since that means their shadow maps are dirty).
    update_dirty_lights(s);
+   update_dirty_objects(s);
 
    // At this point we are done recording resource updates
    stop_recording_resource_updates(s);
