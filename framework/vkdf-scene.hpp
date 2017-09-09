@@ -17,6 +17,7 @@ typedef struct {
    VkdfLight *light;
    struct {
       VkdfSceneShadowSpec spec;
+      glm::mat4 proj;
       glm::mat4 viewproj;
       VkdfImage shadow_map;
       VkFramebuffer framebuffer;

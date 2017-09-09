@@ -631,7 +631,7 @@ create_shadow_map_image(VkdfScene *s, uint32_t size)
 }
 
 static void
-compute_light_view_projection(VkdfSceneLight *sl)
+compute_light_projection(VkdfSceneLight *sl)
 {
    const glm::mat4 clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
                                     0.0f,-1.0f, 0.0f, 0.0f,
@@ -644,12 +644,17 @@ compute_light_view_projection(VkdfSceneLight *sl)
    VkdfSceneShadowSpec *spec = &sl->shadow.spec;
 
    float cutoff_angle = vkdf_light_get_cutoff_angle(sl->light);
-   glm::mat4 proj = clip * glm::perspective(2.0f * cutoff_angle,
-                                            1.0f,
-                                            spec->shadow_map_near,
-                                            spec->shadow_map_far);
+   sl->shadow.proj = clip * glm::perspective(2.0f * cutoff_angle,
+                                             1.0f,
+                                             spec->shadow_map_near,
+                                             spec->shadow_map_far);
+}
+
+static inline void
+compute_light_view_projection(VkdfSceneLight *sl)
+{
    glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
-   sl->shadow.viewproj = proj * view;
+   sl->shadow.viewproj = sl->shadow.proj * view;
 }
 
 void
@@ -671,6 +676,7 @@ vkdf_scene_add_light(VkdfScene *s,
                              VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                              VK_FILTER_LINEAR,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST);
+      compute_light_projection(slight);
       s->has_shadow_caster_lights = true;
    }
 
