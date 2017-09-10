@@ -91,7 +91,7 @@ thread_run(void *data)
 
       VkdfThreadJob *job = queue_pull(&pool->queue);
       if (job) {
-         job->function(job->arg);
+         job->function(thread->id, job->arg);
          free(job);
       }
 

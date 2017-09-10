@@ -813,21 +813,21 @@ static inline void
 add_to_cache(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
-   uint32_t thread_id = data->id;
+   uint32_t job_id = data->id;
 
-   s->cache[thread_id].cached = g_list_prepend(s->cache[thread_id].cached, t);
-   s->cache[thread_id].size++;
+   s->cache[job_id].cached = g_list_prepend(s->cache[job_id].cached, t);
+   s->cache[job_id].size++;
 }
 
 static inline void
 remove_from_cache(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
-   uint32_t thread_id = data->id;
+   uint32_t job_id = data->id;
 
-   assert(s->cache[thread_id].size > 0);
-   s->cache[thread_id].cached = g_list_remove(s->cache[thread_id].cached, t);
-   s->cache[thread_id].size--;
+   assert(s->cache[job_id].size > 0);
+   s->cache[job_id].cached = g_list_remove(s->cache[job_id].cached, t);
+   s->cache[job_id].size--;
 }
 
 static void
@@ -853,19 +853,21 @@ record_viewport_and_scissor_commands(VkCommandBuffer cmd_buf,
 }
 
 static void
-new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
+new_active_tile(struct TileThreadData *data,
+                VkdfSceneTile *t,
+                uint32_t thread_id)
 {
    VkdfScene *s = data->s;
-   uint32_t thread_id = data->id;
+   uint32_t job_id = data->id;
 
    assert(t->obj_count > 0);
 
-   if (s->cache[thread_id].size > 0) {
-      GList *found = g_list_find(s->cache[thread_id].cached, t);
+   if (s->cache[job_id].size > 0) {
+      GList *found = g_list_find(s->cache[job_id].cached, t);
       if (found) {
          remove_from_cache(data, t);
-         s->cmd_buf.active[thread_id] =
-            g_list_prepend(s->cmd_buf.active[thread_id], t);
+         s->cmd_buf.active[job_id] =
+            g_list_prepend(s->cmd_buf.active[job_id], t);
          return;
       }
    }
@@ -900,8 +902,7 @@ new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
    vkdf_command_buffer_end(cmd_buf);
 
    t->cmd_buf = cmd_buf;
-   s->cmd_buf.active[thread_id] =
-      g_list_prepend(s->cmd_buf.active[thread_id], t);
+   s->cmd_buf.active[job_id] = g_list_prepend(s->cmd_buf.active[job_id], t);
 
    t->dirty = false;
 }
@@ -910,17 +911,17 @@ static void
 new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
-   uint32_t thread_id = data->id;
+   uint32_t job_id = data->id;
 
-   s->cmd_buf.active[thread_id] =
-      g_list_remove(s->cmd_buf.active[thread_id], t);
+   s->cmd_buf.active[job_id] =
+      g_list_remove(s->cmd_buf.active[job_id], t);
 
    VkdfSceneTile *expired;
-   if (s->cache[thread_id].max_size <= 0) {
+   if (s->cache[job_id].max_size <= 0) {
       expired = t;
    } else {
-      if (s->cache[thread_id].size >= s->cache[thread_id].max_size) {
-         GList *last = g_list_last(s->cache[thread_id].cached);
+      if (s->cache[job_id].size >= s->cache[job_id].max_size) {
+         GList *last = g_list_last(s->cache[job_id].cached);
          expired = (VkdfSceneTile *) last->data;
          remove_from_cache(data, expired);
       } else {
@@ -936,21 +937,20 @@ new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
    info->cmd_buf = expired->cmd_buf;
    info->tile = expired;
-   s->cmd_buf.free[thread_id] =
-      g_list_prepend(s->cmd_buf.free[thread_id], info);
+   s->cmd_buf.free[job_id] =
+      g_list_prepend(s->cmd_buf.free[job_id], info);
 }
 
 static void inline
 new_inactive_cmd_buf(struct TileThreadData *data, VkCommandBuffer cmd_buf)
 {
    VkdfScene *s = data->s;
-   uint32_t thread_id = data->id;
+   uint32_t job_id = data->id;
 
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
    info->cmd_buf = cmd_buf;
    info->tile = NULL;
-   s->cmd_buf.free[thread_id] =
-      g_list_prepend(s->cmd_buf.free[thread_id], info);
+   s->cmd_buf.free[job_id] = g_list_prepend(s->cmd_buf.free[job_id], info);
 }
 
 static void
@@ -1950,14 +1950,16 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
 static void
 record_shadow_map_cmd_buf(VkdfScene *s,
                           VkdfSceneLight *sl,
-                          GHashTable *dyn_sets)
+                          GHashTable *dyn_sets,
+                          uint32_t thread_id)
 {
    assert(sl->shadow.shadow_map.image);
    assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
    // FIXME: each thread should be using its own pool! This is not safe
+   assert(thread_id < s->thread.num_threads);
    vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[0],
+                              s->cmd_buf.pool[thread_id],
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
                               1, &sl->shadow.cmd_buf);
 
@@ -2392,7 +2394,7 @@ free_dirty_shadow_maps(VkdfScene *s)
 }
 
 static void
-thread_shadow_map_update(void *arg)
+thread_shadow_map_update(uint32_t thread_id, void *arg)
 {
    struct LightThreadData *data = (struct LightThreadData *) arg;
 
@@ -2426,12 +2428,7 @@ thread_shadow_map_update(void *arg)
    needs_new_shadow_map = needs_new_shadow_map || has_dirty_objects;
 
    if (needs_new_shadow_map) {
-      // FIXME: merge this in the resource updates command? Shadow map
-      // cmd bufs need to go in their own command buffers since each have
-      // their own render target, however, we could merge the first one into
-      // an existing resource update command and save one submit.
-      record_shadow_map_cmd_buf(s, sl, dyn_sets);
-
+      record_shadow_map_cmd_buf(s, sl, dyn_sets, thread_id);
       data->dirty_shadow_map = g_new(struct _DirtyShadowMap, 1);
       data->dirty_shadow_map->sl = sl;
       data->dirty_shadow_map->dyn_sets = dyn_sets;
@@ -2483,7 +2480,7 @@ update_dirty_lights(VkdfScene *s)
                                   thread_shadow_map_update,
                                   &data[data_count]);
       } else {
-         thread_shadow_map_update(&data[data_count]);
+         thread_shadow_map_update(0, &data[data_count]);
       }
 
       data_count++;
@@ -2816,7 +2813,7 @@ update_dirty_objects(VkdfScene *s)
 }
 
 static void
-thread_update_cmd_bufs(void *arg)
+thread_update_cmd_bufs(uint32_t thread_id, void *arg)
 {
    struct TileThreadData *data = (struct TileThreadData *) arg;
 
@@ -2850,7 +2847,7 @@ thread_update_cmd_bufs(void *arg)
    while (iter) {
       VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
       if (t->obj_count > 0 && !g_list_find(prev_visible, t)) {
-         new_active_tile(data, t);
+         new_active_tile(data, t, thread_id);
          data->cmd_buf_changes = true;
       }
       iter = g_list_next(iter);
@@ -2885,7 +2882,7 @@ update_cmd_bufs(VkdfScene *s)
       }
       vkdf_thread_pool_wait(s->thread.pool);
    } else {
-      thread_update_cmd_bufs(&s->thread.tile_data[0]);
+      thread_update_cmd_bufs(0, &s->thread.tile_data[0]);
    }
 
    bool cmd_buf_changes = s->thread.tile_data[0].cmd_buf_changes;

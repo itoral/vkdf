@@ -6,7 +6,7 @@
 struct _VkdfThreadPool;
 struct _VkdfThreadJob;
 
-typedef void (*VkdfThreadJobFunction)(void *);
+typedef void (*VkdfThreadJobFunction)(uint32_t, void *);
 
 typedef struct {
    pthread_mutex_t mutex;
