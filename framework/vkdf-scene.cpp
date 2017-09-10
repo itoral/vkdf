@@ -2854,7 +2854,7 @@ update_cmd_bufs(VkdfScene *s)
 }
 
 void
-vkdf_scene_update_cmd_bufs(VkdfScene *s, VkCommandPool cmd_pool)
+vkdf_scene_update_cmd_bufs(VkdfScene *s)
 {
    // Check if any fences have been signaled and if so free any disposable
    // command buffers that were pending execution on signaled fences

@@ -1189,7 +1189,7 @@ scene_update(VkdfContext *ctx, void *data)
    update_objects(res);
    update_lights(res);
 
-   vkdf_scene_update_cmd_bufs(res->scene, res->cmd_pool);
+   vkdf_scene_update_cmd_bufs(res->scene);
    vkdf_camera_set_dirty(res->camera, false); // FIXME: this should be done by the scene
 }
 
