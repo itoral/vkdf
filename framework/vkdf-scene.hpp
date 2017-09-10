@@ -22,7 +22,8 @@ typedef struct {
       VkdfImage shadow_map;
       VkFramebuffer framebuffer;
       VkSampler sampler;
-      VkCommandBuffer cmd_buf;
+      VkCommandBuffer cmd_buf;   // Command buffer for shadow map
+      uint32_t thread_id;        // Thread used to create the command buffer
       GList *visible;
    } shadow;
    struct {

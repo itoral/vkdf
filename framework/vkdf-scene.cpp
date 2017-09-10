@@ -283,7 +283,8 @@ destroy_light(VkdfScene *s, VkdfSceneLight *slight)
       g_list_free(slight->shadow.visible);
    if (slight->shadow.cmd_buf)
       vkFreeCommandBuffers(s->ctx->device,
-                           s->cmd_buf.pool[0], 1, &slight->shadow.cmd_buf);
+                           s->cmd_buf.pool[slight->shadow.thread_id],
+                           1, &slight->shadow.cmd_buf);
    if (slight->shadow.framebuffer)
       vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
    if (slight->shadow.sampler)
@@ -814,6 +815,7 @@ add_to_cache(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t job_id = data->id;
+   assert(job_id < s->thread.num_threads);
 
    s->cache[job_id].cached = g_list_prepend(s->cache[job_id].cached, t);
    s->cache[job_id].size++;
@@ -824,6 +826,7 @@ remove_from_cache(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t job_id = data->id;
+   assert(job_id < s->thread.num_threads);
 
    assert(s->cache[job_id].size > 0);
    s->cache[job_id].cached = g_list_remove(s->cache[job_id].cached, t);
@@ -853,12 +856,11 @@ record_viewport_and_scissor_commands(VkCommandBuffer cmd_buf,
 }
 
 static void
-new_active_tile(struct TileThreadData *data,
-                VkdfSceneTile *t,
-                uint32_t thread_id)
+new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t job_id = data->id;
+   assert(job_id < s->thread.num_threads);
 
    assert(t->obj_count > 0);
 
@@ -874,7 +876,7 @@ new_active_tile(struct TileThreadData *data,
 
    VkCommandBuffer cmd_buf;
    vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[thread_id],
+                              s->cmd_buf.pool[job_id],
                               VK_COMMAND_BUFFER_LEVEL_SECONDARY,
                               1, &cmd_buf);
 
@@ -912,6 +914,7 @@ new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t job_id = data->id;
+   assert(job_id < s->thread.num_threads);
 
    s->cmd_buf.active[job_id] =
       g_list_remove(s->cmd_buf.active[job_id], t);
@@ -942,15 +945,13 @@ new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
 }
 
 static void inline
-new_inactive_cmd_buf(struct TileThreadData *data, VkCommandBuffer cmd_buf)
+new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf)
 {
-   VkdfScene *s = data->s;
-   uint32_t job_id = data->id;
-
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
    info->cmd_buf = cmd_buf;
    info->tile = NULL;
-   s->cmd_buf.free[job_id] = g_list_prepend(s->cmd_buf.free[job_id], info);
+   s->cmd_buf.free[thread_id] =
+      g_list_prepend(s->cmd_buf.free[thread_id], info);
 }
 
 static void
@@ -964,8 +965,7 @@ start_recording_resource_updates(VkdfScene *s)
       cmd_buf = s->cmd_buf.update_resources;
    } else {
       if (s->cmd_buf.update_resources)
-         new_inactive_cmd_buf(&s->thread.tile_data[0],
-                              s->cmd_buf.update_resources);
+         new_inactive_cmd_buf(s, 0, s->cmd_buf.update_resources);
 
       vkdf_create_command_buffer(s->ctx,
                                  s->cmd_buf.pool[0],
@@ -1958,6 +1958,7 @@ record_shadow_map_cmd_buf(VkdfScene *s,
 
    // FIXME: each thread should be using its own pool! This is not safe
    assert(thread_id < s->thread.num_threads);
+   sl->shadow.thread_id = thread_id;
    vkdf_create_command_buffer(s->ctx,
                               s->cmd_buf.pool[thread_id],
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
@@ -2386,6 +2387,8 @@ free_dirty_shadow_maps(VkdfScene *s)
       struct _DirtyShadowMap *ds = (struct _DirtyShadowMap *) iter->data;
       g_hash_table_foreach(ds->dyn_sets, destroy_set, NULL);
       g_hash_table_destroy(ds->dyn_sets);
+      new_inactive_cmd_buf(s, ds->sl->shadow.thread_id, ds->sl->shadow.cmd_buf);
+      ds->sl->shadow.cmd_buf = 0;
       g_free(ds);
       iter = g_list_next(iter);
    } while (iter);
@@ -2438,9 +2441,7 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 static void
 update_dirty_lights(VkdfScene *s)
 {
-   // We free the list of dirty shadow maps after executing the command buffers
-   // to update them
-   assert(s->dirty_shadow_maps == NULL);
+   free_dirty_shadow_maps(s);
 
    if (s->lights.size() == 0)
       return;
@@ -2777,7 +2778,7 @@ update_dirty_objects(VkdfScene *s)
 
    // Record dynamic object rendering command buffer
    if (s->cmd_buf.dynamic) {
-      new_inactive_cmd_buf(&s->thread.tile_data[0], s->cmd_buf.dynamic);
+      new_inactive_cmd_buf(s, 0, s->cmd_buf.dynamic);
    }
    if (s->dynamic.visible_obj_count > 0) {
       VkCommandBuffer cmd_buf;
@@ -2847,7 +2848,7 @@ thread_update_cmd_bufs(uint32_t thread_id, void *arg)
    while (iter) {
       VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
       if (t->obj_count > 0 && !g_list_find(prev_visible, t)) {
-         new_active_tile(data, t, thread_id);
+         new_active_tile(data, t);
          data->cmd_buf_changes = true;
       }
       iter = g_list_next(iter);
@@ -2926,7 +2927,7 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s)
 
       if (!s->cmd_buf.primary || cmd_buf_changes) {
          if (s->cmd_buf.primary)
-            new_inactive_cmd_buf(&s->thread.tile_data[0], s->cmd_buf.primary);
+            new_inactive_cmd_buf(s, 0, s->cmd_buf.primary);
          s->cmd_buf.primary = build_primary_cmd_buf(s);
       }
    }
@@ -2999,7 +3000,6 @@ vkdf_scene_draw(VkdfScene *s)
                                        1, &s->sync.shadow_maps_sem);
 
       g_free(cmd_bufs);
-      free_dirty_shadow_maps(s);
 
       wait_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
       wait_sem_count = 1;
