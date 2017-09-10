@@ -36,7 +36,7 @@ typedef struct {
 typedef struct _VkdfSceneTile VkdfSceneTile;
 typedef struct _VkdfScene VkdfScene;
 
-struct ThreadData {
+struct TileThreadData {
    uint32_t id;
    VkdfScene *s;
    uint32_t first_idx;
@@ -206,7 +206,7 @@ struct _VkdfScene {
       VkdfThreadPool *pool;
       uint32_t num_threads;
       uint32_t work_size;
-      struct ThreadData *data;
+      struct TileThreadData *tile_data;
    } thread;
 
    struct {

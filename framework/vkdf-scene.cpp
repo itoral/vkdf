@@ -216,15 +216,16 @@ vkdf_scene_new(VkdfContext *ctx,
       s->cmd_buf.free[thread_idx] = NULL;
    }
 
-   s->thread.data = g_new0(struct ThreadData, num_threads);
+   s->thread.tile_data = g_new0(struct TileThreadData, num_threads);
    for (uint32_t thread_idx = 0; thread_idx < num_threads; thread_idx++) {
-      s->thread.data[thread_idx].id = thread_idx;
-      s->thread.data[thread_idx].s = s;
-      s->thread.data[thread_idx].first_idx =
+      s->thread.tile_data[thread_idx].id = thread_idx;
+      s->thread.tile_data[thread_idx].s = s;
+      s->thread.tile_data[thread_idx].first_idx =
          thread_idx * s->thread.work_size;
-      s->thread.data[thread_idx].last_idx =
+      s->thread.tile_data[thread_idx].last_idx =
          (thread_idx < num_threads - 1) ?
-            s->thread.data[thread_idx].first_idx + s->thread.work_size - 1 :
+            s->thread.tile_data[thread_idx].first_idx +
+               s->thread.work_size - 1 :
             s->num_tiles.total - 1;
    }
 
@@ -352,8 +353,8 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroyFramebuffer(s->ctx->device, s->rp.dynamic_geom.framebuffer, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++)
-      g_list_free(s->thread.data[i].visible);
-   g_free(s->thread.data);
+      g_list_free(s->thread.tile_data[i].visible);
+   g_free(s->thread.tile_data);
 
    g_list_free_full(s->set_ids, g_free);
    s->set_ids = NULL;
@@ -809,7 +810,7 @@ free_inactive_command_buffers(VkdfScene *s)
 }
 
 static inline void
-add_to_cache(struct ThreadData *data, VkdfSceneTile *t)
+add_to_cache(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t thread_id = data->id;
@@ -819,7 +820,7 @@ add_to_cache(struct ThreadData *data, VkdfSceneTile *t)
 }
 
 static inline void
-remove_from_cache(struct ThreadData *data, VkdfSceneTile *t)
+remove_from_cache(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t thread_id = data->id;
@@ -852,7 +853,7 @@ record_viewport_and_scissor_commands(VkCommandBuffer cmd_buf,
 }
 
 static void
-new_active_tile(struct ThreadData *data, VkdfSceneTile *t)
+new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t thread_id = data->id;
@@ -906,7 +907,7 @@ new_active_tile(struct ThreadData *data, VkdfSceneTile *t)
 }
 
 static void
-new_inactive_tile(struct ThreadData *data, VkdfSceneTile *t)
+new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
 {
    VkdfScene *s = data->s;
    uint32_t thread_id = data->id;
@@ -940,7 +941,7 @@ new_inactive_tile(struct ThreadData *data, VkdfSceneTile *t)
 }
 
 static void inline
-new_inactive_cmd_buf(struct ThreadData *data, VkCommandBuffer cmd_buf)
+new_inactive_cmd_buf(struct TileThreadData *data, VkCommandBuffer cmd_buf)
 {
    VkdfScene *s = data->s;
    uint32_t thread_id = data->id;
@@ -963,7 +964,8 @@ start_recording_resource_updates(VkdfScene *s)
       cmd_buf = s->cmd_buf.update_resources;
    } else {
       if (s->cmd_buf.update_resources)
-         new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.update_resources);
+         new_inactive_cmd_buf(&s->thread.tile_data[0],
+                              s->cmd_buf.update_resources);
 
       vkdf_create_command_buffer(s->ctx,
                                  s->cmd_buf.pool[0],
@@ -2734,7 +2736,7 @@ update_dirty_objects(VkdfScene *s)
 
    // Record dynamic object rendering command buffer
    if (s->cmd_buf.dynamic) {
-      new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.dynamic);
+      new_inactive_cmd_buf(&s->thread.tile_data[0], s->cmd_buf.dynamic);
    }
    if (s->dynamic.visible_obj_count > 0) {
       VkCommandBuffer cmd_buf;
@@ -2772,7 +2774,7 @@ update_dirty_objects(VkdfScene *s)
 static void
 thread_update_cmd_bufs(void *arg)
 {
-   struct ThreadData *data = (struct ThreadData *) arg;
+   struct TileThreadData *data = (struct TileThreadData *) arg;
 
    VkdfScene *s = data->s;
 
@@ -2824,9 +2826,9 @@ update_cmd_bufs(VkdfScene *s)
    for (uint32_t thread_idx = 0;
         thread_idx < s->thread.num_threads;
         thread_idx++) {
-      s->thread.data[thread_idx].visible_box = cam_box;
-      s->thread.data[thread_idx].fplanes = cam_planes;
-      s->thread.data[thread_idx].cmd_buf_changes = false;
+      s->thread.tile_data[thread_idx].visible_box = cam_box;
+      s->thread.tile_data[thread_idx].fplanes = cam_planes;
+      s->thread.tile_data[thread_idx].cmd_buf_changes = false;
    }
 
    if (s->thread.pool) {
@@ -2835,19 +2837,19 @@ update_cmd_bufs(VkdfScene *s)
            thread_idx++) {
          vkdf_thread_pool_add_job(s->thread.pool,
                                   thread_update_cmd_bufs,
-                                  &s->thread.data[thread_idx]);
+                                  &s->thread.tile_data[thread_idx]);
       }
       vkdf_thread_pool_wait(s->thread.pool);
    } else {
-      thread_update_cmd_bufs(&s->thread.data[0]);
+      thread_update_cmd_bufs(&s->thread.tile_data[0]);
    }
 
-   bool cmd_buf_changes = s->thread.data[0].cmd_buf_changes;
+   bool cmd_buf_changes = s->thread.tile_data[0].cmd_buf_changes;
    for (uint32_t thread_idx = 1;
         cmd_buf_changes == false && thread_idx < s->thread.num_threads;
         thread_idx++) {
       cmd_buf_changes = cmd_buf_changes ||
-                        s->thread.data[thread_idx].cmd_buf_changes;
+                        s->thread.tile_data[thread_idx].cmd_buf_changes;
    }
 
    return cmd_buf_changes;
@@ -2883,7 +2885,7 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s)
 
       if (!s->cmd_buf.primary || cmd_buf_changes) {
          if (s->cmd_buf.primary)
-            new_inactive_cmd_buf(&s->thread.data[0], s->cmd_buf.primary);
+            new_inactive_cmd_buf(&s->thread.tile_data[0], s->cmd_buf.primary);
          s->cmd_buf.primary = build_primary_cmd_buf(s);
       }
    }
