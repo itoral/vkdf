@@ -47,6 +47,20 @@ struct TileThreadData {
    bool cmd_buf_changes;
 };
 
+struct _DirtyShadowMap {
+   VkdfSceneLight *sl;
+   GHashTable *dyn_sets;
+};
+
+struct LightThreadData {
+   uint32_t id;
+   VkdfScene *s;
+   VkdfSceneLight *sl;
+   VkdfBox *visible_box;
+   VkdfPlane *fplanes;
+   struct _DirtyShadowMap *dirty_shadow_map;
+};
+
 typedef struct {
    GList *objs;                        // Set list
    uint32_t start_index;               // The global scene set index of the first object in this set
@@ -67,11 +81,6 @@ struct _VkdfSceneTile {
    uint32_t shadow_caster_count; // Number of objects in the tile that can cast shadows
    VkCommandBuffer cmd_buf;      // Secondary command buffer for this tile
    VkdfSceneTile *subtiles;      // Subtiles within this tile
-};
-
-struct _DirtyShadowMap {
-   VkdfSceneLight *sl;
-   GHashTable *dyn_sets;
 };
 
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);

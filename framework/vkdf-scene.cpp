@@ -1952,11 +1952,10 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                           VkdfSceneLight *sl,
                           GHashTable *dyn_sets)
 {
-   s->shadow_maps_dirty = true;
-
    assert(sl->shadow.shadow_map.image);
    assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
+   // FIXME: each thread should be using its own pool! This is not safe
    vkdf_create_command_buffer(s->ctx,
                               s->cmd_buf.pool[0],
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
@@ -2393,16 +2392,73 @@ free_dirty_shadow_maps(VkdfScene *s)
 }
 
 static void
+thread_shadow_map_update(void *arg)
+{
+   struct LightThreadData *data = (struct LightThreadData *) arg;
+
+   VkdfScene *s = data->s;
+   VkdfSceneLight *sl = data->sl;
+   VkdfLight *l = sl->light;
+
+   // FIXME: for spolights, if neither the spotlight nor its area of
+   // influence are visible to the camera, then we can skip shadow map
+   // updates. This requires frustum vs frustum testing or maybe a
+   // cone vs frustum collision test. For point lights we could probably
+   // use a similar check.
+
+   // If the light has dirty shadows it means that its area of influence
+   // has changed and we need to recompute its list of visible tiles.
+   bool needs_new_shadow_map;
+   if (vkdf_light_has_dirty_shadows(l)) {
+      needs_new_shadow_map = true;
+      compute_light_view_projection(sl);
+      compute_visible_tiles_for_light(s, sl);
+   }
+
+   // Whether the area of influence has changed or not, we need to check if
+   // we need to regen shadow maps due to dynamic objects anyway. If the
+   // light has dynamic objects in its area of influence then we also need
+   // an updated list of objects so we can render them to the shadow map
+   bool has_dirty_objects;
+   GHashTable *dyn_sets =
+      find_dynamic_objects_for_light(s, sl, &has_dirty_objects);
+
+   needs_new_shadow_map = needs_new_shadow_map || has_dirty_objects;
+
+   if (needs_new_shadow_map) {
+      // FIXME: merge this in the resource updates command? Shadow map
+      // cmd bufs need to go in their own command buffers since each have
+      // their own render target, however, we could merge the first one into
+      // an existing resource update command and save one submit.
+      record_shadow_map_cmd_buf(s, sl, dyn_sets);
+
+      data->dirty_shadow_map = g_new(struct _DirtyShadowMap, 1);
+      data->dirty_shadow_map->sl = sl;
+      data->dirty_shadow_map->dyn_sets = dyn_sets;
+   }
+}
+
+static void
 update_dirty_lights(VkdfScene *s)
 {
+   // We free the list of dirty shadow maps after executing the command buffers
+   // to update them
    assert(s->dirty_shadow_maps == NULL);
 
    if (s->lights.size() == 0)
       return;
 
-   // Check if we have dirty lights and shadow maps. If we have dirty shadow
-   // maps, update lists of visible tiles and/or dynamic objects affected
-   // by the light. We'll need this data to render the shadow maps.
+   // Go through the list of lights and check if they are dirty and if they
+   // require new shadow maps. If they require new shadow maps, record
+   // the command buffers for them. We thread the shadow map checks per light.
+
+   // If all lights are shadow casters then we can have as much that many
+   // dirty shadow maps
+   std::vector<struct LightThreadData> data;
+   data.resize(s->lights.size());
+   uint32_t data_count = 0;
+
+   bool has_thread_jobs = false;
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
       VkdfLight *l = sl->light;
@@ -2416,46 +2472,34 @@ update_dirty_lights(VkdfScene *s)
       if (!vkdf_light_casts_shadows(l))
          continue;
 
-      // FIXME: for spolights, if neither the spotlight nor its area of
-      // influence are visible to the camera, then we can skip shadow map
-      // updates. This requires frustum vs frustum testing or maybe a
-      // cone vs frustum collision test. For point lights we could probably
-      // use a similar check.
+      data[data_count].id = i;
+      data[data_count].s = s;
+      data[data_count].sl = sl;
+      data[data_count].dirty_shadow_map = NULL;
 
-      // FIXME: maybe we should use multiple threads for these updates,
-      // at least if the number of dirty lights is large
-
-      // If the light has dirty shadows it means that its area of influence
-      // has changed and we need to recompute its list of visible tiles.
-      bool needs_new_shadow_map;
-      if (vkdf_light_has_dirty_shadows(l)) {
-         needs_new_shadow_map = true;
-         compute_light_view_projection(sl);
-         compute_visible_tiles_for_light(s, sl);
+      if (s->thread.pool) {
+         has_thread_jobs = true;
+         vkdf_thread_pool_add_job(s->thread.pool,
+                                  thread_shadow_map_update,
+                                  &data[data_count]);
+      } else {
+         thread_shadow_map_update(&data[data_count]);
       }
 
-      // Whether the area of influence has changed or not, we need to check if
-      // we need to regen shadow maps due to dynamic objects anyway. If the
-      // light has dynamic objects in its area of influence then we also need
-      // an updated list of objects so we can render them to the shadow map
-      bool has_dirty_objects;
-      GHashTable *dyn_sets =
-         find_dynamic_objects_for_light(s, sl, &has_dirty_objects);
+      data_count++;
+   }
 
-      needs_new_shadow_map = needs_new_shadow_map || has_dirty_objects;
+   // Collect list of dirty shadow maps from threads
+   if (has_thread_jobs)
+      vkdf_thread_pool_wait(s->thread.pool);
 
-      if (needs_new_shadow_map) {
-         // FIXME: merge this in the resource updates command? Shadow map
-         // cmd bufs need to go in their own command buffers since each have
-         // their own render target, however, we could merge the first one into
-         // an existing resource update command and save one submit.
-         record_shadow_map_cmd_buf(s, sl, dyn_sets);
+   for (uint32_t i = 0; i < data_count; i++) {
+      if (data[i].dirty_shadow_map == NULL)
+         continue;
 
-         struct _DirtyShadowMap *ds = g_new(struct _DirtyShadowMap, 1);
-         ds->sl = sl;
-         ds->dyn_sets = dyn_sets;
-         s->dirty_shadow_maps = g_list_prepend(s->dirty_shadow_maps, ds);
-      }
+      s->shadow_maps_dirty = true;
+      s->dirty_shadow_maps = g_list_prepend(s->dirty_shadow_maps,
+                                            data[i].dirty_shadow_map);
    }
 
    // Record the commands to update scene light resources for rendering
