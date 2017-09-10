@@ -22,6 +22,7 @@ vkdf_box_get_vertex(VkdfBox *box, uint32_t index)
       return box->center + glm::vec3(box->w, -box->h, -box->d);
    default:
       assert(!"invalid box vertex index");
+      return glm::vec3(0.0f, 0.0f, 0.0f);
    }
 }
 
