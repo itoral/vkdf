@@ -2942,29 +2942,26 @@ vkdf_scene_draw(VkdfScene *s)
 
    /* ========== Submit resource updates for the current frame ========== */
 
-   // Since we always have to wait for the rendering to the render target
-   // to finish before we submit the presentation job, we are certain that by
-   // the time we get here, rendering to the render target for the previous
-   // frame is completed and presentation for the previous frame might still
-   // be ongoing. This means that we can safely submit command buffers that
-   // do not render to the render target, such us any resource update.
+   // Before we do this, we need to make sure that the gpu isn't still
+   // accessing these resources from any shaders to render the previous frame.
+   // We wait on the render semaphore for this, which points to the last
+   // render job that we have submitted.
 
    // If we have resource update commands, execute them first
+   wait_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+   wait_sem_count = s->sync.render_sem_active ? 1 : 0;
+   wait_sem = &s->sync.render_sem;
+
    if (s->cmd_buf.have_resource_updates) {
-      VkPipelineStageFlags resources_wait_stage = 0;
       vkdf_command_buffer_execute(s->ctx,
                                   s->cmd_buf.update_resources,
-                                  &resources_wait_stage,
-                                  0, NULL,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
                                   1, &s->sync.update_resources_sem);
 
       wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.update_resources_sem;
-   } else {
-      wait_stage = 0;
-      wait_sem_count = 0;
-      wait_sem = NULL;
    }
 
    // If we have dirty shadow maps, update them.
@@ -3020,8 +3017,8 @@ vkdf_scene_draw(VkdfScene *s)
                                   true, 1000ull);
 #if ENABLE_DEBUG
          if (status == VK_NOT_READY || status == VK_TIMEOUT) {
-            vkdf_info("debug: perf: scene: warning: "
-                      "gpu busy, cpu stall before draw\n");
+            vkdf_info("debug: perf: scene: warning: stall before rendering. "
+                      "Reason: gpu busy copying previous frame to swapchain \n");
          }
 #endif
       } while (status == VK_NOT_READY || status == VK_TIMEOUT);
@@ -3069,6 +3066,12 @@ vkdf_scene_draw(VkdfScene *s)
       wait_sem_count = 1;
       wait_sem = &s->sync.postprocess_sem;
    }
+
+   // Keep track of the last render job so we can sync commands in the
+   // next frame that depend on render target rendering to be completed
+   assert(wait_sem_count == 1);
+   s->sync.render_sem = *wait_sem;
+   s->sync.render_sem_active = true;
 
    /* ========== Copy rendering result to swapchain ========== */
 
