@@ -1,0 +1,115 @@
+#version 450
+
+#extension GL_ARB_separate_shader_objects : enable
+
+const int MAX_INSTANCES = 16;
+const int MAX_MATERIALS_PER_MODEL = 32;
+const int NUM_LIGHTS = 2;
+
+INCLUDE(../../data/glsl/lighting.glsl)
+
+layout(push_constant) uniform pcb {
+   mat4 Projection;
+} PCB;
+
+layout(std140, set = 0, binding = 0) uniform ubo_camera {
+   mat4 View;
+} CD;
+
+struct ObjData {
+   mat4 Model;
+   uint material_base_idx;
+   uint model_idx;
+   uint receives_shadows;
+};
+
+layout(std140, set = 1, binding = 0) uniform ubo_obj_data {
+   ObjData data[MAX_INSTANCES];
+} OID;
+
+layout(std140, set = 2, binding = 0) uniform light_ubo
+{
+   Light sun;
+} L;
+
+struct ShadowMapData {
+   mat4 light_viewproj;
+   uint shadow_map_size;
+   uint pfc_kernel_size;
+};
+
+layout(std140, set = 2, binding = 1) uniform ubo_shadow_map_data {
+   ShadowMapData shadow_map_data;
+} SMD;
+
+layout(location = 0) in vec3 in_position;
+layout(location = 1) in vec3 in_normal;
+layout(location = 2) in vec3 in_tangent;
+layout(location = 3) in vec3 in_bitangent;
+layout(location = 4) in vec2 in_uv;
+layout(location = 5) in uint in_material_idx;
+
+layout(location = 0) out vec2 out_uv;
+layout(location = 1) flat out uint out_material_idx;
+layout(location = 2) out vec3 out_tangent_normal;
+layout(location = 3) out vec4 out_tangent_pos;
+layout(location = 4) out vec3 out_tangent_view_dir;
+layout(location = 5) out vec4 out_tangent_light_pos;
+layout(location = 6) out vec4 out_light_space_pos;
+layout(location = 7) out vec3 out_debug;
+
+void main()
+{
+   ObjData obj_data = OID.data[gl_InstanceIndex];
+
+   // UV coordinates need y-flipping
+   out_uv = vec2(in_uv.x, -in_uv.y);
+
+   // Compute the material index in the gloabl UBO for this vertex
+   out_material_idx =
+      obj_data.model_idx * MAX_MATERIALS_PER_MODEL +
+      obj_data.material_base_idx + in_material_idx;
+
+   // Compute world space positon
+   vec4 model_pos = vec4(in_position.x, in_position.y, in_position.z, 1.0);
+   mat4 Model = obj_data.Model;
+   vec4 world_pos = Model * model_pos;
+
+   // Compute camera/eye space position
+   vec4 eye_pos = CD.View * world_pos;
+   gl_Position = PCB.Projection * eye_pos;
+
+   // Compute eye space normal
+   mat3 Normal = transpose(inverse(mat3(CD.View * Model)));
+   vec3 eye_normal_norm = normalize(Normal * in_normal);
+
+   // Compute camera/eye space to tangent space matrix
+   //
+   // The idea is to have all our lighting variables in tangent space,
+   // which is the space of the normals encoded in normal maps. This way
+   // when we unpack the normal from the normal map in the fragment shader
+   // we don't have to convert them to world space doing a per-fragment
+   // matrix multiply. Instead, we turn everything we need to tangent space
+   // in the vertex shader, which is less expensive.
+   mat3 TBN = transpose(mat3(normalize(Normal * in_tangent),
+                             normalize(Normal * in_bitangent),
+                             eye_normal_norm));
+
+    // Compute the vector from this vertex to the camera (in camera space)
+   vec3 eye_view_dir = normalize(-eye_pos.xyz);
+
+   // Compute lighting outputs (in tangent space)
+   out_tangent_normal = normalize(TBN * eye_normal_norm);
+   out_tangent_pos = vec4(TBN * eye_pos.xyz, 1);
+   out_tangent_view_dir = -out_tangent_pos.xyz;
+   out_tangent_light_pos = vec4(TBN * vec3(CD.View * L.sun.pos), L.sun.pos.w);
+
+   // Light space position
+   out_light_space_pos = SMD.shadow_map_data.light_viewproj * world_pos;
+
+//   out_debug = vec3(in_position) / 100.0;
+//   out_debug = vec3(world_pos) / 100.0;
+//   out_debug = vec3(eye_pos) / 100.0;
+//   out_debug = vec3(in_normal);
+//   out_debug = vec3(out_tangent_normal);
+}

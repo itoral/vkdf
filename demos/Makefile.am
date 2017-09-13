@@ -6,7 +6,8 @@ SUBDIRS = triangle \
           model \
           shadow \
           scene \
-          scenelight
+          scenelight \
+          sponza
 
 MAINTAINERCLEANFILES = \
         *.in \
