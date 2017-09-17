@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
-
+#include <math.h>
 #include <glib.h>
 
 // GLFW3
@@ -23,6 +23,9 @@
 #include <assimp/cimport.h>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+
+// SDL2 Image
+#include <SDL/SDL_image.h>
 
 #define VKDF_LOG_FPS_ENABLE 1
 

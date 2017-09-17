@@ -21,6 +21,12 @@ vkdf_create_image(VkdfContext *ctx,
                   VkImageAspectFlags aspect_flags,
                   VkImageViewType image_view_type);
 
+bool
+vkdf_load_image_from_file(VkdfContext *ctx,
+                          VkCommandPool pool,
+                          const char *path,
+                          VkdfImage *image);
+
 void
 vkdf_destroy_image(VkdfContext *ctx, VkdfImage *image);
 

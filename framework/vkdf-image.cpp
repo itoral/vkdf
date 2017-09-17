@@ -1,23 +1,17 @@
 #include "vkdf.hpp"
 
-VkdfImage
-vkdf_create_image(VkdfContext *ctx,
-                  uint32_t width,
-                  uint32_t height,
-                  uint32_t num_levels,
-                  VkImageType image_type,
-                  VkFormat format,
-                  VkFormatFeatureFlags format_flags,
-                  VkImageUsageFlags usage_flags,
-                  uint32_t mem_props,
-                  VkImageAspectFlags aspect_flags,
-                  VkImageViewType image_view_type)
+VkImage
+create_image(VkdfContext *ctx,
+             uint32_t width,
+             uint32_t height,
+             uint32_t num_levels,
+             VkImageType image_type,
+             VkFormat format,
+             VkFormatFeatureFlags format_flags,
+             VkImageUsageFlags usage_flags)
 {
-   VkdfImage image;
+   VkImage image;
 
-   image.format = format;
-
-   // Create image
    VkFormatProperties props;
    vkGetPhysicalDeviceFormatProperties(ctx->phy_device, format, &props);
    if ((props.optimalTilingFeatures & format_flags) != format_flags)
@@ -41,11 +35,19 @@ vkdf_create_image(VkdfContext *ctx,
    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
    image_info.flags = 0;
 
-   VK_CHECK(vkCreateImage(ctx->device, &image_info, NULL, &image.image));
+   VK_CHECK(vkCreateImage(ctx->device, &image_info, NULL, &image));
 
-   // Allocate and bind memory for the image
+   return image;
+}
+
+static void
+bind_image_memory(VkdfContext *ctx,
+                  VkImage image,
+                  uint32_t mem_props,
+                  VkDeviceMemory *mem)
+{
    VkMemoryRequirements mem_reqs;
-   vkGetImageMemoryRequirements(ctx->device, image.image, &mem_reqs);
+   vkGetImageMemoryRequirements(ctx->device, image, &mem_reqs);
 
    VkMemoryAllocateInfo mem_alloc = {};
    mem_alloc.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -57,28 +59,78 @@ vkdf_create_image(VkdfContext *ctx,
                                        mem_props,
                                        &mem_alloc.memoryTypeIndex);
    assert(result);
-   VK_CHECK(vkAllocateMemory(ctx->device, &mem_alloc, NULL, &image.mem));
-   VK_CHECK(vkBindImageMemory(ctx->device, image.image, image.mem, 0));
+   VK_CHECK(vkAllocateMemory(ctx->device, &mem_alloc, NULL, mem));
+   VK_CHECK(vkBindImageMemory(ctx->device, image, *mem, 0));
+}
 
-   // Create image view
+static VkImageView
+create_image_view(VkdfContext *ctx,
+                  VkImageViewType view_type,
+                  VkImage image,
+                  VkFormat format,
+                  VkImageAspectFlags aspect_flags,
+                  uint32_t num_levels,
+                  VkComponentSwizzle swz_r,
+                  VkComponentSwizzle swz_g,
+                  VkComponentSwizzle swz_b,
+                  VkComponentSwizzle swz_a)
+{
+
    VkImageViewCreateInfo view_info = {};
    view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
    view_info.pNext = NULL;
-   view_info.image = image.image;
+   view_info.image = image;
    view_info.format = format;
-   view_info.components.r = VK_COMPONENT_SWIZZLE_R;
-   view_info.components.g = VK_COMPONENT_SWIZZLE_G;
-   view_info.components.b = VK_COMPONENT_SWIZZLE_B;
-   view_info.components.a = VK_COMPONENT_SWIZZLE_A;
+   view_info.components.r = swz_r;
+   view_info.components.g = swz_g;
+   view_info.components.b = swz_b;
+   view_info.components.a = swz_a;
    view_info.subresourceRange.aspectMask = aspect_flags;
    view_info.subresourceRange.baseMipLevel = 0;
    view_info.subresourceRange.levelCount = num_levels;
    view_info.subresourceRange.baseArrayLayer = 0;
    view_info.subresourceRange.layerCount = 1;
-   view_info.viewType = image_view_type;
+   view_info.viewType = view_type;
    view_info.flags = 0;
 
-   VK_CHECK(vkCreateImageView(ctx->device, &view_info, NULL, &image.view));
+   VkImageView view;
+   VK_CHECK(vkCreateImageView(ctx->device, &view_info, NULL, &view));
+   return view;
+}
+
+VkdfImage
+vkdf_create_image(VkdfContext *ctx,
+                  uint32_t width,
+                  uint32_t height,
+                  uint32_t num_levels,
+                  VkImageType image_type,
+                  VkFormat format,
+                  VkFormatFeatureFlags format_flags,
+                  VkImageUsageFlags usage_flags,
+                  uint32_t mem_props,
+                  VkImageAspectFlags aspect_flags,
+                  VkImageViewType image_view_type)
+{
+   VkdfImage image;
+
+   image.format = format;
+
+   image.image = create_image(ctx,
+                              width, height, num_levels,
+                              image_type, format,
+                              format_flags,
+                              usage_flags);
+
+   bind_image_memory(ctx, image.image, mem_props, &image.mem);
+
+   image.view = create_image_view(ctx,
+                                  VK_IMAGE_VIEW_TYPE_2D,
+                                  image.image, format,
+                                  aspect_flags, num_levels,
+                                  VK_COMPONENT_SWIZZLE_R,
+                                  VK_COMPONENT_SWIZZLE_G,
+                                  VK_COMPONENT_SWIZZLE_B,
+                                  VK_COMPONENT_SWIZZLE_A);
 
    return image;
 }
@@ -205,5 +257,309 @@ vkdf_image_set_layout(VkdfContext *ctx,
                         0, NULL,
                         0, NULL,
                         1, &barrier);
+}
+
+struct _MipmapInfo {
+   uint32_t w, h;
+   VkDeviceSize bytes;
+};
+
+VkComponentSwizzle
+compute_component_swizzle_from_mask(uint32_t mask, bool is_alpha)
+{
+   // FIXME: we only support 8-bit color components for now
+   switch (mask) {
+      case 0x00000000:
+         return is_alpha ? VK_COMPONENT_SWIZZLE_ONE :
+                           VK_COMPONENT_SWIZZLE_ZERO;
+      case 0x000000FF:
+         return VK_COMPONENT_SWIZZLE_R;
+      case 0x0000FF00:
+         return VK_COMPONENT_SWIZZLE_G;
+      case 0x00FF0000:
+         return VK_COMPONENT_SWIZZLE_B;
+      case 0xFF000000:
+         return VK_COMPONENT_SWIZZLE_A;
+      default:
+         assert(!"unsupported color mask");
+         return VK_COMPONENT_SWIZZLE_ZERO;
+   }
+}
+
+static uint32_t
+compute_bpp_from_sdl_surface(SDL_Surface *surf)
+{
+   if (surf->format->BitsPerPixel > 0)
+      return surf->format->BitsPerPixel;
+
+   uint32_t masks[4] = {
+      surf->format->Rmask,
+      surf->format->Gmask,
+      surf->format->Bmask,
+      surf->format->Amask
+   };
+
+   uint32_t bits = 0;
+   for (uint32_t i = 0; i < 4; i++) {
+      for (uint32_t b = 0; b < 32; b++) {
+         if (masks[i] & (1 << b))
+            bits++;
+      }
+
+      // FIXME: we only support 8-bit components for now
+      assert((bits % 8) == 0);
+   }
+
+   // Some times SDL fails to provide any bpp info, assume 32-bit in that case
+   if (bits == 0) {
+      vkdf_error("image: SDL failed to provide bpp for image, assuming 32bpp");
+      bits = 32;
+   }
+
+   return bits;
+}
+
+static VkDeviceSize
+compute_gpu_image_size(SDL_Surface *surf,
+                       uint32_t *num_levels,
+                       struct _MipmapInfo **mip_levels)
+{
+   *num_levels = 1 + ((uint32_t) floorf(log2f(MAX2(surf->w, surf->h))));
+   *mip_levels = g_new(struct _MipmapInfo, *num_levels);
+
+   uint32_t bpp = compute_bpp_from_sdl_surface(surf);
+
+   VkDeviceSize total_bytes = 0;
+   uint32_t size_x = surf->w;
+   uint32_t size_y = surf->h;
+   for (uint32_t i = 0; i < *num_levels; i++) {
+      struct _MipmapInfo *info = &(*mip_levels)[i];
+      info->bytes = size_x * size_y * bpp / 8;
+      total_bytes += info->bytes;
+      info->w = size_x;
+      info->h = size_y;
+
+      size_x = MAX2(size_x / 2, 1);
+      size_y = MAX2(size_y / 2, 1);
+   }
+
+   return total_bytes;
+}
+
+bool
+vkdf_load_image_from_file(VkdfContext *ctx,
+                          VkCommandPool pool,
+                          const char *path,
+                          VkdfImage *image)
+{
+   memset(image, 0, sizeof(VkdfImage));
+
+   // Load image data from file and put pixel data in a GPU buffer
+   SDL_Surface *surf = IMG_Load(path);
+   if (!surf) {
+      vkdf_error("image: failed to load '%s'", path);
+      return false;
+   }
+
+   // Upload pixel data to a host-visible staging buffer
+   uint32_t num_levels;
+   struct _MipmapInfo *mip_levels;
+   VkDeviceSize gpu_image_bytes =
+      compute_gpu_image_size(surf, &num_levels, &mip_levels);
+
+   VkdfBuffer buf =
+      vkdf_create_buffer(ctx,
+                         0,
+                         gpu_image_bytes,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   uint8_t *data;
+   vkdf_memory_map(ctx, buf.mem, 0, VK_WHOLE_SIZE, (void **)&data);
+   memcpy(data, surf->pixels, mip_levels[0].bytes);
+   vkdf_memory_unmap(ctx, buf.mem, buf.mem_props,
+                     0, VK_WHOLE_SIZE);
+
+   // Create the image with storage for all miplevels
+   image->format = VK_FORMAT_R8G8B8_UNORM;
+
+   image->image = create_image(ctx,
+                               surf->w,
+                               surf->h,
+                               num_levels,
+                               VK_IMAGE_TYPE_2D,
+                               image->format,
+                               VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
+                               VK_IMAGE_USAGE_SAMPLED_BIT |
+                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+
+   bind_image_memory(ctx,
+                     image->image,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                     &image->mem);
+
+   VkComponentSwizzle swz_r =
+      compute_component_swizzle_from_mask(surf->format->Rmask, false);
+   VkComponentSwizzle swz_g =
+      compute_component_swizzle_from_mask(surf->format->Gmask, false);
+   VkComponentSwizzle swz_b =
+      compute_component_swizzle_from_mask(surf->format->Bmask, false);
+   VkComponentSwizzle swz_a =
+      compute_component_swizzle_from_mask(surf->format->Amask, true);
+
+   image->view = create_image_view(ctx,
+                                   VK_IMAGE_VIEW_TYPE_2D,
+                                   image->image,
+                                   image->format,
+                                   VK_IMAGE_ASPECT_COLOR_BIT,
+                                   num_levels,
+                                   swz_r, swz_g, swz_b, swz_a);
+
+   // Copy data from buffer to mip level 0
+   VkBufferImageCopy region = {};
+   region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   region.imageSubresource.mipLevel = 0;
+   region.imageSubresource.baseArrayLayer = 0;
+   region.imageSubresource.layerCount = 1;
+   region.imageExtent.width = surf->w;
+   region.imageExtent.height = surf->h;
+   region.imageExtent.depth = 1;
+   region.bufferOffset = 0;
+
+   VkCommandBuffer cmd_buf;
+   vkdf_create_command_buffer(ctx, pool,
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &cmd_buf);
+
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+   VkImageSubresourceRange mip_0 =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                          0, 1, 0, 1);
+
+   VkImageMemoryBarrier barrier_layout_mip_0 =
+      vkdf_create_image_barrier(0,
+                                VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                image->image,
+                                mip_0);
+
+   vkCmdPipelineBarrier(cmd_buf,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        1, &barrier_layout_mip_0);
+
+   vkCmdCopyBufferToImage(cmd_buf, buf.buf, image->image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          1, &region);
+
+
+   // Blit level 0 to mip levels [1..num_levels]
+   barrier_layout_mip_0 =
+      vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_ACCESS_TRANSFER_READ_BIT,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                image->image,
+                                mip_0);
+
+   VkImageSubresourceRange mip_1N =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                          1, num_levels - 1, 0, 1);
+
+   VkImageMemoryBarrier barrier_layout_mip_1N;
+   barrier_layout_mip_1N =
+      vkdf_create_image_barrier(0,
+                                VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_IMAGE_LAYOUT_UNDEFINED,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                image->image,
+                                mip_1N);
+
+   VkImageMemoryBarrier barriers[2] = {
+      barrier_layout_mip_0,
+      barrier_layout_mip_1N
+   };
+
+   vkCmdPipelineBarrier(cmd_buf,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        2, barriers);
+
+   VkImageBlit blit_region;
+   blit_region.srcSubresource =
+      vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1);
+
+   blit_region.srcOffsets[0].x = 0;
+   blit_region.srcOffsets[0].y = 0;
+   blit_region.srcOffsets[0].z = 0;
+
+   blit_region.srcOffsets[1].x = mip_levels[0].w;
+   blit_region.srcOffsets[1].y = mip_levels[0].h;
+   blit_region.srcOffsets[1].z = 1;
+
+   for (uint32_t i = 1; i < num_levels; i++) {
+      blit_region.dstSubresource =
+         vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT,
+                                              i, 0, 1);
+      blit_region.dstOffsets[0].x = 0;
+      blit_region.dstOffsets[0].y = 0;
+      blit_region.dstOffsets[0].z = 0;
+
+      blit_region.dstOffsets[1].x = mip_levels[i].w;
+      blit_region.dstOffsets[1].y = mip_levels[i].h;
+      blit_region.dstOffsets[1].z = 1;
+
+      vkCmdBlitImage(cmd_buf,
+                     image->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                     image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     1,
+                     &blit_region,
+                     VK_FILTER_NEAREST);
+   }
+
+   barrier_layout_mip_0 =
+      vkdf_create_image_barrier(VK_ACCESS_TRANSFER_READ_BIT,
+                                VK_ACCESS_SHADER_READ_BIT,
+                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                image->image,
+                                mip_0);
+
+   barrier_layout_mip_1N =
+      vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                VK_ACCESS_SHADER_READ_BIT,
+                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                image->image,
+                                mip_1N);
+
+   barriers[0] = barrier_layout_mip_0;
+   barriers[1] = barrier_layout_mip_1N;
+   vkCmdPipelineBarrier(cmd_buf,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        0,
+                        0, NULL,
+                        0, NULL,
+                        2, barriers);
+
+   vkdf_command_buffer_end(cmd_buf);
+   vkdf_command_buffer_execute_sync(ctx, cmd_buf, 0);
+
+   vkdf_destroy_buffer(ctx, &buf);
+   vkFreeCommandBuffers(ctx->device, pool, 1, &cmd_buf);
+   g_free(mip_levels);
+
+   return true;
 }
 

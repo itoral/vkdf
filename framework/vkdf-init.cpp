@@ -521,6 +521,9 @@ vkdf_init(VkdfContext *ctx,
    init_queues(ctx);
    init_logical_device(ctx);
    _init_swap_chain(ctx);
+
+   // Initialize SDL2 Image library
+   IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG | IMG_INIT_TIF);
 }
 
 static void

@@ -10,6 +10,7 @@ You need the following dependencies installed on your system:
 - GLFW3 (with Vulkan support)
 - glm
 - Assimp
+- SDL2 image
 - Vulkan SDK (Vulkan headers and loader)
 - glslangValidator
 
@@ -18,6 +19,7 @@ In Ubuntu, these are provided by the following packages:
 - Glib:             libglib2.0-dev
 - glm:              libglm-dev
 - Assimp:           libassimp-dev
+- SDL2 image:       libsdl2-image-dev
 
 You need a version of GLFW3 that supports Vulkan. It may be possible that
 your distro doesn't provide it yet, in that case you will need to build it
