@@ -6,12 +6,31 @@ typedef struct {
    glm::vec4 ambient;
    glm::vec4 specular;
    float shininess;
-   float padding[3]; // So the size if 16-byte aligned
+   uint32_t diffuse_tex_count;
+   uint32_t normal_tex_count;
+   uint32_t specular_tex_count;
+   uint32_t opacity_tex_count;
+   uint32_t padding[3]; // So the size if 16-byte aligned
 } VkdfMaterial;
+
+typedef struct {
+   char *diffuse_path;
+   VkdfImage diffuse;
+
+   char *specular_path;
+   VkdfImage specular;
+
+   char *normal_path;
+   VkdfImage normal;
+
+   char *opacity_path;
+   VkdfImage opacity;
+} VkdfTexMaterial;
 
 typedef struct {
    std::vector<VkdfMesh *> meshes;
    std::vector<VkdfMaterial> materials;
+   std::vector<VkdfTexMaterial> tex_materials;
 
    // A single vertex buffer packing vertex data for all meshes, where
    // vertex data for mesh 'm' starts at byte offset 'vertex_buf_offsets[m]'
@@ -61,5 +80,10 @@ vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
 
 void
 vkdf_model_compute_size(VkdfModel *model);
+
+void
+vkdf_model_load_textures(VkdfContext *ctx,
+                         VkCommandPool pool,
+                         VkdfModel *model);
 
 #endif

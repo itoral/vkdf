@@ -23,7 +23,11 @@ struct Material
    vec4 ambient;
    vec4 specular;
    float shininess;
-   float pad1, pad2, pad3;
+   uint diffuse_tex_count;
+   uint normal_tex_count;
+   uint specular_tex_count;
+   uint opacity_tex_count;
+   uint pad0, pad1, pad2;
 };
 
 struct LightColor

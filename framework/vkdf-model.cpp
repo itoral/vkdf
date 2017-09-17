@@ -103,40 +103,160 @@ process_node(VkdfModel *model, const aiScene *scene, const aiNode *node)
       process_node(model, scene, node->mChildren[i]);
 }
 
-static VkdfMaterial
-process_material(aiMaterial *material)
+static char *
+fixup_path_str(const char *str)
 {
-   // FIXME: only supports solid materials for now
-   VkdfMaterial _material;
+   char *new_str = g_strdup(str);
+   char *iter = new_str;
+   while (*iter) {
+      if (*iter == '\\')
+         *iter = '/';
+      iter++;
+   }
 
+   return new_str;
+}
+
+static void
+process_material(aiMaterial *material,
+                 VkdfMaterial *solid_material,
+                 VkdfTexMaterial *tex_material,
+                 const char *file)
+{
+   // Solid materials
    aiColor4D diffuse(0.0f, 0.0f, 0.0f, 0.0f);
    aiGetMaterialColor(material, AI_MATKEY_COLOR_DIFFUSE, &diffuse);
-   memcpy(&_material.diffuse, &diffuse, sizeof(diffuse));
+   memcpy(&solid_material->diffuse, &diffuse, sizeof(diffuse));
 
    aiColor4D ambient(0.0f, 0.0f, 0.0f, 0.0f);
    aiGetMaterialColor(material, AI_MATKEY_COLOR_AMBIENT, &diffuse);
-   memcpy(&_material.ambient, &ambient, sizeof(ambient));
+   memcpy(&solid_material->ambient, &ambient, sizeof(ambient));
 
    aiColor4D specular(0.0f, 0.0f, 0.0f, 0.0f);
    aiGetMaterialColor(material, AI_MATKEY_COLOR_SPECULAR, &specular);
-   memcpy(&_material.specular, &specular, sizeof(specular));
+   memcpy(&solid_material->specular, &specular, sizeof(specular));
 
    aiColor4D shininess(0.0f, 0.0f, 0.0f, 0.0f);
    aiGetMaterialColor(material, AI_MATKEY_SHININESS, &shininess);
-   memcpy(&_material.shininess, &shininess.r, sizeof(float));
+   memcpy(&solid_material->shininess, &shininess.r, sizeof(float));
 
-   return _material;
+   // Texture materials
+   aiString path;
+   uint32_t count;
+
+   memset(tex_material, 0, sizeof(VkdfTexMaterial));
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_NONE);
+   if (count > 0)
+      vkdf_info("model: %s: ignoring %u textures of type NONE\n", file, count);
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_DIFFUSE);
+   if (count > 0) {
+      if (count > 1) {
+         vkdf_info("model: %s: %u DIFFUSE textures, using only one.\n",
+                   file, count);
+      }
+      aiGetMaterialTexture(material, aiTextureType_DIFFUSE, 0, &path);
+      tex_material->diffuse_path = fixup_path_str(path.C_Str());
+   }
+   solid_material->diffuse_tex_count = count;
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_AMBIENT);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type AMBIENT\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_SPECULAR);
+   if (count > 0) {
+      if (count > 1) {
+         vkdf_info("model: %s: %u SPECULAR textures, using only one.\n",
+                   file, count);
+      }
+      aiGetMaterialTexture(material, aiTextureType_SPECULAR, 0, &path);
+      tex_material->specular_path = fixup_path_str(path.C_Str());
+   }
+   solid_material->specular_tex_count = count;
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_SHININESS);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type SHININESS\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_EMISSIVE);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type EMISSIVE\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_NORMALS);
+   if (count > 0) {
+      if (count > 1) {
+         vkdf_info("model: %s: %u NORMAL textures, using only one.\n",
+                   file, count);
+      }
+      aiGetMaterialTexture(material, aiTextureType_NORMALS, 0, &path);
+      tex_material->normal_path = fixup_path_str(path.C_Str());
+   }
+   solid_material->normal_tex_count = count;
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_OPACITY);
+   if (count > 0) {
+      if (count > 1) {
+         vkdf_info("model: %s: %u OPACITY textures, using only one.\n",
+                   file, count);
+      }
+      aiGetMaterialTexture(material, aiTextureType_OPACITY, 0, &path);
+      tex_material->opacity_path = fixup_path_str(path.C_Str());
+   }
+   solid_material->opacity_tex_count = count;
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_LIGHTMAP);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type LIGHTMAP\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_HEIGHT);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type HEIGHT\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_DISPLACEMENT);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type DISPLACEMENT\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_REFLECTION);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type REFLECTION\n",
+                file, count);
+   }
+
+   count = aiGetMaterialTextureCount(material, aiTextureType_UNKNOWN);
+   if (count > 0) {
+      vkdf_info("model: %s: ignoring %u textures of type UNKNOWN\n",
+                file, count);
+   }
 }
 
 static VkdfModel *
-create_model_from_scene(const aiScene *scene)
+create_model_from_scene(const aiScene *scene, const char *file)
 {
    VkdfModel *model = vkdf_model_new();
 
    // Load materials
    for (uint32_t i = 0; i < scene->mNumMaterials; i++) {
+      VkdfMaterial solid_material;
+      VkdfTexMaterial tex_material;
+
       aiMaterial *material = scene->mMaterials[i];
-      model->materials.push_back(process_material(material));
+      process_material(material, &solid_material, &tex_material, file);
+      model->materials.push_back(solid_material);
+      model->tex_materials.push_back(tex_material);
    }
 
    // Load meshes
@@ -162,7 +282,7 @@ vkdf_model_load(const char *file)
       vkdf_fatal("Assimp failed to load model at '%s'. Error: %s.",
                  file, aiGetErrorString());
 
-   VkdfModel *model = create_model_from_scene(scene);
+   VkdfModel *model = create_model_from_scene(scene, file);
 
    aiReleaseImport(scene);
 
@@ -182,6 +302,23 @@ vkdf_model_free(VkdfContext *ctx, VkdfModel *model)
 
    model->materials.clear();
    std::vector<VkdfMaterial>(model->materials).swap(model->materials);
+
+   for (uint32_t i = 0; i < model->tex_materials.size(); i++) {
+      g_free(model->tex_materials[i].diffuse_path);
+      g_free(model->tex_materials[i].specular_path);
+      g_free(model->tex_materials[i].normal_path);
+      g_free(model->tex_materials[i].opacity_path);
+      if (model->tex_materials[i].diffuse.image)
+         vkdf_destroy_image(ctx, &model->tex_materials[i].diffuse);
+      if (model->tex_materials[i].specular.image)
+         vkdf_destroy_image(ctx, &model->tex_materials[i].specular);
+      if (model->tex_materials[i].normal.image)
+         vkdf_destroy_image(ctx, &model->tex_materials[i].normal);
+      if (model->tex_materials[i].opacity.image)
+         vkdf_destroy_image(ctx, &model->tex_materials[i].opacity);
+   }
+   model->tex_materials.clear();
+   std::vector<VkdfTexMaterial>(model->tex_materials).swap(model->tex_materials);
 
    if (model->vertex_buf.buf) {
       vkDestroyBuffer(ctx->device, model->vertex_buf.buf, NULL);
@@ -354,5 +491,48 @@ vkdf_model_compute_size(VkdfModel *model)
    model->size.w = model->size.max.x - model->size.min.x;
    model->size.h = model->size.max.y - model->size.min.y;
    model->size.d = model->size.max.z - model->size.min.z;
+}
+
+void
+vkdf_model_load_textures(VkdfContext *ctx,
+                         VkCommandPool pool,
+                         VkdfModel *model)
+{
+   for (uint32_t i = 0; i < model->materials.size(); i++) {
+      VkdfMaterial *mat = &model->materials[i];
+      VkdfTexMaterial *tex = &model->tex_materials[i];
+
+      if (mat->diffuse_tex_count > 0) {
+         assert(tex->diffuse_path);
+         if (!vkdf_load_image_from_file(ctx, pool,
+                                        tex->diffuse_path, &tex->diffuse)) {
+            mat->diffuse_tex_count = 0;
+         }
+      }
+
+      if (mat->specular_tex_count > 0) {
+         assert(tex->specular_path);
+         if (!vkdf_load_image_from_file(ctx, pool,
+                                        tex->specular_path, &tex->specular)) {
+            mat->specular_tex_count = 0;
+         }
+      }
+
+      if (mat->normal_tex_count > 0) {
+         assert(tex->normal_path);
+         if (!vkdf_load_image_from_file(ctx, pool,
+                                        tex->normal_path, &tex->normal)) {
+            mat->normal_tex_count = 0;
+         }
+      }
+
+      if (mat->opacity_tex_count > 0) {
+         assert(tex->opacity_path);
+         if (!vkdf_load_image_from_file(ctx, pool,
+                                        tex->opacity_path, &tex->opacity)) {
+            mat->opacity_tex_count = 0;
+         }
+      }
+   }
 }
 

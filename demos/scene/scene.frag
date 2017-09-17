@@ -4,10 +4,15 @@
 #extension GL_ARB_shading_language_420pack : enable
 
 struct Material {
-  vec4 diffuse;
-  vec4 ambient;
-  vec4 specular;
-  vec4 shininess;
+   vec4 diffuse;
+   vec4 ambient;
+   vec4 specular;
+   float shininess;
+   uint diffuse_tex_count;
+   uint normal_tex_count;
+   uint specular_tex_count;
+   uint opacity_tex_count;
+   uint pad0, pad1, pad2;
 };
 
 layout(std140, set = 1, binding = 1) uniform ubo_obj_inst_data {
