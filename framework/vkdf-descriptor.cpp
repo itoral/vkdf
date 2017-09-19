@@ -12,7 +12,7 @@ vkdf_create_descriptor_pool(VkdfContext *ctx,
    VkDescriptorPoolCreateInfo pool_ci;
    pool_ci.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
    pool_ci.pNext = NULL;
-   pool_ci.maxSets = 8; // Random choice...
+   pool_ci.maxSets = 32; // Random choice...
    pool_ci.poolSizeCount = 1;
    pool_ci.pPoolSizes = type_count;
    pool_ci.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
