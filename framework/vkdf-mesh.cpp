@@ -153,6 +153,12 @@ vkdf_mesh_free(VkdfContext *ctx, VkdfMesh *mesh)
    mesh->normals.clear();
    std::vector<glm::vec3>(mesh->normals).swap(mesh->normals);
 
+   mesh->tangents.clear();
+   std::vector<glm::vec3>(mesh->tangents).swap(mesh->tangents);
+
+   mesh->bitangents.clear();
+   std::vector<glm::vec3>(mesh->bitangents).swap(mesh->bitangents);
+
    mesh->uvs.clear();
    std::vector<glm::vec2>(mesh->uvs).swap(mesh->uvs);
 
@@ -177,15 +183,19 @@ get_vertex_data_stride(VkdfMesh *mesh)
 {
    uint32_t has_vertices = MIN2(mesh->vertices.size(), 1);
    uint32_t has_normals = MIN2(mesh->normals.size(), 1);
+   uint32_t has_tangents = MIN2(mesh->tangents.size(), 1) * has_normals;
+   uint32_t has_bitangents = MIN2(mesh->bitangents.size(), 1) * has_normals;
    uint32_t has_uv = MIN2(mesh->uvs.size(), 1);
    uint32_t has_material = mesh->material_idx == -1 ? 0 : 1;
 
    assert(has_vertices);
 
-   return has_vertices * sizeof(glm::vec3) +
-          has_normals  * sizeof(glm::vec3) +
-          has_uv       * sizeof(glm::vec2) +
-          has_material * sizeof(int32_t);
+   return has_vertices   * sizeof(glm::vec3) +
+          has_normals    * sizeof(glm::vec3) +
+          has_tangents   * sizeof(glm::vec3) +
+          has_bitangents * sizeof(glm::vec3) +
+          has_uv         * sizeof(glm::vec2) +
+          has_material   * sizeof(int32_t);
 }
 
 uint32_t
@@ -199,17 +209,24 @@ get_vertex_data_size(VkdfMesh *mesh)
 {
    uint32_t vertex_count = mesh->vertices.size();
    uint32_t normal_count = mesh->normals.size();
+   uint32_t tangent_count = mesh->tangents.size() * MIN2(normal_count, 1);
+   uint32_t bitangent_count = mesh->bitangents.size() * MIN2(normal_count, 1);
    uint32_t uv_count = mesh->uvs.size();
    uint32_t material_count = (mesh->material_idx == -1 ? 0 : 1) * vertex_count;
 
    assert(vertex_count > 0 &&
           (vertex_count == normal_count || normal_count == 0) &&
+          (normal_count == tangent_count || tangent_count == 0) &&
+          (normal_count == bitangent_count || bitangent_count == 0) &&
+          (tangent_count == bitangent_count) &&
           (vertex_count == uv_count || uv_count == 0));
 
-   return vertex_count   * sizeof(glm::vec3) + // pos
-          normal_count   * sizeof(glm::vec3) + // normal
-          uv_count       * sizeof(glm::vec2) + // uv
-          material_count * sizeof(int32_t);    // material
+   return vertex_count    * sizeof(glm::vec3) + // pos
+          normal_count    * sizeof(glm::vec3) + // normal
+          tangent_count   * sizeof(glm::vec3) + // tangent
+          bitangent_count * sizeof(glm::vec3) + // bitangent
+          uv_count        * sizeof(glm::vec2) + // uv
+          material_count  * sizeof(int32_t);    // material
 }
 
 VkDeviceSize
@@ -239,6 +256,8 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    bool has_normals = mesh->normals.size() > 0;
+   bool has_tangents = has_normals && mesh->tangents.size() > 0;
+   bool has_bitangents = has_normals && mesh->bitangents.size() > 0;
    bool has_uv = mesh->uvs.size() > 0;
    bool has_material = mesh->material_idx != -1;
 
@@ -255,6 +274,18 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
          elem_size = sizeof(mesh->normals[0]);
          memcpy(map, &mesh->normals[i], elem_size);
          map += elem_size;
+
+         if (has_tangents) {
+            assert(has_bitangents);
+
+            elem_size = sizeof(mesh->tangents[0]);
+            memcpy(map, &mesh->tangents[i], elem_size);
+            map += elem_size;
+
+            elem_size = sizeof(mesh->bitangents[0]);
+            memcpy(map, &mesh->bitangents[i], elem_size);
+            map += elem_size;
+         }
       }
 
       if (has_uv) {

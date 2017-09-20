@@ -15,6 +15,10 @@ process_mesh(const aiScene *scene, const aiMesh *mesh)
    assert(mesh->mPrimitiveTypes == aiPrimitiveType_TRIANGLE);
    VkdfMesh *_mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
+   bool has_tangent = mesh->mTangents != NULL;
+   bool has_bitangent = mesh->mBitangents != NULL;
+   assert(has_tangent == has_bitangent);
+
    // Vertex data
    for (uint32_t i = 0; i < mesh->mNumVertices; i++) {
          glm::vec3 vertex;
@@ -28,6 +32,26 @@ process_mesh(const aiScene *scene, const aiMesh *mesh)
          normal.y = mesh->mNormals[i].y;
          normal.z = mesh->mNormals[i].z;
          _mesh->normals.push_back(normal);
+
+         if (has_tangent) {
+            glm::vec3 tangent;
+            tangent.x = mesh->mTangents[i].x;
+            tangent.y = mesh->mTangents[i].y;
+            tangent.z = mesh->mTangents[i].z;
+
+            glm::vec3 bitangent;
+            bitangent.x = mesh->mBitangents[i].x;
+            bitangent.y = mesh->mBitangents[i].y;
+            bitangent.z = mesh->mBitangents[i].z;
+
+            // Make sure our tangents and bitangents are oriented consistently
+            // for all meshes
+            if (glm::dot(glm::cross(normal, tangent), bitangent) < 0.0f)
+               tangent = tangent * -1.0f;
+
+            _mesh->tangents.push_back(tangent);
+            _mesh->bitangents.push_back(bitangent);
+         }
 
          if (mesh->mTextureCoords[0]) {
              glm::vec2 uv;
@@ -58,6 +82,21 @@ process_node(VkdfModel *model, const aiScene *scene, const aiNode *node)
    for (uint32_t i = 0; i < node->mNumMeshes; i++) {
       aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
       model->meshes.push_back(process_mesh(scene, mesh));
+
+      // Sanity check: all or no meshes have tangents
+      assert(i == 0 ||
+             ((model->meshes[i]->tangents.size() > 0 ) ==
+              (model->meshes[i - 1]->tangents.size() > 0)));
+
+      // Sanity check: The number of tangents and bitangents must match
+      assert(model->meshes[i]->tangents.size() ==
+             model->meshes[i]->bitangents.size());
+
+      // Sanity check: if we have tangents and bitangents, then we must
+      //               have as many as normals
+      assert(model->meshes[i]->tangents.size() == 0 ||
+             (model->meshes[i]->tangents.size() ==
+              model->meshes[i]->normals.size()));
    }
 
    for (uint32_t i = 0; i < node->mNumChildren; i++)
