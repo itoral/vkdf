@@ -632,19 +632,62 @@ create_shadow_map_image(VkdfScene *s, uint32_t size)
                             VK_IMAGE_VIEW_TYPE_2D);
 }
 
+static inline glm::vec3
+compute_light_space_frustum_vertex(glm::mat4 *view_matrix,
+                                   glm::vec3 p,
+                                   glm::vec3 dir,
+                                   float dist)
+{
+   vkdf_vec3_normalize(&dir);
+   p = p + dir * dist;
+   glm::vec4 tmp = (*view_matrix) * glm::vec4(p.x, p.y, p.z, 1.0f);
+   return vec3(tmp);
+}
+
+
 static void
-compute_light_projection(VkdfSceneLight *sl)
+compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
 {
    const glm::mat4 clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
                                     0.0f,-1.0f, 0.0f, 0.0f,
                                     0.0f, 0.0f, 0.5f, 0.0f,
                                     0.0f, 0.0f, 0.5f, 1.0f);
 
-   // FIXME: this only supports spotlights for now
-   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
-
+   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL);
    VkdfSceneShadowSpec *spec = &sl->shadow.spec;
 
+   glm::vec3 f[8];
+   vkdf_compute_frustum_vertices(cam->pos, cam->rot,
+                                 spec->shadow_map_near, spec->shadow_map_far,
+                                 cam->proj.fov, cam->proj.aspect_ratio,
+                                 f);
+
+   VkdfBox box;
+   vkdf_compute_frustum_clip_box(f, &box);
+
+   float w = 2.0f * box.w;
+   float h = 2.0f * box.h;
+   float d = 2.0f * box.d;
+
+   glm::mat4 proj(1.0f);
+   proj[0][0] =  2.0f / w;
+   proj[1][1] =  2.0f / h;
+   proj[2][2] = -2.0f / d;
+   proj[3][3] =  1.0f;
+
+   sl->shadow.proj = clip * proj;
+}
+
+static void
+compute_spotlight_projection(VkdfSceneLight *sl)
+{
+   const glm::mat4 clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
+                                    0.0f,-1.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 0.5f, 0.0f,
+                                    0.0f, 0.0f, 0.5f, 1.0f);
+
+   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+   VkdfSceneShadowSpec *spec = &sl->shadow.spec;
    float cutoff_angle = vkdf_light_get_cutoff_angle(sl->light);
    sl->shadow.proj = clip * glm::perspective(2.0f * cutoff_angle,
                                              1.0f,
@@ -652,10 +695,33 @@ compute_light_projection(VkdfSceneLight *sl)
                                              spec->shadow_map_far);
 }
 
+static void
+compute_light_projection(VkdfScene *s, VkdfSceneLight *sl)
+{
+   switch (vkdf_light_get_type(sl->light)) {
+   case VKDF_LIGHT_DIRECTIONAL:
+      compute_directional_light_projection(sl, s->camera);
+      break;
+   case VKDF_LIGHT_SPOTLIGHT:
+      compute_spotlight_projection(sl);
+      break;
+   default:
+      // FIXME: point lights
+      assert(!"unsupported light type");
+      break;
+   }
+}
+
 static inline void
-compute_light_view_projection(VkdfSceneLight *sl)
+compute_light_view_projection(VkdfScene *s, VkdfSceneLight *sl)
 {
    glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
+
+   // The view matrix for directional lights considers a camera located at the
+   // origin so we need to apply a translation
+   if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL)
+      view = glm::translate(view, -vkdf_camera_get_position(s->camera));
+
    sl->shadow.viewproj = sl->shadow.proj * view;
 }
 
@@ -678,7 +744,7 @@ vkdf_scene_add_light(VkdfScene *s,
                              VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                              VK_FILTER_LINEAR,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST);
-      compute_light_projection(slight);
+      compute_light_projection(s, slight);
       s->has_shadow_caster_lights = true;
    }
 
@@ -1859,18 +1925,31 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
 // there and share the logic between the lights, the camera, etc instead
 // of replicating camera code here.
 static void
-scene_light_compute_frustum(VkdfSceneLight *sl)
+scene_light_compute_frustum(VkdfScene *s, VkdfSceneLight *sl)
 {
-   float aperture_angle =
-      RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
+   // FIXME: support point lights
+   assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
 
-   vkdf_compute_frustum_vertices(
-      vkdf_light_get_position(sl->light),
-      vkdf_light_get_rotation(sl->light),
-      sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
-      aperture_angle,
-      1.0f,
-      sl->frustum.vertices);
+   if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT) {
+      float aperture_angle =
+         RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
+
+      vkdf_compute_frustum_vertices(
+         vkdf_light_get_position(sl->light),
+         vkdf_light_get_rotation(sl->light),
+         sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
+         aperture_angle,
+         1.0f,
+         sl->frustum.vertices);
+   } else if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL) {
+      vkdf_compute_frustum_vertices(vkdf_camera_get_position(s->camera),
+                                    vkdf_camera_get_rotation(s->camera),
+                                    sl->shadow.spec.shadow_map_near,
+                                    sl->shadow.spec.shadow_map_far,
+                                    s->camera->proj.fov,
+                                    s->camera->proj.aspect_ratio,
+                                    sl->frustum.vertices);
+   }
 
    vkdf_compute_frustum_clip_box(sl->frustum.vertices, &sl->frustum.box);
    vkdf_compute_frustum_planes(sl->frustum.vertices, sl->frustum.planes);
@@ -1878,28 +1957,28 @@ scene_light_compute_frustum(VkdfSceneLight *sl)
 }
 
 VkdfBox *
-scene_light_get_frustum_box(VkdfSceneLight *sl)
+scene_light_get_frustum_box(VkdfScene *s, VkdfSceneLight *sl)
 {
    if (sl->frustum.dirty)
-      scene_light_compute_frustum(sl);
+      scene_light_compute_frustum(s, sl);
 
    return &sl->frustum.box;
 }
 
 glm::vec3 *
-scene_light_get_frustum_vertices(VkdfSceneLight *sl)
+scene_light_get_frustum_vertices(VkdfScene *s, VkdfSceneLight *sl)
 {
    if (sl->frustum.dirty)
-      scene_light_compute_frustum(sl);
+      scene_light_compute_frustum(s, sl);
 
    return sl->frustum.vertices;
 }
 
 VkdfPlane *
-scene_light_get_frustum_planes(VkdfSceneLight *sl)
+scene_light_get_frustum_planes(VkdfScene *s, VkdfSceneLight *sl)
 {
    if (sl->frustum.dirty)
-      scene_light_compute_frustum(sl);
+      scene_light_compute_frustum(s, sl);
 
    return sl->frustum.planes;
 }
@@ -1911,12 +1990,12 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
    assert(vkdf_light_casts_shadows(sl->light));
    assert(sl->shadow.shadow_map.image);
 
-   // FIXME: We only support spotlights for now
-   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+   // FIXME: support point lights
+   assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
 
-   // Compute spotlight's frustum bounds for clipping
-   VkdfBox *frustum_box = scene_light_get_frustum_box(sl);
-   VkdfPlane *frustum_planes = scene_light_get_frustum_planes(sl);
+   // Compute light frustum bounds for clipping
+   VkdfBox *frustum_box = scene_light_get_frustum_box(s, sl);
+   VkdfPlane *frustum_planes = scene_light_get_frustum_planes(s, sl);
 
    // Find the list of tiles visible to this light
    // FIXME: thread this?
@@ -1954,9 +2033,10 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                           uint32_t thread_id)
 {
    assert(sl->shadow.shadow_map.image);
-   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
 
-   // FIXME: each thread should be using its own pool! This is not safe
+   // FIXME: support point lights
+   assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
+
    assert(thread_id < s->thread.num_threads);
    sl->shadow.thread_id = thread_id;
    vkdf_create_command_buffer(s->ctx,
@@ -2285,11 +2365,11 @@ find_dynamic_objects_for_light(VkdfScene *s,
    // objects or it doesn't have any visible to the light. Therefore,
    // we need to test for visibility by doing frustum testing for each object.
 
-   // FIXME: We only support spotlights for now
-   assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT);
+   // FIXME: Support point lights
+   assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
 
-   VkdfBox *light_box = scene_light_get_frustum_box(sl);
-   VkdfPlane *light_planes = scene_light_get_frustum_planes(sl);
+   VkdfBox *light_box = scene_light_get_frustum_box(s, sl);
+   VkdfPlane *light_planes = scene_light_get_frustum_planes(s, sl);
 
    uint32_t start_index = 0;
    g_hash_table_iter_init(&iter, s->dynamic.sets);
@@ -2426,7 +2506,7 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
    bool needs_new_shadow_map;
    if (vkdf_light_has_dirty_shadows(l)) {
       needs_new_shadow_map = true;
-      compute_light_view_projection(sl);
+      compute_light_view_projection(s, sl);
       compute_visible_tiles_for_light(s, sl);
    }
 
