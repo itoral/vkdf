@@ -81,6 +81,23 @@ vkdf_compute_view_matrix_for_rotation(glm::vec3 origin, glm::vec3 rot)
    return mat;
 }
 
+glm::mat4
+vkdf_compute_view_matrix_for_direction(glm::vec3 dir)
+{
+   glm::mat4 view(1.0f);
+
+   vkdf_vec3_normalize(&dir);
+
+   float pitch = acosf(vkdf_vec3_module(dir, 1, 0, 1));
+   view = glm::rotate(view, pitch, glm::vec3(1.0f, 0.0f, 0.0f));
+
+   float yaw = atanf(dir.x / dir.z);
+   yaw = dir.z > 0 ? yaw - PI : yaw;
+   view = glm::rotate(view, -yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+
+   return view;
+}
+
 /**
  * Compute rotation matrix for a given rotation vector.
  */
