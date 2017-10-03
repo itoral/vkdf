@@ -268,8 +268,18 @@ vkdf_light_look_at(VkdfLight *l, glm::vec3 target)
 glm::mat4 inline
 vkdf_light_get_view_matrix(VkdfLight *l)
 {
-   return vkdf_compute_view_matrix_for_rotation(glm::vec3(l->origin),
-                                                glm::vec3(l->spot.priv.rot));
+   switch (vkdf_light_get_type(l)) {
+   case VKDF_LIGHT_SPOTLIGHT:
+      return vkdf_compute_view_matrix_for_rotation(glm::vec3(l->origin),
+                                                   glm::vec3(l->spot.priv.rot));
+   case VKDF_LIGHT_DIRECTIONAL:
+      // The result needs to be translated to the camera position by the caller
+      return vkdf_compute_view_matrix_for_direction(glm::vec3(l->origin));
+   default:
+      // FIXME: point lights
+      assert(!"not implemented");
+      break;
+   };
 }
 
 void inline
