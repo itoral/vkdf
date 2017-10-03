@@ -5,6 +5,8 @@ vkdf_mesh_new(VkPrimitiveTopology primitive)
 {
    VkdfMesh *mesh = g_new0(VkdfMesh, 1);
 
+   mesh->active = true;
+
    mesh->vertices = std::vector<glm::vec3>();
    mesh->normals = std::vector<glm::vec3>();
    mesh->uvs = std::vector<glm::vec2>();

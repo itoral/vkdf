@@ -2042,6 +2042,9 @@ record_shadow_map_cmd_buf(VkdfScene *s,
             for (uint32_t i = 0; i < model->meshes.size(); i++) {
                VkdfMesh *mesh = model->meshes[i];
 
+               if (mesh->active == false)
+                  continue;
+
                // Bind pipeline
                // FIXME: can we do without a hashtable lookup here?
                uint32_t vertex_data_stride =
@@ -2124,6 +2127,9 @@ record_shadow_map_cmd_buf(VkdfScene *s,
       // For each mesh in this model...
       for (uint32_t i = 0; i < model->meshes.size(); i++) {
          VkdfMesh *mesh = model->meshes[i];
+
+         if (mesh->active == false)
+            continue;
 
          // Bind pipeline
          // FIXME: can we do without a hashtable lookup here?
