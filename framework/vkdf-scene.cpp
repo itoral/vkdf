@@ -2367,17 +2367,17 @@ record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
       sm_iter = g_list_next(sm_iter);
    }
 
-   // If we got this far we should have at least one light that requires a
-   // new shadow map because of dynamic objects, so we should have recorded
-   // at least one such object above.
-   assert(offset > 0);
+   // If offset > 0 then we have at least one dynamic object that needs
+   // to be updated
+   if (offset > 0) {
+      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                        s->dynamic.ubo.shadow_map.buf.buf,
+                        0, offset, mem);
 
-   vkCmdUpdateBuffer(s->cmd_buf.update_resources,
-                     s->dynamic.ubo.shadow_map.buf.buf,
-                     0, offset, mem);
+      s->cmd_buf.have_resource_updates = true;
+   }
 
-   s->cmd_buf.have_resource_updates = true;
-   return true;
+   return s->cmd_buf.have_resource_updates;
 }
 
 static inline void
