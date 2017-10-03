@@ -2060,6 +2060,10 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                   current_pipeline = pipeline;
                }
 
+               // FIXME: should we make this a callback to the app so it can
+               // have better control of what and how gets rendered to the
+               // shadow map?
+
                // Draw all instances
                const VkDeviceSize offsets[1] = { 0 };
                vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
