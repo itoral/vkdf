@@ -674,7 +674,7 @@ vkdf_scene_add_light(VkdfScene *s,
       slight->shadow.shadow_map =
          create_shadow_map_image(s, spec->shadow_map_size);
       slight->shadow.sampler =
-         vkdf_create_sampler(s->ctx,
+         vkdf_create_shadow_sampler(s->ctx,
                              VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                              VK_FILTER_LINEAR,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST);

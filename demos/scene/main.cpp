@@ -1,7 +1,10 @@
 #include "vkdf.hpp"
 
-const float WIN_WIDTH  = 800.0f;
-const float WIN_HEIGHT = 600.0f;
+//const float WIN_WIDTH  = 800.0f;
+//const float WIN_HEIGHT = 600.0f;
+
+const float WIN_WIDTH  = 1920.0f;
+const float WIN_HEIGHT = 1080.0f;
 
 const uint32_t NUM_OBJECTS = 1000000;
 
@@ -192,12 +195,29 @@ init_scene(SceneResources *res)
 
    glm::vec3 scene_origin = glm::vec3(-500.0f, -500.0f, -500.0f);
    glm::vec3 scene_size = glm::vec3(1000.0f, 1000.0f, 1000.0f);
-   glm::vec3 tile_size = glm::vec3(250.0f, 250.0f, 250.0f);
    uint32_t cache_size = 8;
+#if 1
+   // Final
+   glm::vec3 tile_size = glm::vec3(250.0f, 250.0f, 250.0f);
    res->scene = vkdf_scene_new(ctx,
                                res->camera,
                                scene_origin, scene_size, tile_size, 2,
                                cache_size, 4);
+#elif 0
+   // Naive CPU clipping
+   glm::vec3 tile_size = glm::vec3(25.0f, 25.0f, 25.0f);
+   res->scene = vkdf_scene_new(ctx,
+                               res->camera,
+                               scene_origin, scene_size, tile_size, 1,
+                               cache_size, 1);
+#else
+   // GPU clipping only
+   glm::vec3 tile_size = glm::vec3(1000.0f, 1000.0f, 1000.0f);
+   res->scene = vkdf_scene_new(ctx,
+                               res->camera,
+                               scene_origin, scene_size, tile_size, 1,
+                               cache_size, 1);
+#endif
 
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,

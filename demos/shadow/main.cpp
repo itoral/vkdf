@@ -1796,10 +1796,10 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 
    // Create shadow map sampler
    res->shadow_map_sampler =
-      vkdf_create_sampler(ctx,
-                          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                          VK_FILTER_LINEAR,
-                          VK_SAMPLER_MIPMAP_MODE_NEAREST);
+      vkdf_create_shadow_sampler(ctx,
+                                 VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                 VK_FILTER_LINEAR,
+                                 VK_SAMPLER_MIPMAP_MODE_NEAREST);
 
    // Shaders for scene rendering
    res->vs_module = vkdf_create_shader_module(ctx, "shader.vert.spv");

@@ -9,7 +9,7 @@ layout(std140, set = 1, binding = 0) uniform light_ubo {
      Light light;
 } L;
 
-layout (set = 2, binding = 0) uniform sampler2D shadow_map;
+layout (set = 2, binding = 0) uniform sampler2DShadow shadow_map;
 
 layout(std140, set = 3, binding = 0) uniform material_ubo {
      Material materials[16];

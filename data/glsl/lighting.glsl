@@ -83,7 +83,7 @@ compute_spotlight_cutoff_factor(Light l,
 
 float
 compute_shadow_factor(vec4 light_space_pos,
-                      sampler2D shadow_map,
+                      sampler2DShadow shadow_map,
                       uint shadow_map_size,
                       uint pfc_size)
 {
@@ -115,11 +115,13 @@ compute_shadow_factor(vec4 light_space_pos,
    for (int x = -pfc_size_minus_1; x <= pfc_size_minus_1; x++)
    for (int y = -pfc_size_minus_1; y <= pfc_size_minus_1; y++) {
       // Compute coordinate for this PFC sample
-      vec2 pfc_coord = shadow_map_coord + vec2(x, y) * shadow_map_texel_size;
+      vec3 pfc_coord =
+		vec3(shadow_map_coord + vec2(x, y) * shadow_map_texel_size,
+             light_space_ndc.z);
 
       // Check if the sample is in light or in the shadow
-      if (light_space_ndc.z <= texture(shadow_map, pfc_coord.xy).x)
-         lighted_count += 1.0;
+      lighted_count += texture(shadow_map, pfc_coord);
+
    }
 
    return lighted_count / num_samples;
@@ -133,7 +135,7 @@ compute_lighting(Light l,
                  Material mat,
                  bool receives_shadows,
                  vec4 light_space_pos,
-                 sampler2D shadow_map,
+                 sampler2DShadow shadow_map,
                  uint shadow_map_size,
                  uint pfc_size)
 {

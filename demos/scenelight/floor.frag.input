@@ -30,8 +30,8 @@ layout(std140, set = 2, binding = 1) uniform ubo_shadow_map_data {
    ShadowMapData data[NUM_LIGHTS];
 } SMD;
 
-layout(set = 3, binding = 0) uniform sampler2D shadow_map0;
-layout(set = 3, binding = 1) uniform sampler2D shadow_map1;
+layout(set = 3, binding = 0) uniform sampler2DShadow shadow_map0;
+layout(set = 3, binding = 1) uniform sampler2DShadow shadow_map1;
 
 layout(location = 0) in vec3 in_normal;
 layout(location = 1) flat in uint in_material_idx;
