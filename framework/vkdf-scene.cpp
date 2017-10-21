@@ -3,7 +3,7 @@
 #define JOIN(a,b) (a b)
 #define SHADOW_MAP_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/shadow-map.vert.spv")
 
-static const uint32_t MAX_MATERIALS_PER_MODEL =    8;
+static const uint32_t MAX_MATERIALS_PER_MODEL =   32;
 static const uint32_t MAX_DYNAMIC_OBJECTS     = 1024;
 static const uint32_t MAX_DYNAMIC_MODELS      =  128;
 static const uint32_t MAX_DYNAMIC_MATERIALS   =  MAX_DYNAMIC_MODELS * MAX_MATERIALS_PER_MODEL;

@@ -4,7 +4,7 @@
 #extension GL_ARB_shading_language_420pack : enable
 
 const int MAX_INSTANCES = 16 * 1024;
-const int MAX_MATERIALS_PER_MODEL = 8;
+const int MAX_MATERIALS_PER_MODEL = 32;
 const int NUM_LIGHTS = 2;
 
 layout(push_constant) uniform pcb {
