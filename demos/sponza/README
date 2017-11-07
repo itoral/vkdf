@@ -1,0 +1,19 @@
+This demo requires the Sponza model (included in the repository) and the
+Sponza texture pack (not included). Use the 'download-textures.sh' script
+to download and unpack the textures before running the demo.
+
+Known issues:
+---------------------------------
+
+* There is a clipping bug that make the entire model to be clipped when
+  it is still visible. This can happen when the camera is high up close
+  to the ceiling and looking up.
+
+* There are several performance improvements that can be made. Specifically,
+  the scene renderer can only clip full objects and not individual meshes
+  inside a given object. Since we only have one object with the full model,
+  we are rendering all the meshes in each frame. We could improve this by
+  creating a separate object for each mesh in the model, adding support for
+  mesh-level clipping in the scene renderer or by marking the object as
+  dynamic and do clipping in the demo app at each frame.
+
