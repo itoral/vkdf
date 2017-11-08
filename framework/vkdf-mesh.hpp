@@ -27,6 +27,9 @@ typedef struct {
       glm::vec3 min;
       glm::vec3 max;
    } size;
+
+   /* Position of the center of the mesh (in mesh/model coordinate space) */
+   glm::vec3 pos;
 } VkdfMesh;
 
 VkdfMesh *

@@ -375,4 +375,8 @@ vkdf_mesh_compute_size(VkdfMesh *mesh)
    mesh->size.w = mesh->size.max.x - mesh->size.min.x;
    mesh->size.h = mesh->size.max.y - mesh->size.min.y;
    mesh->size.d = mesh->size.max.z - mesh->size.min.z;
+
+   mesh->pos.x = (mesh->size.max.x + mesh->size.min.x) / 2.0f;
+   mesh->pos.y = (mesh->size.max.y + mesh->size.min.y) / 2.0f;
+   mesh->pos.z = (mesh->size.max.z + mesh->size.min.z) / 2.0f;
 }
