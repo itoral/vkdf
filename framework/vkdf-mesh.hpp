@@ -91,5 +91,29 @@ vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh);
 void
 vkdf_mesh_compute_size(VkdfMesh *mesh);
 
+inline float
+vkdf_mesh_get_width(VkdfMesh *mesh)
+{
+   return mesh->size.w;
+}
+
+inline float
+vkdf_mesh_get_height(VkdfMesh *mesh)
+{
+   return mesh->size.h;
+}
+
+inline float
+vkdf_mesh_get_depth(VkdfMesh *mesh)
+{
+   return mesh->size.d;
+}
+
+inline glm::vec3
+vkdf_mesh_get_center_pos(VkdfMesh *mesh)
+{
+   return mesh->pos;
+}
+
 #endif
 
