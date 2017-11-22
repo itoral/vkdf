@@ -571,7 +571,6 @@ add_static_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    s->static_obj_count++;
    if (is_shadow_caster)
       s->static_shadow_caster_count++;
-   s->dirty = true;
 }
 
 static void
@@ -610,6 +609,7 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
       add_dynamic_object(s, set_id, obj);
 
    s->obj_count++;
+   s->dirty = true;
 }
 
 static inline VkdfImage
@@ -1259,6 +1259,9 @@ create_static_object_ubo(VkdfScene *s)
    // Per-instance data: model matrix, base material index, model index,
    // receives shadows
    uint32_t num_objects = vkdf_scene_get_static_object_count(s);
+   if (num_objects == 0)
+      return;
+
    s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
    s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
    s->ubo.obj.buf =
@@ -1389,6 +1392,9 @@ create_light_ubo(VkdfScene *s)
 static void
 create_static_shadow_map_ubo(VkdfScene *s)
 {
+   if (s->static_shadow_caster_count == 0)
+      return;
+
    // Build per-instance data for each shadow caster object
    s->ubo.shadow_map.inst_size = ALIGN(sizeof(glm::mat4), 16);
    s->ubo.shadow_map.size =
@@ -1836,27 +1842,32 @@ create_shadow_map_pipelines(VkdfScene *s)
       vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
                                             VK_SHADER_STAGE_VERTEX_BIT, false);
 
-   s->shadows.pipeline.models_set =
-      create_descriptor_set(s->ctx, s->ubo.static_pool,
-                            s->shadows.pipeline.models_set_layout);
+   if (s->static_shadow_caster_count > 0) {
+      s->shadows.pipeline.models_set =
+         create_descriptor_set(s->ctx, s->ubo.static_pool,
+                               s->shadows.pipeline.models_set_layout);
+
+      VkDeviceSize ubo_offset = 0;
+      VkDeviceSize ubo_size = s->ubo.shadow_map.size;
+      vkdf_descriptor_set_buffer_update(s->ctx,
+                                        s->shadows.pipeline.models_set,
+                                        s->ubo.shadow_map.buf.buf,
+                                        0, 1, &ubo_offset, &ubo_size,
+                                        false, true);
+   }
 
    s->shadows.pipeline.dyn_models_set =
       create_descriptor_set(s->ctx, s->ubo.static_pool,
                             s->shadows.pipeline.models_set_layout);
 
-   VkDeviceSize ubo_offset = 0;
-   VkDeviceSize ubo_size = s->ubo.shadow_map.size;
-   vkdf_descriptor_set_buffer_update(s->ctx,
-                                     s->shadows.pipeline.models_set,
-                                     s->ubo.shadow_map.buf.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false, true);
 
-   ubo_offset = 0;
-   ubo_size = s->dynamic.ubo.shadow_map.size;
+   VkDeviceSize ubo_offset = 0;
+   VkDeviceSize ubo_size = s->dynamic.ubo.shadow_map.size;
    vkdf_descriptor_set_buffer_update(s->ctx,
                                      s->shadows.pipeline.dyn_models_set,
                                      s->dynamic.ubo.shadow_map.buf.buf,
-                                     0, 1, &ubo_offset, &ubo_size, false, true);
+                                     0, 1, &ubo_offset, &ubo_size,
+                                     false, true);
 
    // Pipeline layout: 2 push constant ranges and 1 set layout
    VkPushConstantRange pcb_ranges[1];
@@ -2085,100 +2096,102 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                       VK_SHADER_STAGE_VERTEX_BIT,
                       0, sizeof(_shadow_map_pcb), &sl->shadow.viewproj[0][0]);
 
-   // Descriptor sets (UBO with object model matrices)
-   vkCmdBindDescriptorSets(sl->shadow.cmd_buf,
-                           VK_PIPELINE_BIND_POINT_GRAPHICS,
-                           s->shadows.pipeline.layout,
-                           0,                               // First decriptor set
-                           1,                               // Descriptor set count
-                           &s->shadows.pipeline.models_set, // Descriptor sets
-                           0,                               // Dynamic offset count
-                           NULL);                           // Dynamic offsets
-
-   // Draw
    VkPipeline current_pipeline = 0;
 
-   // For each tile visible from this light source...
-   GList *tile_iter = sl->shadow.visible;
-   while (tile_iter) {
-      VkdfSceneTile *tile = (VkdfSceneTile *) tile_iter->data;
-      assert(tile);
+   // Render static objects
+   if (s->static_shadow_caster_count > 0) {
+      // Descriptor sets (UBO with object model matrices)
+      vkCmdBindDescriptorSets(sl->shadow.cmd_buf,
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              s->shadows.pipeline.layout,
+                              0,                               // First decriptor set
+                              1,                               // Descriptor set count
+                              &s->shadows.pipeline.models_set, // Descriptor sets
+                              0,                               // Dynamic offset count
+                              NULL);                           // Dynamic offsets
 
-      // For each object type in this tile...
-      GList *set_iter = s->set_ids;
-      while (set_iter) {
-         const char *set_id = (const char *) set_iter->data;
-         VkdfSceneSetInfo *set_info =
-            (VkdfSceneSetInfo *) g_hash_table_lookup(tile->sets, set_id);
+      // For each tile visible from this light source...
+      GList *tile_iter = sl->shadow.visible;
+      while (tile_iter) {
+         VkdfSceneTile *tile = (VkdfSceneTile *) tile_iter->data;
+         assert(tile);
 
-         // If there are shadow caster objects of this type...
-         if (set_info->shadow_caster_count > 0) {
-            // Grab the model (it is shared across all objects in the same type)
-            VkdfObject *obj = (VkdfObject *) set_info->objs->data;
-            VkdfModel *model = obj->model;
-            assert(model);
+         // For each object type in this tile...
+         GList *set_iter = s->set_ids;
+         while (set_iter) {
+            const char *set_id = (const char *) set_iter->data;
+            VkdfSceneSetInfo *set_info =
+               (VkdfSceneSetInfo *) g_hash_table_lookup(tile->sets, set_id);
 
-            // For each mesh in this model...
-            for (uint32_t i = 0; i < model->meshes.size(); i++) {
-               VkdfMesh *mesh = model->meshes[i];
+            // If there are shadow caster objects of this type...
+            if (set_info->shadow_caster_count > 0) {
+               // Grab the model (it is shared across all objects in the same type)
+               VkdfObject *obj = (VkdfObject *) set_info->objs->data;
+               VkdfModel *model = obj->model;
+               assert(model);
 
-               if (mesh->active == false)
-                  continue;
+               // For each mesh in this model...
+               for (uint32_t i = 0; i < model->meshes.size(); i++) {
+                  VkdfMesh *mesh = model->meshes[i];
 
-               // Bind pipeline
-               // FIXME: can we do without a hashtable lookup here?
-               uint32_t vertex_data_stride =
-                  vkdf_mesh_get_vertex_data_stride(mesh);
-               VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
-               void *hash = GINT_TO_POINTER(
-                  hash_shadow_map_pipeline_spec(vertex_data_stride, primitive));
-               VkPipeline pipeline = (VkPipeline)
-                  g_hash_table_lookup(s->shadows.pipeline.pipelines, hash);
-               assert(pipeline);
+                  if (mesh->active == false)
+                     continue;
 
-               if (pipeline != current_pipeline) {
-                  vkCmdBindPipeline(sl->shadow.cmd_buf,
-                                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipeline);
-                  current_pipeline = pipeline;
-               }
+                  // Bind pipeline
+                  // FIXME: can we do without a hashtable lookup here?
+                  uint32_t vertex_data_stride =
+                     vkdf_mesh_get_vertex_data_stride(mesh);
+                  VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(mesh);
+                  void *hash = GINT_TO_POINTER(
+                     hash_shadow_map_pipeline_spec(vertex_data_stride, primitive));
+                  VkPipeline pipeline = (VkPipeline)
+                     g_hash_table_lookup(s->shadows.pipeline.pipelines, hash);
+                  assert(pipeline);
 
-               // FIXME: should we make this a callback to the app so it can
-               // have better control of what and how gets rendered to the
-               // shadow map?
+                  if (pipeline != current_pipeline) {
+                     vkCmdBindPipeline(sl->shadow.cmd_buf,
+                                       VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                       pipeline);
+                     current_pipeline = pipeline;
+                  }
 
-               // Draw all instances
-               const VkDeviceSize offsets[1] = { 0 };
-               vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
-                                      0,                       // Start Binding
-                                      1,                       // Binding Count
-                                      &mesh->vertex_buf.buf,   // Buffers
-                                      offsets);                // Offsets
+                  // FIXME: should we make this a callback to the app so it can
+                  // have better control of what and how gets rendered to the
+                  // shadow map?
 
-               if (!mesh->index_buf.buf) {
-                  vkCmdDraw(sl->shadow.cmd_buf,
-                            mesh->vertices.size(),                // vertex count
-                            set_info->shadow_caster_count,        // instance count
-                            0,                                    // first vertex
-                            set_info->shadow_caster_start_index); // first instance
-               } else {
-                  vkCmdBindIndexBuffer(sl->shadow.cmd_buf,
-                                       mesh->index_buf.buf,       // Buffer
-                                       0,                         // Offset
-                                       VK_INDEX_TYPE_UINT32);     // Index type
+                  // Draw all instances
+                  const VkDeviceSize offsets[1] = { 0 };
+                  vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
+                                         0,                       // Start Binding
+                                         1,                       // Binding Count
+                                         &mesh->vertex_buf.buf,   // Buffers
+                                         offsets);                // Offsets
 
-                  vkCmdDrawIndexed(sl->shadow.cmd_buf,
-                                   mesh->indices.size(),                 // index count
-                                   set_info->shadow_caster_count,        // instance count
-                                   0,                                    // first index
-                                   0,                                    // first vertex
-                                   set_info->shadow_caster_start_index); // first instance
+                  if (!mesh->index_buf.buf) {
+                     vkCmdDraw(sl->shadow.cmd_buf,
+                               mesh->vertices.size(),                // vertex count
+                               set_info->shadow_caster_count,        // instance count
+                               0,                                    // first vertex
+                               set_info->shadow_caster_start_index); // first instance
+                  } else {
+                     vkCmdBindIndexBuffer(sl->shadow.cmd_buf,
+                                          mesh->index_buf.buf,       // Buffer
+                                          0,                         // Offset
+                                          VK_INDEX_TYPE_UINT32);     // Index type
+
+                     vkCmdDrawIndexed(sl->shadow.cmd_buf,
+                                      mesh->indices.size(),                 // index count
+                                      set_info->shadow_caster_count,        // instance count
+                                      0,                                    // first index
+                                      0,                                    // first vertex
+                                      set_info->shadow_caster_start_index); // first instance
+                  }
                }
             }
+            set_iter = g_list_next(set_iter);
          }
-         set_iter = g_list_next(set_iter);
+         tile_iter = g_list_next(tile_iter);
       }
-      tile_iter = g_list_next(tile_iter);
    }
 
    // Render dynamic objects
