@@ -7,6 +7,7 @@ const bool SHOW_SPONZA_FLAG_MESH = false;
 const uint32_t SPONZA_FLAG_MESH_IDX = 4;
 
 const bool SHOW_DEBUG_TILE = false;
+const bool ENABLE_CLIPPING = true;
 
 enum {
    DIFFUSE_TEX_BINDING  = 0,
@@ -74,6 +75,9 @@ typedef struct {
 
    VkdfMesh *tile_mesh;
    VkdfModel *sponza_model;
+   VkdfObject *sponza_obj;
+   VkdfBox sponza_mesh_boxes[400];
+   bool sponza_mesh_visible[400];
 
    VkSampler sampler;
 
@@ -139,6 +143,67 @@ init_ubos(SceneResources *res)
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 }
 
+void
+compute_sponza_mesh_boxes(SceneResources *res)
+{
+   VkdfObject *obj = res->sponza_obj;
+   VkdfModel *model = res->sponza_model;
+
+   // FIXME: we should put this in a helper in the framework
+   for (uint32_t i = 0; i < model->meshes.size(); i++) {
+      VkdfBox box;
+      box.center = obj->pos + vkdf_mesh_get_center_pos(model->meshes[i]) * obj->scale;
+      box.w = vkdf_mesh_get_width(model->meshes[i]) * obj->scale.x / 2.0f;
+      box.h = vkdf_mesh_get_height(model->meshes[i]) * obj->scale.y / 2.0f;
+      box.d = vkdf_mesh_get_depth(model->meshes[i]) * obj->scale.z / 2.0f;
+
+      if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
+         glm::mat4 Model(1.0f);
+         Model = glm::translate(Model, box.center);
+         // FIXME: use quaternion
+         if (obj->rot.x)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
+         if (obj->rot.y)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.y), glm::vec3(0, 1, 0));
+         if (obj->rot.z)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.z), glm::vec3(0, 0, 1));
+         Model = glm::translate(Model, -box.center);
+         vkdf_box_transform(&box, &Model);
+      }
+
+      res->sponza_mesh_boxes[i] = box;
+   }
+}
+
+static inline uint32_t
+frustum_contains_box(VkdfBox *box,
+                     VkdfBox *frustum_box,
+                     VkdfPlane *frustum_planes)
+{
+   if (!vkdf_box_collision(box, frustum_box))
+      return OUTSIDE;
+
+   return vkdf_box_is_in_frustum(box, frustum_planes);
+}
+
+void
+update_visible_sponza_meshes(SceneResources *res)
+{
+   VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
+   if (!vkdf_camera_is_dirty(camera))
+      return;
+
+   VkdfBox *cam_box = vkdf_camera_get_frustum_box(camera);
+   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(camera);
+
+   VkdfModel *model = res->sponza_model;
+   for (uint32_t i = 0; i < model->meshes.size(); i++) {
+      VkdfBox *box = &res->sponza_mesh_boxes[i];
+      res->sponza_mesh_visible[i] =
+         frustum_contains_box(box, cam_box, cam_planes) != OUTSIDE;
+   }
+}
+
 static bool
 record_update_resources_command(VkdfContext *ctx,
                                 VkCommandBuffer cmd_buf,
@@ -165,6 +230,7 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
                       VkPipeline pipeline,
                       VkPipeline pipeline_opacity,
                       VkdfModel *model,
+                      bool *mesh_visible,
                       uint32_t count,
                       uint32_t first_instance,
                       VkPipelineLayout pipeline_layout,
@@ -177,6 +243,9 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
       VkdfMesh *mesh = model->meshes[i];
 
       if (mesh->active == false)
+         continue;
+
+      if (mesh_visible[i] == false)
          continue;
 
       bool has_opacity =
@@ -244,7 +313,6 @@ static void
 record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
                       GHashTable *sets, bool is_dynamic, void *data)
 {
-   assert(is_dynamic == false);
    SceneResources *res = (SceneResources *) data;
 
    // Push constants: camera projection matrix
@@ -285,10 +353,13 @@ record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
          continue;
 
       if (!strcmp(set_id, "sponza")) {
+         if (ENABLE_CLIPPING)
+            update_visible_sponza_meshes(res);
          record_instanced_draw(cmd_buf,
                                res->pipelines.sponza,
                                res->pipelines.sponza_opacity,
                                res->sponza_model,
+                               res->sponza_mesh_visible,
                                set_info->count, set_info->start_index,
                                res->pipelines.layout.base,
                                res->pipelines.layout.opacity,
@@ -555,14 +626,14 @@ init_pipeline_descriptors(SceneResources *res)
                                      res->ubos.camera_view.buf.buf,
                                      0, 1, &ubo_offset, &ubo_size, false, true);
 
-   // Scene static objects descriptor sets
+   // Scene objects descriptor sets
    res->pipelines.descr.obj_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
                             res->pipelines.descr.obj_layout);
 
-   VkdfBuffer *obj_ubo = vkdf_scene_get_object_ubo(res->scene);
-   VkDeviceSize obj_ubo_size = vkdf_scene_get_object_ubo_size(res->scene);
+   VkdfBuffer *obj_ubo = vkdf_scene_get_dynamic_object_ubo(res->scene);
+   VkDeviceSize obj_ubo_size = vkdf_scene_get_dynamic_object_ubo_size(res->scene);
    ubo_offset = 0;
    ubo_size = obj_ubo_size;
    vkdf_descriptor_set_buffer_update(res->ctx,
@@ -570,8 +641,9 @@ init_pipeline_descriptors(SceneResources *res)
                                      obj_ubo->buf,
                                      0, 1, &ubo_offset, &ubo_size, false, true);
 
-   VkdfBuffer *material_ubo = vkdf_scene_get_material_ubo(res->scene);
-   VkDeviceSize material_ubo_size = vkdf_scene_get_material_ubo_size(res->scene);
+   VkdfBuffer *material_ubo = vkdf_scene_get_dynamic_material_ubo(res->scene);
+   VkDeviceSize material_ubo_size =
+      vkdf_scene_get_dynamic_material_ubo_size(res->scene);
    ubo_offset = 0;
    ubo_size = material_ubo_size;
    vkdf_descriptor_set_buffer_update(res->ctx,
@@ -740,6 +812,9 @@ init_meshes(SceneResources *res)
    if (SHOW_SPONZA_FLAG_MESH == false)
       res->sponza_model->meshes[SPONZA_FLAG_MESH_IDX]->active = false;
 
+   // Make all meshes visible by default
+   memset(res->sponza_mesh_visible, 1, sizeof(res->sponza_mesh_visible));
+
    // 2D tile mesh, used for debug display
    res->tile_mesh = vkdf_2d_tile_mesh_new(res->ctx);
    vkdf_mesh_fill_vertex_buffer(res->ctx, res->tile_mesh);
@@ -756,9 +831,13 @@ init_objects(SceneResources *res)
    vkdf_object_set_scale(obj, glm::vec3(0.02f, 0.02f, 0.02f));
    vkdf_object_set_material_idx_base(obj, 0);
    vkdf_object_set_lighting_behavior(obj, true, true);
+   vkdf_object_set_dynamic(obj, true);
    vkdf_scene_add_object(res->scene, "sponza", obj);
 
    vkdf_scene_prepare(res->scene);
+
+   res->sponza_obj = obj;
+   compute_sponza_mesh_boxes(res);
 }
 
 static void
@@ -1059,10 +1138,16 @@ update_camera(SceneResources *res)
 }
 
 static void
+update_objects(SceneResources *res)
+{
+}
+
+static void
 scene_update(VkdfContext *ctx, void *data)
 {
    SceneResources *res = (SceneResources *) data;
    update_camera(res); // FIXME: this should be a callback called from the scene
+   update_objects(res);
    vkdf_scene_update_cmd_bufs(res->scene);
    vkdf_camera_set_dirty(res->camera, false); // FIXME: this should be done by the scene
 }
@@ -1227,7 +1312,7 @@ main()
    VkdfContext ctx;
    SceneResources resources;
 
-   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, true);
+   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
    vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
