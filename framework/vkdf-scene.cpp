@@ -1368,12 +1368,18 @@ create_light_ubo(VkdfScene *s)
    const uint32_t shadow_map_data_size =
       ALIGN(sizeof(struct _shadow_map_ubo_data) , 16);
 
-   const uint32_t
-      inst_data_size = light_data_size + shadow_map_data_size;
+   /* Since our shadow map data comes after the light data, make sure it
+    * starts at a valid offset.
+    */
+   VkDeviceSize ubo_offset_alignment =
+      s->ctx->phy_device_props.limits.minUniformBufferOffsetAlignment;
 
    s->ubo.light.light_data_size = num_lights * light_data_size;
+   s->ubo.light.shadow_map_data_offset =
+      ALIGN(s->ubo.light.light_data_size, ubo_offset_alignment);
    s->ubo.light.shadow_map_data_size = num_lights * shadow_map_data_size;
-   s->ubo.light.size = num_lights * inst_data_size;
+   s->ubo.light.size = s->ubo.light.shadow_map_data_offset +
+                       s->ubo.light.shadow_map_data_size;
    s->ubo.light.buf = vkdf_create_buffer(s->ctx, 0,
                                          s->ubo.light.size,
                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
@@ -2321,7 +2327,7 @@ record_scene_light_resource_updates(VkdfScene *s)
 
    // Next we update dirty shadow mapping descriptions
    if (s->shadow_maps_dirty) {
-      VkDeviceSize base_offset = num_lights * light_inst_size;
+      VkDeviceSize base_offset = s->ubo.light.shadow_map_data_offset;
       VkDeviceSize shadow_map_inst_size =
          ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
       for (uint32_t i = 0; i < num_lights; i++) {

@@ -247,6 +247,7 @@ struct _VkdfScene {
       struct {
          VkdfBuffer buf;
          VkDeviceSize light_data_size;
+         VkDeviceSize shadow_map_data_offset;
          VkDeviceSize shadow_map_data_size;
          VkDeviceSize size;
       } light;
@@ -421,7 +422,7 @@ inline void
 vkdf_scene_get_shadow_map_ubo_range(VkdfScene *s,
                                     VkDeviceSize *offset, VkDeviceSize *size)
 {
-   *offset = s->ubo.light.light_data_size;
+   *offset = s->ubo.light.shadow_map_data_offset;
    *size = s->ubo.light.shadow_map_data_size;
 }
 
