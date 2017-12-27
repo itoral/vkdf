@@ -1,6 +1,8 @@
 #ifndef __VKDF_SCENE_H__
 #define __VKDF_SCENE_H__
 
+#define SCENE_MAX_GBUFFER_SIZE 8
+
 typedef struct {
    uint32_t shadow_map_size;
    float shadow_map_near;
@@ -87,6 +89,7 @@ struct _VkdfSceneTile {
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, void *);
 typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
+typedef void (*VkdfSceneGbufferMergeCommandsCB)(VkdfContext *, VkCommandBuffer, void *);
 
 struct _dim {
    float w;
@@ -109,26 +112,40 @@ struct _VkdfScene {
    GList *set_ids;
    GList *models;
 
+   bool deferred;
+
    // Render target
    struct {
       uint32_t width;
       uint32_t height;
       VkdfImage color;
       VkdfImage depth;
+
+      uint32_t gbuffer_size;
+      VkdfImage gbuffer[SCENE_MAX_GBUFFER_SIZE];
    } rt;
 
    // Render passes
    struct {
       VkClearValue clear_values[2];
+      VkClearValue gbuffer_clear_values[SCENE_MAX_GBUFFER_SIZE + 1];
       bool do_color_clear;
+      bool do_deferred;
+
       struct {
          VkRenderPass renderpass;
          VkFramebuffer framebuffer;
       } static_geom;
+
       struct {
          VkRenderPass renderpass;
          VkFramebuffer framebuffer;
       } dynamic_geom;
+
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } gbuffer_merge;
    } rp;
 
    VkFramebuffer framebuffer;
@@ -193,6 +210,7 @@ struct _VkdfScene {
       VkCommandBuffer update_resources;  // Command buffer for resource updates
       bool have_resource_updates;
       VkCommandBuffer *present;          // Command buffer rt -> swapchin copies
+      VkCommandBuffer gbuffer_merge;     // Command buffer for deferred gbuffer merge
    } cmd_buf;
 
    struct {
@@ -200,6 +218,7 @@ struct _VkdfScene {
       VkSemaphore shadow_maps_sem;
       VkSemaphore draw_static_sem;
       VkSemaphore draw_sem;
+      VkSemaphore gbuffer_merge_sem;
       VkSemaphore postprocess_sem;
       VkFence present_fence;
       bool present_fence_active;
@@ -209,6 +228,7 @@ struct _VkdfScene {
       VkdfSceneUpdateResourcesCB update_resources;
       VkdfSceneCommandsCB record_commands;
       VkdfScenePostprocessCB postprocess;
+      VkdfSceneGbufferMergeCommandsCB gbuffer_merge;
       void *data;
    } callbacks;
 
@@ -491,5 +511,24 @@ vkdf_scene_optimize_clip_boxes(VkdfScene *s);
 VkSemaphore
 vkdf_scene_draw(VkdfScene *s);
 
+void
+vkdf_scene_enable_deferred_rendering(VkdfScene *s,
+                                     VkdfSceneGbufferMergeCommandsCB merge_cb,
+                                     uint32_t gbuffer_size,
+                                     VkFormat format0,
+                                     ...);
+
+inline VkRenderPass
+vkdf_scene_get_gbuffer_merge_render_pass(VkdfScene *s)
+{
+   return s->rp.gbuffer_merge.renderpass;
+}
+
+inline VkdfImage *
+vkdf_scene_get_gbuffer_image(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->rt.gbuffer_size);
+   return &s->rt.gbuffer[index];
+}
 
 #endif

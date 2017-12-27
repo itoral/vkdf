@@ -87,6 +87,19 @@ create_render_target(VkdfScene *s,
    s->rt.width = width;
    s->rt.height = height;
 
+   s->rt.depth =
+      vkdf_create_image(s->ctx,
+                        s->rt.width,
+                        s->rt.height,
+                        1,
+                        VK_IMAGE_TYPE_2D,
+                        VK_FORMAT_D32_SFLOAT,
+                        0,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        VK_IMAGE_ASPECT_DEPTH_BIT,
+                        VK_IMAGE_VIEW_TYPE_2D);
+
    s->rt.color =
       vkdf_create_image(s->ctx,
                         s->rt.width,
@@ -100,20 +113,52 @@ create_render_target(VkdfScene *s,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         VK_IMAGE_ASPECT_COLOR_BIT,
                         VK_IMAGE_VIEW_TYPE_2D);
-
-   s->rt.depth =
-      vkdf_create_image(s->ctx,
-                        s->rt.width,
-                        s->rt.height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        VK_FORMAT_D32_SFLOAT,
-                        0,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_DEPTH_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
 }
+
+void
+vkdf_scene_enable_deferred_rendering(VkdfScene *s,
+                                     VkdfSceneGbufferMergeCommandsCB merge_cb,
+                                     uint32_t gbuffer_size,
+                                     VkFormat format0,
+                                     ...)
+{
+   s->rp.do_deferred = true;
+
+   s->callbacks.gbuffer_merge = merge_cb;
+
+   assert(gbuffer_size > 0 && gbuffer_size <= SCENE_MAX_GBUFFER_SIZE);
+
+   uint32_t max_attachments =
+      s->ctx->phy_device_props.limits.maxFragmentOutputAttachments;
+   if (gbuffer_size > max_attachments)
+      vkdf_fatal("Gbuffer has too many attachments");
+
+   s->rt.gbuffer_size = gbuffer_size;
+
+   // Create gbuffer images
+   va_list ap;
+   va_start(ap, format0);
+
+   for (uint32_t i = 0; i < gbuffer_size; i++) {
+      VkFormat format_i = i == 0 ? format0 : (VkFormat) va_arg(ap, uint32_t);
+      s->rt.gbuffer[i] =
+         vkdf_create_image(s->ctx,
+                           s->rt.width,
+                           s->rt.height,
+                           1,
+                           VK_IMAGE_TYPE_2D,
+                           format_i,
+                           VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                              VK_IMAGE_USAGE_SAMPLED_BIT,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                           VK_IMAGE_ASPECT_COLOR_BIT,
+                           VK_IMAGE_VIEW_TYPE_2D);
+   }
+
+   va_end(ap);
+}
+
 
 VkdfScene *
 vkdf_scene_new(VkdfContext *ctx,
@@ -233,6 +278,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.shadow_maps_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
    s->sync.present_fence = vkdf_create_fence(s->ctx);
 
@@ -344,14 +390,20 @@ vkdf_scene_free(VkdfScene *s)
       vkdf_thread_pool_free(s->thread.pool);
    }
 
-   vkdf_destroy_image(s->ctx, &s->rt.color);
    vkdf_destroy_image(s->ctx, &s->rt.depth);
+   vkdf_destroy_image(s->ctx, &s->rt.color);
+   for (uint32_t i = 0; i < s->rt.gbuffer_size; i++)
+      vkdf_destroy_image(s->ctx, &s->rt.gbuffer[i]);
 
    vkDestroyRenderPass(s->ctx->device, s->rp.static_geom.renderpass, NULL);
    vkDestroyRenderPass(s->ctx->device, s->rp.dynamic_geom.renderpass, NULL);
+   if (s->rp.do_deferred)
+      vkDestroyRenderPass(s->ctx->device, s->rp.gbuffer_merge.renderpass, NULL);
 
    vkDestroyFramebuffer(s->ctx->device, s->rp.static_geom.framebuffer, NULL);
    vkDestroyFramebuffer(s->ctx->device, s->rp.dynamic_geom.framebuffer, NULL);
+   if (s->rp.do_deferred)
+      vkDestroyFramebuffer(s->ctx->device, s->rp.gbuffer_merge.framebuffer, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++)
       g_list_free(s->thread.tile_data[i].visible);
@@ -381,6 +433,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.shadow_maps_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_static_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.gbuffer_merge_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.present_fence, NULL);
 
@@ -803,11 +856,21 @@ build_primary_cmd_buf(VkdfScene *s)
    vkdf_command_buffer_begin(cmd_buf,
                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
+   uint32_t num_clear_values;
+   VkClearValue *clear_values;
+   if (s->rp.do_deferred) {
+      num_clear_values = 1 + s->rt.gbuffer_size;
+      clear_values = s->rp.gbuffer_clear_values;
+   } else {
+      num_clear_values = 2;
+      clear_values = s->rp.clear_values;
+   }
+
    VkRenderPassBeginInfo rp_begin =
       vkdf_renderpass_begin_new(s->rp.static_geom.renderpass,
                                 s->rp.static_geom.framebuffer,
                                 0, 0, s->rt.width, s->rt.height,
-                                2, s->rp.clear_values);
+                                num_clear_values, clear_values);
 
    vkCmdBeginRenderPass(cmd_buf,
                         &rp_begin,
@@ -2662,7 +2725,7 @@ vkdf_scene_set_clear_values(VkdfScene *s,
 }
 
 static void
-prepare_scene_render_passes(VkdfScene *s)
+prepare_forward_render_passes(VkdfScene *s)
 {
    s->rp.static_geom.renderpass =
       vkdf_renderpass_simple_new(s->ctx,
@@ -2707,6 +2770,171 @@ prepare_scene_render_passes(VkdfScene *s)
                               1, &s->rt.depth);
 }
 
+static VkRenderPass
+create_gbuffer_render_pass(VkdfScene *s, bool for_dynamic)
+{
+   // Attachments: Depth + Gbuffer
+   VkAttachmentDescription atts[1 + SCENE_MAX_GBUFFER_SIZE];
+
+   uint32_t idx = 0;
+   int32_t depth_idx;
+   int32_t gbuffer_idx;
+
+   // Attachent 0: Depth
+   assert(s->rt.depth.format != VK_FORMAT_UNDEFINED);
+   atts[idx].format = s->rt.depth.format;
+   atts[idx].samples = VK_SAMPLE_COUNT_1_BIT;
+   atts[idx].loadOp = for_dynamic ? VK_ATTACHMENT_LOAD_OP_LOAD :
+                                    VK_ATTACHMENT_LOAD_OP_CLEAR;
+   atts[idx].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+   atts[idx].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   atts[idx].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+   atts[idx].initialLayout = for_dynamic ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
+                                           VK_IMAGE_LAYOUT_UNDEFINED;
+   atts[idx].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+   atts[idx].flags = 0;
+   depth_idx = idx++;
+
+   // Attachments 1..N: Gbuffer
+   gbuffer_idx = idx;
+   for (uint32_t i = 0; i < s->rt.gbuffer_size; i++) {
+      atts[idx].format = s->rt.gbuffer[i].format;
+      atts[idx].samples = VK_SAMPLE_COUNT_1_BIT;
+      atts[idx].loadOp =  for_dynamic ? VK_ATTACHMENT_LOAD_OP_LOAD :
+                                        VK_ATTACHMENT_LOAD_OP_CLEAR;
+      atts[idx].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+      atts[idx].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+      atts[idx].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+      atts[idx].initialLayout = for_dynamic ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
+                                              VK_IMAGE_LAYOUT_UNDEFINED;
+      atts[idx].finalLayout = for_dynamic ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
+                                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      atts[idx].flags = 0;
+      idx++;
+   }
+
+   // Attachment references from subpasses
+   VkAttachmentReference depth_ref;
+   depth_ref.attachment = depth_idx;
+   depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+   VkAttachmentReference gbuffer_ref[SCENE_MAX_GBUFFER_SIZE];
+   for (uint32_t i = 0; i < s->rt.gbuffer_size; i++) {
+      gbuffer_ref[i].attachment = gbuffer_idx + i;
+      gbuffer_ref[i].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+   }
+
+   // Single subpass
+   VkSubpassDescription subpass[1];
+   subpass[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+   subpass[0].flags = 0;
+   subpass[0].inputAttachmentCount = 0;
+   subpass[0].pInputAttachments = NULL;
+   subpass[0].colorAttachmentCount = s->rt.gbuffer_size;
+   subpass[0].pColorAttachments = gbuffer_ref;
+   subpass[0].pResolveAttachments = NULL;
+   subpass[0].pDepthStencilAttachment = &depth_ref;
+   subpass[0].preserveAttachmentCount = 0;
+   subpass[0].pPreserveAttachments = NULL;
+
+   // Create render pass
+   VkRenderPassCreateInfo rp_info;
+   rp_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+   rp_info.pNext = NULL;
+   rp_info.attachmentCount = s->rt.gbuffer_size + 1;
+   rp_info.pAttachments = atts;
+   rp_info.subpassCount = 1;
+   rp_info.pSubpasses = subpass;
+   rp_info.dependencyCount = 0;
+   rp_info.pDependencies = NULL;
+   rp_info.flags = 0;
+
+   VkRenderPass render_pass;
+   VK_CHECK(vkCreateRenderPass(s->ctx->device, &rp_info, NULL, &render_pass));
+
+   return render_pass;
+}
+
+static inline VkRenderPass
+create_gbuffer_merge_render_pass(VkdfScene *s)
+{
+   // The gbuffer merge shader can output in the clear color for pixels not
+   // rendered in the gbuffer pass. This gives apps the opportunity to skip
+   // the color clear in this pass.
+   return  vkdf_renderpass_simple_new(
+               s->ctx,
+               s->rt.color.format,
+               s->rp.do_color_clear ?
+                  VK_ATTACHMENT_LOAD_OP_CLEAR :
+                  VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+               VK_ATTACHMENT_STORE_OP_STORE,
+               VK_IMAGE_LAYOUT_UNDEFINED,
+               VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+               VK_FORMAT_UNDEFINED,
+               VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+               VK_ATTACHMENT_STORE_OP_DONT_CARE,
+               VK_IMAGE_LAYOUT_UNDEFINED,
+               VK_IMAGE_LAYOUT_UNDEFINED);
+}
+
+static void
+prepare_deferred_render_passes(VkdfScene *s)
+{
+   /* Setup depth and gbuffer color clear values */
+   VkClearValue depth_clear;
+   depth_clear.depthStencil.depth = 1.0f;
+   depth_clear.depthStencil.stencil = 0;
+   s->rp.gbuffer_clear_values[0] = depth_clear;
+
+   for (uint32_t i = 0; i < s->rt.gbuffer_size; i++) {
+      VkClearValue color_clear;
+      color_clear.color.float32[0] = 0.0f;
+      color_clear.color.float32[1] = 0.0f;
+      color_clear.color.float32[2] = 0.0f;
+      color_clear.color.float32[3] = 0.0f;
+      s->rp.gbuffer_clear_values[i + 1] = color_clear;
+   }
+
+   /* Depth + GBuffer render passes */
+   s->rp.static_geom.renderpass = create_gbuffer_render_pass(s, false);
+
+   s->rp.static_geom.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->rp.static_geom.renderpass,
+                              s->rt.depth.view,
+                              s->rt.width, s->rt.height,
+                              s->rt.gbuffer_size, s->rt.gbuffer);
+
+   s->rp.dynamic_geom.renderpass = create_gbuffer_render_pass(s, true);
+
+   s->rp.dynamic_geom.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->rp.dynamic_geom.renderpass,
+                              s->rt.depth.view,
+                              s->rt.width, s->rt.height,
+                              s->rt.gbuffer_size, s->rt.gbuffer);
+
+   /* Merge render pass */
+   s->rp.gbuffer_merge.renderpass = create_gbuffer_merge_render_pass(s);
+
+   s->rp.gbuffer_merge.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->rp.gbuffer_merge.renderpass,
+                              s->rt.color.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+}
+
+static void
+prepare_scene_render_passes(VkdfScene *s)
+{
+   if (!s->rp.do_deferred) {
+      prepare_forward_render_passes(s);
+   } else {
+      prepare_deferred_render_passes(s);
+   }
+}
+
 static void
 prepare_scene_present_command_buffers(VkdfScene *s)
 {
@@ -2714,6 +2942,52 @@ prepare_scene_present_command_buffers(VkdfScene *s)
       vkdf_command_buffer_create_for_present(s->ctx,
                                              s->cmd_buf.pool[0],
                                              s->rt.color.image);
+}
+
+static void
+prepare_scene_gbuffer_merge_command_buffer(VkdfScene *s)
+{
+   assert(!s->cmd_buf.gbuffer_merge);
+
+   VkCommandBuffer cmd_buf;
+
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &cmd_buf);
+
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+   uint32_t num_clear_values;
+   VkClearValue *clear_values;
+   if (s->rp.do_color_clear) {
+      num_clear_values = 1;
+      clear_values = s->rp.clear_values;
+   } else {
+      num_clear_values = 0;
+      clear_values = NULL;
+   }
+
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->rp.gbuffer_merge.renderpass,
+                                s->rp.gbuffer_merge.framebuffer,
+                                0, 0, s->rt.width, s->rt.height,
+                                num_clear_values, clear_values);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   s->callbacks.gbuffer_merge(s->ctx, cmd_buf, s->callbacks.data);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   vkdf_command_buffer_end(cmd_buf);
+
+   s->cmd_buf.gbuffer_merge = cmd_buf;
 }
 
 /**
@@ -3009,6 +3283,10 @@ update_cmd_bufs(VkdfScene *s)
 void
 vkdf_scene_update_cmd_bufs(VkdfScene *s)
 {
+   // Record the gbuffer merge command if needed
+   if (s->rp.do_deferred && !s->cmd_buf.gbuffer_merge)
+      prepare_scene_gbuffer_merge_command_buffer(s);
+
    // Check if any fences have been signaled and if so free any disposable
    // command buffers that were pending execution on signaled fences
    if (check_fences(s))
@@ -3165,6 +3443,19 @@ vkdf_scene_draw(VkdfScene *s)
    wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
    wait_sem_count = 1;
    wait_sem = &s->sync.draw_sem;
+
+   // Deferred merge pass
+   if (s->rp.do_deferred) {
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.gbuffer_merge,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.gbuffer_merge_sem);
+
+      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.gbuffer_merge_sem;
+   }
 
    // Execute postprocess callback
    if (s->callbacks.postprocess) {
