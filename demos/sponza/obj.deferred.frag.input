@@ -1,0 +1,57 @@
+#version 450
+
+#extension GL_ARB_separate_shader_objects : enable
+
+const int MAX_MATERIALS_PER_MODEL = 32;
+const int MAX_MODELS = 128;
+
+INCLUDE(../../data/glsl/lighting.glsl)
+
+layout(std140, set = 1, binding = 1) uniform material_ubo
+{
+   Material materials[MAX_MATERIALS_PER_MODEL * MAX_MODELS];
+} Mat;
+
+layout(set = 3, binding = 0) uniform sampler2D tex_diffuse;
+layout(set = 3, binding = 1) uniform sampler2D tex_normal;
+layout(set = 3, binding = 2) uniform sampler2D tex_specular;
+
+layout(location = 0) in vec2 in_uv;
+layout(location = 1) flat in uint in_material_idx;
+layout(location = 2) in vec3 in_tangent_normal;
+layout(location = 3) in vec4 in_tangent_pos;
+layout(location = 4) in vec4 in_tangent_light_pos;
+layout(location = 5) in vec4 in_light_space_pos;
+
+layout(location = 0) out vec4 out_tangent_pos;
+layout(location = 1) out vec4 out_tangent_normal;
+layout(location = 2) out vec4 out_tangent_light_pos;
+layout(location = 3) out vec4 out_light_space_pos;
+layout(location = 4) out vec4 out_diffuse;
+layout(location = 5) out vec4 out_specular;
+
+void main()
+{
+   // Tangent position, viewdir, lightpos, light-space pos
+   out_tangent_pos = in_tangent_pos;
+   out_tangent_light_pos = in_tangent_light_pos;
+   out_light_space_pos = in_light_space_pos;
+
+   Material mat = Mat.materials[in_material_idx];
+
+   // Tangent normal
+   if (mat.normal_tex_count > 0)
+      out_tangent_normal = vec4(normalize(texture(tex_normal, in_uv).rgb * 2.0 - 1.0), 0);
+   else
+      out_tangent_normal = vec4(in_tangent_normal, 0);
+
+   // Diffuse
+   if (mat.diffuse_tex_count > 0)
+      mat.diffuse = texture(tex_diffuse, in_uv);
+   out_diffuse = mat.diffuse;
+
+   // Specular + Shininess
+   if (mat.specular_tex_count > 0)
+      mat.specular = texture(tex_specular, in_uv);
+   out_specular = vec4(mat.specular.xyz, mat.shininess);
+}

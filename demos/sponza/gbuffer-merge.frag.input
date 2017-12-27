@@ -1,0 +1,70 @@
+#version 450
+
+#extension GL_ARB_separate_shader_objects : enable
+
+INCLUDE(../../data/glsl/lighting.glsl)
+
+layout(location = 0) in vec2 in_uv;
+
+layout(std140, set = 0, binding = 0) uniform light_ubo
+{
+   Light sun;
+} L;
+
+struct ShadowMapData {
+   mat4 light_viewproj;
+   uint shadow_map_size;
+   uint pfc_kernel_size;
+};
+
+layout(std140, set = 0, binding = 1) uniform ubo_shadow_map_data {
+   ShadowMapData shadow_map_data;
+} SMD;
+
+layout(set = 1, binding = 0) uniform sampler2DShadow shadow_map;
+
+layout(set = 2, binding = 0) uniform sampler2D tex_tangent_position;
+layout(set = 2, binding = 1) uniform sampler2D tex_tangent_normal;
+layout(set = 2, binding = 2) uniform sampler2D tex_tangent_light_position;
+layout(set = 2, binding = 3) uniform sampler2D tex_light_space_position;
+layout(set = 2, binding = 4) uniform sampler2D tex_diffuse;
+layout(set = 2, binding = 5) uniform sampler2D tex_specular;
+
+layout(location = 0) out vec4 out_color;
+
+void main()
+{
+   Light light = L.sun;
+   light.pos = texture(tex_tangent_light_position, in_uv);
+
+   // This pixel was never rendered in the gbuffer pass so use the clear
+   // color
+   if (light.pos == vec4(0.0, 0.0, 0.0, 0.0)) {
+      out_color = vec4(0.2, 0.4, 0.8, 1.0);
+   } else {
+      Material mat;
+      mat.diffuse = texture(tex_diffuse, in_uv);
+      mat.ambient = mat.diffuse;
+      mat.specular = texture(tex_specular, in_uv);
+      mat.shininess = mat.specular.w;
+
+      vec4 tangent_position = texture(tex_tangent_position, in_uv);
+      vec4 tangent_normal = texture(tex_tangent_normal, in_uv);
+      vec4 tangent_view_dir = -tangent_position;
+      vec4 light_space_position = texture(tex_light_space_position, in_uv);
+
+      LightColor color =
+         compute_lighting(light,
+                          tangent_position.xyz,
+                          tangent_normal.xyz,
+                          tangent_view_dir.xyz,
+                          mat,
+                          true,
+                          light_space_position,
+                          shadow_map,
+                          SMD.shadow_map_data.shadow_map_size,
+                          SMD.shadow_map_data.pfc_kernel_size);
+
+      out_color = vec4(color.diffuse + color.ambient + color.specular, 1);
+   }
+}

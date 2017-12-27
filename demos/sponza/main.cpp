@@ -1,13 +1,15 @@
 #include "vkdf.hpp"
 
 const float WIN_WIDTH  = 1024.0f;
-const float WIN_HEIGHT = 728.0f;
+const float WIN_HEIGHT = 768.0f;
 
 const bool SHOW_SPONZA_FLAG_MESH = false;
 const uint32_t SPONZA_FLAG_MESH_IDX = 4;
 
 const bool SHOW_DEBUG_TILE = false;
 const bool ENABLE_CLIPPING = true;
+
+const bool ENABLE_DEFERRED_RENDERING = false;
 
 enum {
    DIFFUSE_TEX_BINDING  = 0,
@@ -38,24 +40,33 @@ typedef struct {
       struct {
          VkDescriptorSetLayout camera_view_layout;
          VkDescriptorSet camera_view_set;
+
          VkDescriptorSetLayout obj_layout;
          VkDescriptorSet obj_set;
+
+         VkDescriptorSetLayout light_layout;
+         VkDescriptorSet light_set;
+
          VkDescriptorSetLayout obj_tex_layout;
          VkDescriptorSetLayout obj_tex_opacity_layout;
          VkDescriptorSet obj_tex_set[32];
-         VkDescriptorSetLayout light_layout;
-         VkDescriptorSet light_set;
+
          VkDescriptorSetLayout shadow_map_sampler_layout;
          VkDescriptorSet shadow_map_sampler_set;
+
+         VkDescriptorSetLayout gbuffer_tex_layout;
+         VkDescriptorSet gbuffer_tex_set;
       } descr;
 
       struct {
          VkPipelineLayout base;
          VkPipelineLayout opacity;
+         VkPipelineLayout gbuffer_merge;
       } layout;
 
       VkPipeline sponza;
       VkPipeline sponza_opacity;
+      VkPipeline gbuffer_merge;
    } pipelines;
 
    struct {
@@ -70,7 +81,18 @@ typedef struct {
          VkShaderModule vs;
          VkShaderModule fs;
          VkShaderModule fs_opacity;
-      } obj;
+      } obj_forward;
+
+      struct {
+         VkShaderModule vs;
+         VkShaderModule fs;
+         VkShaderModule fs_opacity;
+      } obj_gbuffer;
+
+      struct {
+         VkShaderModule vs;
+         VkShaderModule fs;
+      } gbuffer_merge;
    } shaders;
 
    VkdfMesh *tile_mesh;
@@ -79,7 +101,8 @@ typedef struct {
    VkdfBox sponza_mesh_boxes[400];
    bool sponza_mesh_visible[400];
 
-   VkSampler sampler;
+   VkSampler sponza_sampler;
+   VkSampler gbuffer_sampler;
 
    struct {
       VkdfImage image;
@@ -261,10 +284,16 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
       assert(tex_set);
 
       // Bind descriptor set with texture samplers for this material
+      //
+      // FIXME: validation layers assume that this unbinds any descriptor set
+      // after 3, even when count is only 1. We have bound the shadow map
+      // sampler at set 4 (for forward rendering), so that would be a problem.
+      // Need to check if this is how the spec states it works or if it is a
+      // bug in the validation layers it works just fine in Intel).
       vkCmdBindDescriptorSets(cmd_buf,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               required_pipeline_layout,
-                              4,                        // First decriptor set
+                              3,                        // First decriptor set
                               1,                        // Descriptor set count
                               &tex_set,                 // Descriptor sets
                               0,                        // Dynamic offset count
@@ -310,9 +339,85 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
 }
 
 static void
-record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
-                      GHashTable *sets, bool is_dynamic, void *data)
+record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
+                              GHashTable *sets, bool is_dynamic, void *data)
 {
+   assert(!ENABLE_DEFERRED_RENDERING);
+
+   SceneResources *res = (SceneResources *) data;
+
+   // Push constants: camera projection matrix
+   struct PCBData pcb_data;
+   glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->scene->camera);
+   memcpy(&pcb_data.proj, &(*proj)[0][0], sizeof(pcb_data.proj));
+
+   vkCmdPushConstants(cmd_buf,
+                      res->pipelines.layout.base,
+                      VK_SHADER_STAGE_VERTEX_BIT,
+                      0, sizeof(pcb_data), &pcb_data);
+
+   // Bind descriptor sets for everything but textures
+   VkDescriptorSet descriptor_sets[] = {
+      res->pipelines.descr.camera_view_set,
+      res->pipelines.descr.obj_set,
+      res->pipelines.descr.light_set,
+      0,
+      res->pipelines.descr.shadow_map_sampler_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           res->pipelines.layout.base,
+                           0,                        // First decriptor set
+                           3,                        // Descriptor set count
+                           descriptor_sets,          // Descriptor sets
+                           0,                        // Dynamic offset count
+                           NULL);                    // Dynamic offsets
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           res->pipelines.layout.base,
+                           4,                        // First decriptor set
+                           1,                        // Descriptor set count
+                           &descriptor_sets[4],      // Descriptor sets
+                           0,                        // Dynamic offset count
+                           NULL);                    // Dynamic offsets
+
+   // Render objects
+   char *set_id;
+   VkdfSceneSetInfo *set_info;
+   GHashTableIter iter;
+   g_hash_table_iter_init(&iter, sets);
+   while (g_hash_table_iter_next(&iter, (void **)&set_id, (void **)&set_info)) {
+      if (!set_info || set_info->count == 0)
+         continue;
+
+      if (!strcmp(set_id, "sponza")) {
+         if (ENABLE_CLIPPING)
+            update_visible_sponza_meshes(res);
+         record_instanced_draw(
+               cmd_buf,
+               res->pipelines.sponza,
+               res->pipelines.sponza_opacity,
+               res->sponza_model,
+               res->sponza_mesh_visible,
+               set_info->count, set_info->start_index,
+               res->pipelines.layout.base,
+               res->pipelines.layout.opacity,
+               res->pipelines.descr.obj_tex_set);
+         continue;
+      }
+
+      assert(!"unkown object category");
+   }
+}
+
+static void
+record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
+                              GHashTable *sets, bool is_dynamic, void *data)
+{
+   assert(ENABLE_DEFERRED_RENDERING);
+
    SceneResources *res = (SceneResources *) data;
 
    // Push constants: camera projection matrix
@@ -331,14 +436,13 @@ record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
       res->pipelines.descr.camera_view_set,
       res->pipelines.descr.obj_set,
       res->pipelines.descr.light_set,
-      res->pipelines.descr.shadow_map_sampler_set,
    };
 
    vkCmdBindDescriptorSets(cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipelines.layout.base,
                            0,                        // First decriptor set
-                           4,                        // Descriptor set count
+                           3,                        // Descriptor set count
                            descriptor_sets,          // Descriptor sets
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
@@ -355,20 +459,55 @@ record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
       if (!strcmp(set_id, "sponza")) {
          if (ENABLE_CLIPPING)
             update_visible_sponza_meshes(res);
-         record_instanced_draw(cmd_buf,
-                               res->pipelines.sponza,
-                               res->pipelines.sponza_opacity,
-                               res->sponza_model,
-                               res->sponza_mesh_visible,
-                               set_info->count, set_info->start_index,
-                               res->pipelines.layout.base,
-                               res->pipelines.layout.opacity,
-                               res->pipelines.descr.obj_tex_set);
+         record_instanced_draw(
+            cmd_buf,
+            res->pipelines.sponza,
+            res->pipelines.sponza_opacity,
+            res->sponza_model,
+            res->sponza_mesh_visible,
+            set_info->count, set_info->start_index,
+            res->pipelines.layout.base,
+            res->pipelines.layout.opacity,
+            res->pipelines.descr.obj_tex_set);
          continue;
       }
 
       assert(!"unkown object category");
    }
+}
+
+static void
+record_gbuffer_merge_commands(VkdfContext *ctx,
+                              VkCommandBuffer cmd_buf,
+                              void *data)
+{
+   assert(ENABLE_DEFERRED_RENDERING);
+
+   SceneResources *res = (SceneResources *) data;
+
+   // Bind descriptor sets
+   VkDescriptorSet descriptor_sets[] = {
+      res->pipelines.descr.light_set,
+      res->pipelines.descr.shadow_map_sampler_set,
+      res->pipelines.descr.gbuffer_tex_set
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           res->pipelines.layout.gbuffer_merge,
+                           0,                        // First decriptor set
+                           3,                        // Descriptor set count
+                           descriptor_sets,          // Descriptor sets
+                           0,                        // Dynamic offset count
+                           NULL);                    // Dynamic offsets
+
+   // Bind pipeline
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     res->pipelines.gbuffer_merge);
+
+   // Draw 4 vertices for the full-screen quad
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
 }
 
 static void
@@ -394,7 +533,9 @@ init_scene(SceneResources *res)
 
    vkdf_scene_set_scene_callbacks(res->scene,
                                   record_update_resources_command,
-                                  record_scene_commands,
+                                  ENABLE_DEFERRED_RENDERING ?
+                                     record_gbuffer_scene_commands :
+                                     record_forward_scene_commands,
                                   SHOW_DEBUG_TILE ? postprocess_draw : NULL,
                                   res);
 
@@ -408,7 +549,13 @@ init_scene(SceneResources *res)
    depth_clear.depthStencil.depth = 1.0f;
    depth_clear.depthStencil.stencil = 0;
 
-   vkdf_scene_set_clear_values(res->scene, &color_clear, &depth_clear);
+   /* For deferred rendering we skip color clearing. Pixels not rendered during
+    * the gbuffer pass will be rendered in the clear color in the shader
+    * directly, saving us a full render target clear per frame.
+    */
+   vkdf_scene_set_clear_values(res->scene,
+                               ENABLE_DEFERRED_RENDERING ? NULL : &color_clear,
+                               &depth_clear);
 
    glm::vec4 direction = glm::vec4(1.0f, -4.5f, -1.25f, 0.0f);
    glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -430,15 +577,36 @@ init_scene(SceneResources *res)
 
    vkdf_scene_add_light(res->scene, light, &shadow_spec);
 
-   // Select source image for debug output
-   res->debug.image = res->scene->lights[0]->shadow.shadow_map;
+   if (ENABLE_DEFERRED_RENDERING) {
+      /* 0: Tangent position        : rgba16f
+       * 1: Tangent normal          : rgba16f
+       * 2: Tangent light position  : rgba16f
+       * 3: Light space position    : rgba32f
+       * 4: Diffuse color           : rgba8
+       * 5: Specular color          : rgba8
+       */
+      vkdf_scene_enable_deferred_rendering(res->scene,
+                                           record_gbuffer_merge_commands,
+                                           6,
+                                           VK_FORMAT_R16G16B16A16_SFLOAT,
+                                           VK_FORMAT_R16G16B16A16_SFLOAT,
+                                           VK_FORMAT_R16G16B16A16_SFLOAT,
+                                           VK_FORMAT_R32G32B32A32_SFLOAT,
+                                           VK_FORMAT_R8G8B8A8_UNORM,
+                                           VK_FORMAT_R8G8B8A8_UNORM);
+   }
 
+   // Select source image for debug output
+   if (!ENABLE_DEFERRED_RENDERING)
+      res->debug.image = res->scene->lights[0]->shadow.shadow_map;
+   else
+      res->debug.image = res->scene->rt.gbuffer[0];
 }
 
 static void
 create_sponza_texture_descriptor_sets(SceneResources *res)
 {
-   res->sampler =
+   res->sponza_sampler =
          vkdf_create_sampler(res->ctx,
                              VK_SAMPLER_ADDRESS_MODE_REPEAT,
                              VK_FILTER_LINEAR,
@@ -473,7 +641,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          assert(tm->diffuse.view);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             tm->diffuse.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             DIFFUSE_TEX_BINDING, 1);
@@ -481,7 +649,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          vkdf_info("Material %u doesn't have a diffuse texture\n", i);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             model->tex_materials[16].diffuse.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             DIFFUSE_TEX_BINDING, 1);
@@ -491,7 +659,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          assert(tm->specular.view);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             tm->specular.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             SPECULAR_TEX_BINDING, 1);
@@ -499,7 +667,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          vkdf_info("Material %u doesn't have a specular texture\n", i);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             model->tex_materials[1].normal.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             SPECULAR_TEX_BINDING, 1);
@@ -509,7 +677,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          assert(tm->normal.view);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             tm->normal.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             NORMAL_TEX_BINDING, 1);
@@ -517,7 +685,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          vkdf_info("Material %u doesn't have a normal texture\n", i);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             model->tex_materials[1].normal.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             NORMAL_TEX_BINDING, 1);
@@ -527,7 +695,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          assert(tm->opacity.view);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sampler,
+                                            res->sponza_sampler,
                                             tm->opacity.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             OPACITY_TEX_BINDING, 1);
@@ -536,12 +704,12 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
 }
 
 static void
-init_pipeline_descriptors(SceneResources *res)
+init_pipeline_descriptors(SceneResources *res, bool deferred)
 {
    if (res->pipelines.layout.base)
       return;
 
-   // Setup pipeline push constant range
+   /* Push constannt range */
    VkPushConstantRange pcb_range;
    pcb_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
    pcb_range.offset = 0;
@@ -551,7 +719,7 @@ init_pipeline_descriptors(SceneResources *res)
       pcb_range,
    };
 
-   // Setup pipeline layout
+   /* Descriptor set layouts */
    res->pipelines.descr.camera_view_layout =
       vkdf_create_ubo_descriptor_set_layout(res->ctx, 0, 1,
                                             VK_SHADER_STAGE_VERTEX_BIT,
@@ -583,13 +751,13 @@ init_pipeline_descriptors(SceneResources *res)
       vkdf_create_sampler_descriptor_set_layout(res->ctx, 0, 1,
                                                 VK_SHADER_STAGE_FRAGMENT_BIT);
 
-   /* Base pipeline layout */
+   /* Base pipeline layout (for opaque meshes) */
    VkDescriptorSetLayout layouts[] = {
       res->pipelines.descr.camera_view_layout,
       res->pipelines.descr.obj_layout,
       res->pipelines.descr.light_layout,
-      res->pipelines.descr.shadow_map_sampler_layout,
       res->pipelines.descr.obj_tex_layout,
+      res->pipelines.descr.shadow_map_sampler_layout,
    };
 
    VkPipelineLayoutCreateInfo pipeline_layout_info;
@@ -597,7 +765,7 @@ init_pipeline_descriptors(SceneResources *res)
    pipeline_layout_info.pNext = NULL;
    pipeline_layout_info.pushConstantRangeCount = 1;
    pipeline_layout_info.pPushConstantRanges = pcb_ranges;
-   pipeline_layout_info.setLayoutCount = 5;
+   pipeline_layout_info.setLayoutCount = deferred ? 4 : 5;
    pipeline_layout_info.pSetLayouts = layouts;
    pipeline_layout_info.flags = 0;
 
@@ -606,14 +774,16 @@ init_pipeline_descriptors(SceneResources *res)
                                    NULL,
                                    &res->pipelines.layout.base));
 
-   /* Pipeline layout with opacity texture */
-   layouts[4] = res->pipelines.descr.obj_tex_opacity_layout;
+   /* Opacity pipeline (for meshes with opacity textures) */
+   layouts[3] = res->pipelines.descr.obj_tex_opacity_layout;
    VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
                                    &pipeline_layout_info,
                                    NULL,
                                    &res->pipelines.layout.opacity));
 
-   // Camera view matrix descriptor set
+   /* Descriptor sets */
+
+   /* Camera view matrix */
    res->pipelines.descr.camera_view_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
@@ -626,7 +796,7 @@ init_pipeline_descriptors(SceneResources *res)
                                      res->ubos.camera_view.buf.buf,
                                      0, 1, &ubo_offset, &ubo_size, false, true);
 
-   // Scene objects descriptor sets
+   /* Object data */
    res->pipelines.descr.obj_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
@@ -651,10 +821,7 @@ init_pipeline_descriptors(SceneResources *res)
                                      material_ubo->buf,
                                      1, 1, &ubo_offset, &ubo_size, false, true);
 
-   // Descriptor sets with textures for the sponza model (one set per mesh)
-   create_sponza_texture_descriptor_sets(res);
-
-   // Light & shadow map descriptions descriptor set
+   /* Light and shadow map descriptions */
    res->pipelines.descr.light_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.static_ubo_pool,
@@ -673,17 +840,20 @@ init_pipeline_descriptors(SceneResources *res)
                                      light_ubo->buf,
                                      1, 1, &ubo_offset, &ubo_size, false, true);
 
-   // Shadow map sampler descriptor set
+   /* Samplers for the sponza model textures (one set per mesh) */
+   create_sponza_texture_descriptor_sets(res);
+
+   /* Shadow map sampler */
    res->pipelines.descr.shadow_map_sampler_set =
       create_descriptor_set(res->ctx,
                             res->descriptor_pool.sampler_pool,
                             res->pipelines.descr.shadow_map_sampler_layout);
 
    VkSampler shadow_map_sampler =
-         vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
+      vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
 
    VkdfImage *shadow_map_image =
-         vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+      vkdf_scene_light_get_shadow_map_image(res->scene, 0);
 
    vkdf_descriptor_set_sampler_update(res->ctx,
                                       res->pipelines.descr.shadow_map_sampler_set,
@@ -691,6 +861,480 @@ init_pipeline_descriptors(SceneResources *res)
                                       shadow_map_image->view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       0, 1);
+
+   if (!deferred)
+      return;
+
+   /* Gbuffer textures */
+   res->pipelines.descr.gbuffer_tex_layout =
+      vkdf_create_sampler_descriptor_set_layout(res->ctx, 0,
+                                                res->scene->rt.gbuffer_size,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   res->pipelines.descr.gbuffer_tex_set =
+      create_descriptor_set(res->ctx,
+                            res->descriptor_pool.sampler_pool,
+                            res->pipelines.descr.gbuffer_tex_layout);
+
+   res->gbuffer_sampler =
+      vkdf_create_sampler(res->ctx,
+                          VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                          VK_FILTER_NEAREST,
+                          VK_SAMPLER_MIPMAP_MODE_NEAREST);
+
+   for (uint32_t i = 0; i < res->scene->rt.gbuffer_size; i++) {
+      VkdfImage *image = vkdf_scene_get_gbuffer_image(res->scene, i);
+      vkdf_descriptor_set_sampler_update(res->ctx,
+                                         res->pipelines.descr.gbuffer_tex_set,
+                                         res->gbuffer_sampler,
+                                         image->view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                         i, 1);
+   }
+
+   /* Gbuffer merge pipeline layout */
+   VkDescriptorSetLayout gbuffer_merge_layouts[] = {
+      res->pipelines.descr.light_layout,
+      res->pipelines.descr.shadow_map_sampler_layout,
+      res->pipelines.descr.gbuffer_tex_layout
+   };
+
+   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   pipeline_layout_info.pNext = NULL;
+   pipeline_layout_info.pushConstantRangeCount = 0;
+   pipeline_layout_info.pPushConstantRanges = NULL;
+   pipeline_layout_info.setLayoutCount = 3;
+   pipeline_layout_info.pSetLayouts = gbuffer_merge_layouts;
+   pipeline_layout_info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
+                                   &pipeline_layout_info,
+                                   NULL,
+                                   &res->pipelines.layout.gbuffer_merge));
+}
+
+static void
+create_forward_pipelines(SceneResources *res,
+                         uint32_t num_vi_bindings,
+                         VkVertexInputBindingDescription *vi_bindings,
+                         uint32_t num_vi_attribs,
+                         VkVertexInputAttributeDescription *vi_attribs)
+{
+   /* FIXME: In theory we need to create different pipelines for static and
+    * dynamic objects since we have different render passes associated
+    * with them, they are compatible from the POV of the pipeline though...
+    */
+   VkRenderPass renderpass = vkdf_scene_get_static_render_pass(res->scene);
+
+   res->pipelines.sponza =
+      vkdf_create_gfx_pipeline(res->ctx,
+                               NULL,
+                               1,
+                               vi_bindings,
+                               6,
+                               vi_attribs,
+                               true,
+                               renderpass,
+                               res->pipelines.layout.base,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                               VK_CULL_MODE_BACK_BIT,
+                               res->shaders.obj_forward.vs,
+                               res->shaders.obj_forward.fs);
+
+   res->pipelines.sponza_opacity =
+      vkdf_create_gfx_pipeline(res->ctx,
+                               NULL,
+                               1,
+                               vi_bindings,
+                               6,
+                               vi_attribs,
+                               true,
+                               renderpass,
+                               res->pipelines.layout.opacity,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                               VK_CULL_MODE_BACK_BIT,
+                               res->shaders.obj_forward.vs,
+                               res->shaders.obj_forward.fs_opacity);
+}
+
+static VkPipeline
+create_gbuffer_pipeline(VkdfContext *ctx,
+                        VkPipelineCache *pipeline_cache,
+                        uint32_t num_vi_bindings,
+                        VkVertexInputBindingDescription *vi_bindings,
+                        uint32_t num_vi_attribs,
+                        VkVertexInputAttributeDescription *vi_attribs,
+                        VkRenderPass render_pass,
+                        uint32_t gbuffer_size,
+                        VkPipelineLayout pipeline_layout,
+                        VkPrimitiveTopology primitive,
+                        VkCullModeFlagBits cull_mode,
+                        VkShaderModule vs_module,
+                        VkShaderModule fs_module)
+{
+   VkPipeline pipeline;
+
+   // Vertex input
+   VkPipelineVertexInputStateCreateInfo vi;
+   vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+   vi.pNext = NULL;
+   vi.flags = 0;
+   vi.vertexBindingDescriptionCount = num_vi_bindings;
+   vi.pVertexBindingDescriptions = vi_bindings;
+   vi.vertexAttributeDescriptionCount = num_vi_attribs;
+   vi.pVertexAttributeDescriptions = vi_attribs;
+
+   // Input assembly
+   VkPipelineInputAssemblyStateCreateInfo ia;
+   ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+   ia.pNext = NULL;
+   ia.flags = 0;
+   ia.primitiveRestartEnable = VK_FALSE;
+   ia.topology = primitive;
+
+   // Viewport (Dynamic)
+   VkPipelineViewportStateCreateInfo vp = {};
+   vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+   vp.pNext = NULL;
+   vp.flags = 0;
+   vp.viewportCount = 1;
+   vp.scissorCount = 1;
+   vp.pScissors = NULL;
+   vp.pViewports = NULL;
+
+   // Rasterization
+   VkPipelineRasterizationStateCreateInfo rs;
+   rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+   rs.pNext = NULL;
+   rs.flags = 0;
+   rs.polygonMode = VK_POLYGON_MODE_FILL;
+   rs.cullMode = cull_mode;
+   rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+   rs.depthClampEnable = VK_FALSE;
+   rs.rasterizerDiscardEnable = VK_FALSE;
+   rs.depthBiasEnable = VK_FALSE;
+   rs.depthBiasConstantFactor = 0;
+   rs.depthBiasClamp = 0;
+   rs.depthBiasSlopeFactor = 0;
+   rs.lineWidth = 1.0f;
+
+   // Multisampling
+   VkPipelineMultisampleStateCreateInfo ms;
+   ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+   ms.pNext = NULL;
+   ms.flags = 0;
+   ms.pSampleMask = NULL;
+   ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+   ms.sampleShadingEnable = VK_FALSE;
+   ms.alphaToCoverageEnable = VK_FALSE;
+   ms.alphaToOneEnable = VK_FALSE;
+   ms.minSampleShading = 0.0;
+
+   // Depth / Stencil
+   VkPipelineDepthStencilStateCreateInfo ds;
+   ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+   ds.pNext = NULL;
+   ds.flags = 0;
+   ds.depthTestEnable = VK_TRUE;
+   ds.depthWriteEnable = VK_TRUE;
+   ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+   ds.depthBoundsTestEnable = VK_FALSE;
+   ds.minDepthBounds = 0;
+   ds.maxDepthBounds = 0;
+   ds.stencilTestEnable = VK_FALSE;
+   ds.back.failOp = VK_STENCIL_OP_KEEP;
+   ds.back.passOp = VK_STENCIL_OP_KEEP;
+   ds.back.compareOp = VK_COMPARE_OP_ALWAYS;
+   ds.back.compareMask = 0;
+   ds.back.reference = 0;
+   ds.back.depthFailOp = VK_STENCIL_OP_KEEP;
+   ds.back.writeMask = 0;
+   ds.front = ds.back;
+
+   // Blending
+   VkPipelineColorBlendAttachmentState att_state[SCENE_MAX_GBUFFER_SIZE];
+   assert(gbuffer_size <= SCENE_MAX_GBUFFER_SIZE);
+   for (uint32_t i = 0; i < gbuffer_size; i++) {
+      att_state[i].colorWriteMask = 0xf;
+      att_state[i].blendEnable = VK_FALSE;
+      att_state[i].alphaBlendOp = VK_BLEND_OP_ADD;
+      att_state[i].colorBlendOp = VK_BLEND_OP_ADD;
+      att_state[i].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      att_state[i].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      att_state[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      att_state[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+   }
+
+   VkPipelineColorBlendStateCreateInfo cb;
+   cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+   cb.flags = 0;
+   cb.pNext = NULL;
+   cb.attachmentCount = gbuffer_size;
+   cb.pAttachments = att_state;
+   cb.logicOpEnable = VK_FALSE;
+   cb.logicOp = VK_LOGIC_OP_COPY;
+   cb.blendConstants[0] = 1.0f;
+   cb.blendConstants[1] = 1.0f;
+   cb.blendConstants[2] = 1.0f;
+   cb.blendConstants[3] = 1.0f;
+
+   // Dynamic state (Viewport, Scissor)
+   int dynamic_state_count = 0;
+   VkDynamicState dynamic_state_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
+   memset(dynamic_state_enables, 0, sizeof(dynamic_state_enables));
+   dynamic_state_enables[dynamic_state_count++] =
+      VK_DYNAMIC_STATE_SCISSOR;
+   dynamic_state_enables[dynamic_state_count++] =
+      VK_DYNAMIC_STATE_VIEWPORT;
+
+   VkPipelineDynamicStateCreateInfo dynamic_state_info;
+   dynamic_state_info.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamic_state_info.pNext = NULL;
+   dynamic_state_info.flags = 0;
+   dynamic_state_info.pDynamicStates = dynamic_state_enables;
+   dynamic_state_info.dynamicStateCount = dynamic_state_count;
+
+   // Shader stages
+   VkPipelineShaderStageCreateInfo shader_stages[2];
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        vs_module);
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        fs_module);
+
+   // Create pipeline
+   VkGraphicsPipelineCreateInfo pipeline_info;
+   pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+   pipeline_info.pNext = NULL;
+   pipeline_info.layout = pipeline_layout;
+   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
+   pipeline_info.basePipelineIndex = 0;
+   pipeline_info.flags = 0;
+   pipeline_info.pVertexInputState = &vi;
+   pipeline_info.pInputAssemblyState = &ia;
+   pipeline_info.pTessellationState = NULL;
+   pipeline_info.pViewportState = &vp;
+   pipeline_info.pRasterizationState = &rs;
+   pipeline_info.pMultisampleState = &ms;
+   pipeline_info.pDepthStencilState = &ds;
+   pipeline_info.pColorBlendState = &cb;
+   pipeline_info.pDynamicState = &dynamic_state_info;
+   pipeline_info.pStages = shader_stages;
+   pipeline_info.stageCount = 2;
+   pipeline_info.renderPass = render_pass;
+   pipeline_info.subpass = 0;
+
+   VK_CHECK(vkCreateGraphicsPipelines(ctx->device,
+                                      pipeline_cache ? *pipeline_cache : NULL,
+                                      1,
+                                      &pipeline_info,
+                                      NULL,
+                                      &pipeline));
+
+   return pipeline;
+}
+
+static VkPipeline
+create_gbuffer_merge_pipeline(SceneResources *res)
+{
+   VkPipeline pipeline;
+
+   // Vertex input
+   VkPipelineVertexInputStateCreateInfo vi;
+   vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+   vi.pNext = NULL;
+   vi.flags = 0;
+   vi.vertexBindingDescriptionCount = 0;
+   vi.pVertexBindingDescriptions = NULL;
+   vi.vertexAttributeDescriptionCount = 0;
+   vi.pVertexAttributeDescriptions = NULL;
+
+   // Input assembly
+   VkPipelineInputAssemblyStateCreateInfo ia;
+   ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+   ia.pNext = NULL;
+   ia.flags = 0;
+   ia.primitiveRestartEnable = VK_FALSE;
+   ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+
+   // Viewport (Dynamic)
+   VkPipelineViewportStateCreateInfo vp = {};
+   vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+   vp.pNext = NULL;
+   vp.flags = 0;
+   vp.viewportCount = 1;
+   vp.scissorCount = 1;
+   vp.pScissors = NULL;
+   vp.pViewports = NULL;
+
+   // Rasterization
+   VkPipelineRasterizationStateCreateInfo rs;
+   rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+   rs.pNext = NULL;
+   rs.flags = 0;
+   rs.polygonMode = VK_POLYGON_MODE_FILL;
+   rs.cullMode = VK_CULL_MODE_BACK_BIT;
+   rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+   rs.depthClampEnable = VK_FALSE;
+   rs.rasterizerDiscardEnable = VK_FALSE;
+   rs.depthBiasEnable = VK_FALSE;
+   rs.depthBiasConstantFactor = 0;
+   rs.depthBiasClamp = 0;
+   rs.depthBiasSlopeFactor = 0;
+   rs.lineWidth = 1.0f;
+
+   // Multisampling
+   VkPipelineMultisampleStateCreateInfo ms;
+   ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+   ms.pNext = NULL;
+   ms.flags = 0;
+   ms.pSampleMask = NULL;
+   ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+   ms.sampleShadingEnable = VK_FALSE;
+   ms.alphaToCoverageEnable = VK_FALSE;
+   ms.alphaToOneEnable = VK_FALSE;
+   ms.minSampleShading = 0.0;
+
+   // Depth / Stencil
+   VkPipelineDepthStencilStateCreateInfo ds;
+   ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+   ds.pNext = NULL;
+   ds.flags = 0;
+   ds.depthTestEnable = VK_FALSE;
+   ds.depthWriteEnable = VK_FALSE;
+   ds.depthCompareOp = VK_COMPARE_OP_EQUAL;
+   ds.depthBoundsTestEnable = VK_FALSE;
+   ds.minDepthBounds = 0;
+   ds.maxDepthBounds = 0;
+   ds.stencilTestEnable = VK_FALSE;
+   ds.back.failOp = VK_STENCIL_OP_KEEP;
+   ds.back.passOp = VK_STENCIL_OP_KEEP;
+   ds.back.compareOp = VK_COMPARE_OP_ALWAYS;
+   ds.back.compareMask = 0;
+   ds.back.reference = 0;
+   ds.back.depthFailOp = VK_STENCIL_OP_KEEP;
+   ds.back.writeMask = 0;
+   ds.front = ds.back;
+
+   // Blending
+   VkPipelineColorBlendAttachmentState att_state[1];
+   att_state[0].colorWriteMask = 0xf;
+   att_state[0].blendEnable = VK_FALSE;
+   att_state[0].alphaBlendOp = VK_BLEND_OP_ADD;
+   att_state[0].colorBlendOp = VK_BLEND_OP_ADD;
+   att_state[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+   att_state[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+   att_state[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+   att_state[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+
+   VkPipelineColorBlendStateCreateInfo cb;
+   cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+   cb.flags = 0;
+   cb.pNext = NULL;
+   cb.attachmentCount = 1;
+   cb.pAttachments = att_state;
+   cb.logicOpEnable = VK_FALSE;
+   cb.logicOp = VK_LOGIC_OP_COPY;
+   cb.blendConstants[0] = 1.0f;
+   cb.blendConstants[1] = 1.0f;
+   cb.blendConstants[2] = 1.0f;
+   cb.blendConstants[3] = 1.0f;
+
+   // Dynamic state (Viewport, Scissor)
+   int dynamic_state_count = 0;
+   VkDynamicState dynamic_state_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
+   memset(dynamic_state_enables, 0, sizeof(dynamic_state_enables));
+   dynamic_state_enables[dynamic_state_count++] =
+      VK_DYNAMIC_STATE_SCISSOR;
+   dynamic_state_enables[dynamic_state_count++] =
+      VK_DYNAMIC_STATE_VIEWPORT;
+
+   VkPipelineDynamicStateCreateInfo dynamic_state_info;
+   dynamic_state_info.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamic_state_info.pNext = NULL;
+   dynamic_state_info.flags = 0;
+   dynamic_state_info.pDynamicStates = dynamic_state_enables;
+   dynamic_state_info.dynamicStateCount = dynamic_state_count;
+
+   // Shader stages
+   VkPipelineShaderStageCreateInfo shader_stages[2];
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        res->shaders.gbuffer_merge.vs);
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        res->shaders.gbuffer_merge.fs);
+
+   // Create pipeline
+   VkGraphicsPipelineCreateInfo pipeline_info;
+   pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+   pipeline_info.pNext = NULL;
+   pipeline_info.layout = res->pipelines.layout.gbuffer_merge;
+   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
+   pipeline_info.basePipelineIndex = 0;
+   pipeline_info.flags = 0;
+   pipeline_info.pVertexInputState = &vi;
+   pipeline_info.pInputAssemblyState = &ia;
+   pipeline_info.pTessellationState = NULL;
+   pipeline_info.pViewportState = &vp;
+   pipeline_info.pRasterizationState = &rs;
+   pipeline_info.pMultisampleState = &ms;
+   pipeline_info.pDepthStencilState = &ds;
+   pipeline_info.pColorBlendState = &cb;
+   pipeline_info.pDynamicState = &dynamic_state_info;
+   pipeline_info.pStages = shader_stages;
+   pipeline_info.stageCount = 2;
+   pipeline_info.renderPass =
+      vkdf_scene_get_gbuffer_merge_render_pass(res->scene);
+   pipeline_info.subpass = 0;
+
+   VK_CHECK(vkCreateGraphicsPipelines(res->ctx->device,
+                                      NULL,
+                                      1,
+                                      &pipeline_info,
+                                      NULL,
+                                      &pipeline));
+
+   return pipeline;
+}
+
+static void
+create_deferred_pipelines(SceneResources *res,
+                          uint32_t num_vi_bindings,
+                          VkVertexInputBindingDescription *vi_bindings,
+                          uint32_t num_vi_attribs,
+                          VkVertexInputAttributeDescription *vi_attribs)
+{
+   VkRenderPass renderpass = vkdf_scene_get_static_render_pass(res->scene);
+
+   res->pipelines.sponza =
+      create_gbuffer_pipeline(res->ctx, NULL,
+                              num_vi_bindings, vi_bindings,
+                              num_vi_attribs, vi_attribs,
+                              renderpass,
+                              res->scene->rt.gbuffer_size,
+                              res->pipelines.layout.base,
+                              VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                              VK_CULL_MODE_BACK_BIT,
+                              res->shaders.obj_gbuffer.vs,
+                              res->shaders.obj_gbuffer.fs);
+
+   res->pipelines.sponza_opacity =
+      create_gbuffer_pipeline(res->ctx, NULL,
+                              num_vi_bindings, vi_bindings,
+                              num_vi_attribs, vi_attribs,
+                              renderpass,
+                              res->scene->rt.gbuffer_size,
+                              res->pipelines.layout.opacity,
+                              VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                              VK_CULL_MODE_BACK_BIT,
+                              res->shaders.obj_gbuffer.vs,
+                              res->shaders.obj_gbuffer.fs_opacity);
+
+   res->pipelines.gbuffer_merge = create_gbuffer_merge_pipeline(res);
 }
 
 static void
@@ -740,37 +1384,10 @@ init_sponza_pipelines(SceneResources *res)
    vi_attribs[5].format = VK_FORMAT_R32_UINT;
    vi_attribs[5].offset = 56;
 
-   VkRenderPass renderpass = vkdf_scene_get_static_render_pass(res->scene);
-
-   res->pipelines.sponza =
-      vkdf_create_gfx_pipeline(res->ctx,
-                               NULL,
-                               1,
-                               vi_bindings,
-                               6,
-                               vi_attribs,
-                               true,
-                               renderpass,
-                               res->pipelines.layout.base,
-                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                               VK_CULL_MODE_BACK_BIT,
-                               res->shaders.obj.vs,
-                               res->shaders.obj.fs);
-
-   res->pipelines.sponza_opacity =
-      vkdf_create_gfx_pipeline(res->ctx,
-                               NULL,
-                               1,
-                               vi_bindings,
-                               6,
-                               vi_attribs,
-                               true,
-                               renderpass,
-                               res->pipelines.layout.opacity,
-                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                               VK_CULL_MODE_BACK_BIT,
-                               res->shaders.obj.vs,
-                               res->shaders.obj.fs_opacity);
+   if (!ENABLE_DEFERRED_RENDERING)
+      create_forward_pipelines(res, 1, vi_bindings, 6, vi_attribs);
+   else
+      create_deferred_pipelines(res, 1, vi_bindings, 6, vi_attribs);
 }
 
 static void
@@ -783,11 +1400,26 @@ init_cmd_bufs(SceneResources *res)
 static void
 init_shaders(SceneResources *res)
 {
-   res->shaders.obj.vs = vkdf_create_shader_module(res->ctx, "obj.vert.spv");
-   res->shaders.obj.fs = vkdf_create_shader_module(res->ctx, "obj.frag.spv");
-   res->shaders.obj.fs_opacity =
+   // Forward rendering
+   res->shaders.obj_forward.vs = vkdf_create_shader_module(res->ctx, "obj.vert.spv");
+   res->shaders.obj_forward.fs = vkdf_create_shader_module(res->ctx, "obj.frag.spv");
+   res->shaders.obj_forward.fs_opacity =
       vkdf_create_shader_module(res->ctx, "obj_opacity.frag.spv");
 
+   // Deferred rendering
+   res->shaders.obj_gbuffer.vs =
+      vkdf_create_shader_module(res->ctx, "obj.deferred.vert.spv");
+   res->shaders.obj_gbuffer.fs =
+      vkdf_create_shader_module(res->ctx, "obj.deferred.frag.spv");
+   res->shaders.obj_gbuffer.fs_opacity =
+      vkdf_create_shader_module(res->ctx, "obj_opacity.deferred.frag.spv");
+
+   res->shaders.gbuffer_merge.vs =
+      vkdf_create_shader_module(res->ctx, "gbuffer-merge.vert.spv");
+   res->shaders.gbuffer_merge.fs =
+      vkdf_create_shader_module(res->ctx, "gbuffer-merge.frag.spv");
+
+   // Debug
    res->debug.shaders.vs =
       vkdf_create_shader_module(res->ctx, "debug-tile.vert.spv");
    res->debug.shaders.fs =
@@ -797,7 +1429,7 @@ init_shaders(SceneResources *res)
 static inline void
 init_pipelines(SceneResources *res)
 {
-   init_pipeline_descriptors(res);
+   init_pipeline_descriptors(res, ENABLE_DEFERRED_RENDERING);
    init_sponza_pipelines(res);
 }
 
@@ -833,8 +1465,6 @@ init_objects(SceneResources *res)
    vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_dynamic(obj, true);
    vkdf_scene_add_object(res->scene, "sponza", obj);
-
-   vkdf_scene_prepare(res->scene);
 
    res->sponza_obj = obj;
    compute_sponza_mesh_boxes(res);
@@ -1099,6 +1729,9 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    init_scene(res);
    init_meshes(res);
    init_objects(res);
+
+   vkdf_scene_prepare(res->scene);
+
    init_ubos(res);
    init_shaders(res);
    init_pipelines(res);
@@ -1193,27 +1826,43 @@ destroy_cmd_bufs(SceneResources *res)
 static void
 destroy_pipelines(SceneResources *res)
 {
+   /* Pipelines */
    vkDestroyPipeline(res->ctx->device, res->pipelines.sponza, NULL);
    vkDestroyPipelineLayout(res->ctx->device, res->pipelines.layout.base, NULL);
 
    vkDestroyPipeline(res->ctx->device, res->pipelines.sponza_opacity, NULL);
    vkDestroyPipelineLayout(res->ctx->device, res->pipelines.layout.opacity, NULL);
 
-   /* Set 0 */
+   if (res->scene->rp.do_deferred) {
+      vkDestroyPipeline(res->ctx->device, res->pipelines.gbuffer_merge, NULL);
+      vkDestroyPipelineLayout(res->ctx->device,
+                              res->pipelines.layout.gbuffer_merge, NULL);
+   }
+
+   /* Descriptor sets */
+
+   /* Camera view */
    vkFreeDescriptorSets(res->ctx->device,
                         res->descriptor_pool.static_ubo_pool,
                         1, &res->pipelines.descr.camera_view_set);
    vkDestroyDescriptorSetLayout(res->ctx->device,
                                 res->pipelines.descr.camera_view_layout, NULL);
 
-   /* Set 1 */
+   /* Object data */
    vkFreeDescriptorSets(res->ctx->device,
                         res->descriptor_pool.static_ubo_pool,
                         1, &res->pipelines.descr.obj_set);
    vkDestroyDescriptorSetLayout(res->ctx->device,
                                 res->pipelines.descr.obj_layout, NULL);
 
-   /* Set 2 */
+   /* Light data */
+   vkFreeDescriptorSets(res->ctx->device,
+                        res->descriptor_pool.static_ubo_pool,
+                        1, &res->pipelines.descr.light_set);
+   vkDestroyDescriptorSetLayout(res->ctx->device,
+                                res->pipelines.descr.light_layout, NULL);
+
+   /* Sponza samplers */
    for (uint32_t i = 0; i < res->sponza_model->tex_materials.size(); i++) {
       if (res->pipelines.descr.obj_tex_set[i]) {
          vkFreeDescriptorSets(res->ctx->device,
@@ -1227,14 +1876,7 @@ destroy_pipelines(SceneResources *res)
    vkDestroyDescriptorSetLayout(res->ctx->device,
                                 res->pipelines.descr.obj_tex_opacity_layout, NULL);
 
-   /* Set 3 */
-   vkFreeDescriptorSets(res->ctx->device,
-                        res->descriptor_pool.static_ubo_pool,
-                        1, &res->pipelines.descr.light_set);
-   vkDestroyDescriptorSetLayout(res->ctx->device,
-                                res->pipelines.descr.light_layout, NULL);
-
-   /* Set 4 */
+   /* Shadow map sampler */
    vkFreeDescriptorSets(res->ctx->device,
                         res->descriptor_pool.sampler_pool,
                         1, &res->pipelines.descr.shadow_map_sampler_set);
@@ -1242,6 +1884,17 @@ destroy_pipelines(SceneResources *res)
                                 res->pipelines.descr.shadow_map_sampler_layout,
                                 NULL);
 
+   /* Gbuffer samplers */
+   if (res->scene->rp.do_deferred) {
+      vkFreeDescriptorSets(res->ctx->device,
+                           res->descriptor_pool.sampler_pool,
+                           1, &res->pipelines.descr.gbuffer_tex_set);
+   }
+
+   vkDestroyDescriptorSetLayout(res->ctx->device,
+                                res->pipelines.descr.gbuffer_tex_layout, NULL);
+
+   /* Descriptor pools */
    vkDestroyDescriptorPool(res->ctx->device,
                            res->descriptor_pool.static_ubo_pool, NULL);
    vkDestroyDescriptorPool(res->ctx->device,
@@ -1251,9 +1904,16 @@ destroy_pipelines(SceneResources *res)
 static void
 destroy_shader_modules(SceneResources *res)
 {
-   vkDestroyShaderModule(res->ctx->device, res->shaders.obj.vs, NULL);
-   vkDestroyShaderModule(res->ctx->device, res->shaders.obj.fs, NULL);
-   vkDestroyShaderModule(res->ctx->device, res->shaders.obj.fs_opacity, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.obj_forward.vs, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.obj_forward.fs, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.obj_forward.fs_opacity, NULL);
+
+   vkDestroyShaderModule(res->ctx->device, res->shaders.obj_gbuffer.vs, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.obj_gbuffer.fs, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.obj_gbuffer.fs_opacity, NULL);
+
+   vkDestroyShaderModule(res->ctx->device, res->shaders.gbuffer_merge.vs, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.gbuffer_merge.fs, NULL);
 }
 
 static void
@@ -1288,7 +1948,8 @@ static void
 destroy_samplers(SceneResources *res)
 {
    vkDestroySampler(res->ctx->device, res->debug.sampler, NULL);
-   vkDestroySampler(res->ctx->device, res->sampler, NULL);
+   vkDestroySampler(res->ctx->device, res->sponza_sampler, NULL);
+   vkDestroySampler(res->ctx->device, res->gbuffer_sampler, NULL);
 }
 
 void
