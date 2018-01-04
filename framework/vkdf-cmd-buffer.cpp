@@ -200,7 +200,7 @@ present_commands(VkdfContext *ctx,
    };
 
    vkCmdPipelineBarrier(cmd_bufs[index],
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
                         0,
                         0, NULL,
