@@ -488,7 +488,7 @@ vkdf_load_image_from_file(VkdfContext *ctx,
    };
 
    vkCmdPipelineBarrier(cmd_buf,
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
                         0,
                         0, NULL,
