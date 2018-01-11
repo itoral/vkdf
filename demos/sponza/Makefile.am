@@ -7,6 +7,9 @@ AM_CPPFLAGS = @DEMO_DEPS_CFLAGS@
 # ------------------------------
 
 BUILT_SOURCES = \
+    obj.depthprepass.vert.spv \
+    obj.depthprepass.opacity.vert.spv \
+    obj.depthprepass.opacity.frag.spv \
     obj.vert \
     obj.vert.spv \
     obj.frag \
@@ -27,6 +30,17 @@ BUILT_SOURCES = \
 
 CLEANFILES = \
     $(BUILT_SOURCES)
+
+# Depth pre-pass
+obj.depthprepass.vert.spv: obj.depthprepass.vert
+	$(top_srcdir)/$(GLSLANG) -V obj.depthprepass.vert -o obj.depthprepass.vert.spv
+
+obj.depthprepass.opacity.vert.spv: obj.depthprepass.opacity.vert
+	$(top_srcdir)/$(GLSLANG) -V obj.depthprepass.opacity.vert -o obj.depthprepass.opacity.vert.spv
+
+obj.depthprepass.opacity.frag.spv: obj.depthprepass.opacity.frag
+	$(top_srcdir)/$(GLSLANG) -V obj.depthprepass.opacity.frag -o obj.depthprepass.opacity.frag.spv
+
 
 # Forward shading
 obj.vert: obj.vert.input
