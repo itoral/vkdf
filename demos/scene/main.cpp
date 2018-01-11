@@ -123,7 +123,7 @@ static void
 record_scene_commands(VkdfContext *ctx,
                       VkCommandBuffer cmd_buf,
                       GHashTable *sets, bool is_dynamic,
-                      void *data)
+                      bool is_depth_prepass, void *data)
 {
    SceneResources *res = (SceneResources *) data;
 

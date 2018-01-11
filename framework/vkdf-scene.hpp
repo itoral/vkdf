@@ -74,20 +74,21 @@ typedef struct {
 
 struct _VkdfSceneTile {
    int32_t parent;
-   uint32_t level;               // Level of the tile
-   uint32_t index;               // Index of the tile in the level
-   glm::vec3 offset;             // world-space offset of the tile
-   bool dirty;                   // Whether new objects have been added
-   VkdfBox box;                  // Bounding box of the ojects in the tile
-   GHashTable *sets;             // Objects in the tile
-   uint32_t obj_count;           // Number of objects in the tile
-   uint32_t shadow_caster_count; // Number of objects in the tile that can cast shadows
-   VkCommandBuffer cmd_buf;      // Secondary command buffer for this tile
-   VkdfSceneTile *subtiles;      // Subtiles within this tile
+   uint32_t level;                 // Level of the tile
+   uint32_t index;                 // Index of the tile in the level
+   glm::vec3 offset;               // world-space offset of the tile
+   bool dirty;                     // Whether new objects have been added
+   VkdfBox box;                    // Bounding box of the ojects in the tile
+   GHashTable *sets;               // Objects in the tile
+   uint32_t obj_count;             // Number of objects in the tile
+   uint32_t shadow_caster_count;   // Number of objects in the tile that can cast shadows
+   VkCommandBuffer cmd_buf;        // Secondary command buffer for this tile
+   VkCommandBuffer depth_cmd_buf;  // Secondary command buffer for this tile (depth-prepass)
+   VkdfSceneTile *subtiles;        // Subtiles within this tile
 };
 
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
-typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, void *);
+typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, bool, void *);
 typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
 typedef void (*VkdfSceneGbufferMergeCommandsCB)(VkdfContext *, VkCommandBuffer, void *);
 
@@ -131,7 +132,20 @@ struct _VkdfScene {
       VkClearValue gbuffer_clear_values[SCENE_MAX_GBUFFER_SIZE + 1];
       bool do_color_clear;
       bool do_deferred;
+      bool do_depth_prepass;
 
+      // Depth pre-pass render passes for static and dynamic geometry
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } depth_static_geom;
+
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } depth_dynamic_geom;
+
+      // Forward or Deferred passes for static and dynamic geometry
       struct {
          VkRenderPass renderpass;
          VkFramebuffer framebuffer;
@@ -142,6 +156,7 @@ struct _VkdfScene {
          VkFramebuffer framebuffer;
       } dynamic_geom;
 
+      // Deferred Gbuffer merge pass
       struct {
          VkRenderPass renderpass;
          VkFramebuffer framebuffer;
@@ -205,6 +220,8 @@ struct _VkdfScene {
       VkCommandPool *pool;
       GList **active;
       GList **free;
+      VkCommandBuffer depth_primary;     // Command buffer for depth-prepass static objs
+      VkCommandBuffer depth_dynamic;     // Command buffer for depth-prepass dynamic objs
       VkCommandBuffer primary;           // Command buffer for rendering static objs
       VkCommandBuffer dynamic;           // Command buffer for rendering dynamic objs
       VkCommandBuffer update_resources;  // Command buffer for resource updates
@@ -216,6 +233,8 @@ struct _VkdfScene {
    struct {
       VkSemaphore update_resources_sem;
       VkSemaphore shadow_maps_sem;
+      VkSemaphore depth_draw_static_sem;
+      VkSemaphore depth_draw_sem;
       VkSemaphore draw_static_sem;
       VkSemaphore draw_sem;
       VkSemaphore gbuffer_merge_sem;
@@ -339,6 +358,18 @@ vkdf_scene_set_clear_values(VkdfScene *scene,
 
 void
 vkdf_scene_prepare(VkdfScene *scene);
+
+inline VkRenderPass
+vkdf_scene_get_depth_prepass_static_render_pass(VkdfScene *s)
+{
+   return s->rp.depth_static_geom.renderpass;
+}
+
+inline VkRenderPass
+vkdf_scene_get_depth_prepass_dynamic_render_pass(VkdfScene *s)
+{
+   return s->rp.depth_dynamic_geom.renderpass;
+}
 
 inline VkRenderPass
 vkdf_scene_get_static_render_pass(VkdfScene *s)
@@ -517,6 +548,12 @@ vkdf_scene_enable_deferred_rendering(VkdfScene *s,
                                      uint32_t gbuffer_size,
                                      VkFormat format0,
                                      ...);
+
+inline void
+vkdf_scene_enable_depth_prepass(VkdfScene *s)
+{
+   s->rp.do_depth_prepass = true;
+}
 
 inline VkRenderPass
 vkdf_scene_get_gbuffer_merge_render_pass(VkdfScene *s)

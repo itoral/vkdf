@@ -9,7 +9,8 @@ static const uint32_t MAX_DYNAMIC_MODELS      =  128;
 static const uint32_t MAX_DYNAMIC_MATERIALS   =  MAX_DYNAMIC_MODELS * MAX_MATERIALS_PER_MODEL;
 
 struct FreeCmdBufInfo {
-   VkCommandBuffer cmd_buf;
+   uint32_t num_commands;
+   VkCommandBuffer cmd_buf[2];
    VkdfSceneTile *tile;
 };
 
@@ -94,7 +95,7 @@ create_render_target(VkdfScene *s,
                         1,
                         VK_IMAGE_TYPE_2D,
                         VK_FORMAT_D32_SFLOAT,
-                        0,
+                        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         VK_IMAGE_ASPECT_DEPTH_BIT,
@@ -276,6 +277,8 @@ vkdf_scene_new(VkdfContext *ctx,
 
    s->sync.update_resources_sem = vkdf_create_semaphore(s->ctx);
    s->sync.shadow_maps_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.depth_draw_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.depth_draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
@@ -399,11 +402,23 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroyRenderPass(s->ctx->device, s->rp.dynamic_geom.renderpass, NULL);
    if (s->rp.do_deferred)
       vkDestroyRenderPass(s->ctx->device, s->rp.gbuffer_merge.renderpass, NULL);
+   if (s->rp.do_depth_prepass) {
+      vkDestroyRenderPass(s->ctx->device,
+                          s->rp.depth_static_geom.renderpass, NULL);
+      vkDestroyRenderPass(s->ctx->device,
+                          s->rp.depth_dynamic_geom.renderpass, NULL);
+   }
 
    vkDestroyFramebuffer(s->ctx->device, s->rp.static_geom.framebuffer, NULL);
    vkDestroyFramebuffer(s->ctx->device, s->rp.dynamic_geom.framebuffer, NULL);
    if (s->rp.do_deferred)
       vkDestroyFramebuffer(s->ctx->device, s->rp.gbuffer_merge.framebuffer, NULL);
+   if (s->rp.do_depth_prepass) {
+      vkDestroyFramebuffer(s->ctx->device,
+                           s->rp.depth_static_geom.framebuffer, NULL);
+      vkDestroyFramebuffer(s->ctx->device,
+                           s->rp.depth_dynamic_geom.framebuffer, NULL);
+   }
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++)
       g_list_free(s->thread.tile_data[i].visible);
@@ -431,6 +446,8 @@ vkdf_scene_free(VkdfScene *s)
 
    vkDestroySemaphore(s->ctx->device, s->sync.update_resources_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.shadow_maps_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.depth_draw_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.depth_draw_static_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_static_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.gbuffer_merge_sem, NULL);
@@ -841,20 +858,74 @@ sort_active_tiles_by_distance(VkdfScene *s)
    return g_list_sort_with_data(list, compare_distance, &cam_pos);
 }
 
-static VkCommandBuffer
+static void inline
+new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf)
+{
+   struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
+   info->num_commands = 1;
+   info->cmd_buf[0] = cmd_buf;
+   info->cmd_buf[1] = 0;
+   info->tile = NULL;
+   s->cmd_buf.free[thread_id] =
+      g_list_prepend(s->cmd_buf.free[thread_id], info);
+}
+
+static void
+record_primary_cmd_buf(VkCommandBuffer cmd_buf,
+                       VkRenderPassBeginInfo *rp_begin,
+                       uint32_t cmd_buf_count,
+                       VkCommandBuffer *cmd_bufs)
+{
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+   vkCmdBeginRenderPass(cmd_buf, rp_begin,
+                        VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
+   if (cmd_buf_count > 0)
+      vkCmdExecuteCommands(cmd_buf, cmd_buf_count, cmd_bufs);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   vkdf_command_buffer_end(cmd_buf);
+}
+
+static void
 build_primary_cmd_buf(VkdfScene *s)
 {
+   if (s->cmd_buf.primary)
+      new_inactive_cmd_buf(s, 0, s->cmd_buf.primary);
+   if (s->cmd_buf.depth_primary)
+      new_inactive_cmd_buf(s, 0, s->cmd_buf.depth_primary);
+
    GList *active = sort_active_tiles_by_distance(s);
 
-   VkCommandBuffer cmd_buf;
+   uint32_t cmd_buf_count = g_list_length(active);
 
+   VkCommandBuffer *secondaries = NULL;
+   if (cmd_buf_count > 0) {
+      uint32_t multiplier = s->rp.do_depth_prepass ? 2 : 1;
+      secondaries =
+         g_new(VkCommandBuffer,  multiplier * cmd_buf_count);
+      uint32_t idx = 0;
+      GList *iter = active;
+      while (iter) {
+         VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
+         assert(t->cmd_buf != 0);
+         assert(!s->rp.do_depth_prepass || t->depth_cmd_buf != 0);
+         secondaries[idx] = t->cmd_buf;
+         if (s->rp.do_depth_prepass)
+            secondaries[cmd_buf_count + idx] = t->depth_cmd_buf;
+         idx++;
+         iter = g_list_next(iter);
+      }
+   }
+
+   VkCommandBuffer cmd_buf[2];
    vkdf_create_command_buffer(s->ctx,
                               s->cmd_buf.pool[0],
                               VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
-
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+                              s->rp.do_depth_prepass ? 2 : 1, cmd_buf);
 
    uint32_t num_clear_values;
    VkClearValue *clear_values;
@@ -872,33 +943,26 @@ build_primary_cmd_buf(VkdfScene *s)
                                 0, 0, s->rt.width, s->rt.height,
                                 num_clear_values, clear_values);
 
-   vkCmdBeginRenderPass(cmd_buf,
-                        &rp_begin,
-                        VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+   record_primary_cmd_buf(cmd_buf[0], &rp_begin, cmd_buf_count, secondaries);
+   s->cmd_buf.primary = cmd_buf[0];
 
-   uint32_t cmd_buf_count = g_list_length(active);
+   if (s->rp.do_depth_prepass) {
+      num_clear_values = 1;
+      clear_values = &s->rp.clear_values[1]; /* depth clear value */
 
-   if (cmd_buf_count > 0) {
-      VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, cmd_buf_count);
-      uint32_t idx = 0;
-      GList *iter = active;
-      while (iter) {
-         VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-         assert(t->cmd_buf != 0);
-         cmd_bufs[idx++] = t->cmd_buf;
-         iter = g_list_next(iter);
-      }
-      vkCmdExecuteCommands(cmd_buf, cmd_buf_count, cmd_bufs);
-      g_free(cmd_bufs);
+      rp_begin =
+         vkdf_renderpass_begin_new(s->rp.depth_static_geom.renderpass,
+                                   s->rp.depth_static_geom.framebuffer,
+                                   0, 0, s->rt.width, s->rt.height,
+                                   num_clear_values, clear_values);
+
+      record_primary_cmd_buf(cmd_buf[1], &rp_begin,
+                             cmd_buf_count, &secondaries[cmd_buf_count]);
+      s->cmd_buf.depth_primary = cmd_buf[1];
    }
 
-   vkCmdEndRenderPass(cmd_buf);
-
-   vkdf_command_buffer_end(cmd_buf);
-
+   g_free(secondaries);
    g_list_free(active);
-
-   return cmd_buf;
 }
 
 static bool
@@ -922,13 +986,16 @@ free_inactive_command_buffers(VkdfScene *s)
       GList *iter = s->cmd_buf.free[i];
       while (iter) {
          struct FreeCmdBufInfo *info = (struct FreeCmdBufInfo *) iter->data;
-         vkFreeCommandBuffers(s->ctx->device,
-                              s->cmd_buf.pool[i], 1, &info->cmd_buf);
+         assert(info->num_commands > 0);
+         vkFreeCommandBuffers(s->ctx->device, s->cmd_buf.pool[i],
+                              info->num_commands, info->cmd_buf);
 
          // If this was a tile secondary, mark the tile as not having a command
          if (info->tile &&
-             info->tile->cmd_buf == info->cmd_buf)
+             info->tile->cmd_buf == info->cmd_buf[0]) {
             info->tile->cmd_buf = 0;
+            info->tile->depth_cmd_buf = 0;
+         }
 
          GList *link = iter;
          iter = g_list_next(iter);
@@ -1003,11 +1070,11 @@ new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
       }
    }
 
-   VkCommandBuffer cmd_buf;
+   VkCommandBuffer cmd_buf[2];
    vkdf_create_command_buffer(s->ctx,
                               s->cmd_buf.pool[job_id],
                               VK_COMMAND_BUFFER_LEVEL_SECONDARY,
-                              1, &cmd_buf);
+                              s->rp.do_depth_prepass ? 2 : 1, cmd_buf);
 
    VkCommandBufferUsageFlags flags =
       VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT |
@@ -1023,16 +1090,35 @@ new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
    inheritance_info.queryFlags = 0;
    inheritance_info.pipelineStatistics = 0;
 
-   vkdf_command_buffer_begin_secondary(cmd_buf, flags, &inheritance_info);
+   vkdf_command_buffer_begin_secondary(cmd_buf[0], flags, &inheritance_info);
 
-   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+   record_viewport_and_scissor_commands(cmd_buf[0], s->rt.width, s->rt.height);
 
-   s->callbacks.record_commands(s->ctx, cmd_buf, t->sets, false,
+   s->callbacks.record_commands(s->ctx, cmd_buf[0], t->sets, false, false,
                                 s->callbacks.data);
 
-   vkdf_command_buffer_end(cmd_buf);
+   vkdf_command_buffer_end(cmd_buf[0]);
 
-   t->cmd_buf = cmd_buf;
+   t->cmd_buf = cmd_buf[0];
+
+   if (s->rp.do_depth_prepass) {
+      inheritance_info.renderPass = s->rp.depth_static_geom.renderpass;
+      inheritance_info.framebuffer = s->rp.depth_static_geom.framebuffer;
+
+      vkdf_command_buffer_begin_secondary(cmd_buf[1],
+                                          flags, &inheritance_info);
+
+      record_viewport_and_scissor_commands(cmd_buf[1],
+                                           s->rt.width, s->rt.height);
+
+      s->callbacks.record_commands(s->ctx, cmd_buf[1],
+                                   t->sets, false, true, s->callbacks.data);
+
+      vkdf_command_buffer_end(cmd_buf[1]);
+
+      t->depth_cmd_buf = cmd_buf[1];
+   }
+
    s->cmd_buf.active[job_id] = g_list_prepend(s->cmd_buf.active[job_id], t);
 
    t->dirty = false;
@@ -1067,20 +1153,15 @@ new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
       return;
 
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
-   info->cmd_buf = expired->cmd_buf;
+   info->cmd_buf[0] = expired->cmd_buf;
+   if (s->rp.do_depth_prepass) {
+      info->num_commands = 2;
+      info->cmd_buf[1] = expired->depth_cmd_buf;
+   } else {
+      info->num_commands = 1;
+   }
    info->tile = expired;
-   s->cmd_buf.free[job_id] =
-      g_list_prepend(s->cmd_buf.free[job_id], info);
-}
-
-static void inline
-new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf)
-{
-   struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
-   info->cmd_buf = cmd_buf;
-   info->tile = NULL;
-   s->cmd_buf.free[thread_id] =
-      g_list_prepend(s->cmd_buf.free[thread_id], info);
+   s->cmd_buf.free[job_id] = g_list_prepend(s->cmd_buf.free[job_id], info);
 }
 
 static void
@@ -1655,20 +1736,27 @@ prepare_scene_objects(VkdfScene *s)
    s->dirty = false;
 }
 
-static void
-create_shadow_map_renderpass(VkdfScene *s)
+static VkRenderPass
+create_depth_renderpass(VkdfScene *s,
+                        VkAttachmentLoadOp load_op,
+                        bool needs_sampling)
 {
    VkAttachmentDescription attachments[2];
 
    // Single depth attachment
    attachments[0].format = VK_FORMAT_D32_SFLOAT;
    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-   attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+   attachments[0].loadOp = load_op;
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
    attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
    attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-   attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-   attachments[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+   attachments[0].initialLayout =
+      load_op == VK_ATTACHMENT_LOAD_OP_CLEAR ?
+         VK_IMAGE_LAYOUT_UNDEFINED :
+         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+   attachments[0].finalLayout = needs_sampling ?
+      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
+      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
    attachments[0].flags = 0;
 
    // Attachment references from subpasses
@@ -1701,8 +1789,17 @@ create_shadow_map_renderpass(VkdfScene *s)
    rp_info.pDependencies = NULL;
    rp_info.flags = 0;
 
-   VK_CHECK(vkCreateRenderPass(s->ctx->device, &rp_info, NULL,
-                               &s->shadows.renderpass));
+   VkRenderPass renderpass;
+   VK_CHECK(vkCreateRenderPass(s->ctx->device, &rp_info, NULL, &renderpass));
+
+   return renderpass;
+}
+
+static inline void
+create_shadow_map_renderpass(VkdfScene *s)
+{
+   s->shadows.renderpass =
+      create_depth_renderpass(s, VK_ATTACHMENT_LOAD_OP_CLEAR, true);
 }
 
 struct _shadow_map_pcb {
@@ -1983,22 +2080,39 @@ create_shadow_map_pipelines(VkdfScene *s)
    }
 }
 
-static void
-create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
+static VkFramebuffer
+create_depth_framebuffer(VkdfScene *s,
+                         uint32_t width,
+                         uint32_t height,
+                         VkRenderPass renderpass,
+                         VkImageView view)
 {
    VkFramebufferCreateInfo fb_info;
    fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
    fb_info.pNext = NULL;
-   fb_info.renderPass = s->shadows.renderpass;
+   fb_info.renderPass = renderpass;
    fb_info.attachmentCount = 1;
-   fb_info.pAttachments = &sl->shadow.shadow_map.view;
-   fb_info.width = sl->shadow.spec.shadow_map_size;
-   fb_info.height = sl->shadow.spec.shadow_map_size;
+   fb_info.pAttachments = &view;
+   fb_info.width = width;
+   fb_info.height = height;
    fb_info.layers = 1;
    fb_info.flags = 0;
 
-   VK_CHECK(vkCreateFramebuffer(s->ctx->device, &fb_info, NULL,
-                                &sl->shadow.framebuffer));
+   VkFramebuffer framebuffer;
+   VK_CHECK(vkCreateFramebuffer(s->ctx->device, &fb_info, NULL, &framebuffer));
+
+   return framebuffer;
+}
+
+static inline void
+create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
+{
+   sl->shadow.framebuffer =
+      create_depth_framebuffer(s,
+                               sl->shadow.spec.shadow_map_size,
+                               sl->shadow.spec.shadow_map_size,
+                               s->shadows.renderpass,
+                               sl->shadow.shadow_map.view);
 }
 
 // FIXME: we should have a frustum object, then we could put these functions
@@ -2737,9 +2851,13 @@ prepare_forward_render_passes(VkdfScene *s)
                                  VK_IMAGE_LAYOUT_UNDEFINED,
                                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                                  s->rt.depth.format,
-                                 VK_ATTACHMENT_LOAD_OP_CLEAR,
+                                 s->rp.do_depth_prepass ?
+                                    VK_ATTACHMENT_LOAD_OP_LOAD :
+                                    VK_ATTACHMENT_LOAD_OP_CLEAR,
                                  VK_ATTACHMENT_STORE_OP_STORE,
-                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 s->rp.do_depth_prepass ?
+                                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
+                                    VK_IMAGE_LAYOUT_UNDEFINED,
                                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 
    s->rp.static_geom.framebuffer =
@@ -2781,16 +2899,19 @@ create_gbuffer_render_pass(VkdfScene *s, bool for_dynamic)
    int32_t gbuffer_idx;
 
    // Attachent 0: Depth
+   bool load_depth = for_dynamic || s->rp.do_depth_prepass;
+
    assert(s->rt.depth.format != VK_FORMAT_UNDEFINED);
    atts[idx].format = s->rt.depth.format;
    atts[idx].samples = VK_SAMPLE_COUNT_1_BIT;
-   atts[idx].loadOp = for_dynamic ? VK_ATTACHMENT_LOAD_OP_LOAD :
-                                    VK_ATTACHMENT_LOAD_OP_CLEAR;
+   atts[idx].loadOp = load_depth ? VK_ATTACHMENT_LOAD_OP_LOAD :
+                                   VK_ATTACHMENT_LOAD_OP_CLEAR;
    atts[idx].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
    atts[idx].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
    atts[idx].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-   atts[idx].initialLayout = for_dynamic ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
-                                           VK_IMAGE_LAYOUT_UNDEFINED;
+   atts[idx].initialLayout =
+      load_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
+                   VK_IMAGE_LAYOUT_UNDEFINED;
    atts[idx].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
    atts[idx].flags = 0;
    depth_idx = idx++;
@@ -2805,10 +2926,12 @@ create_gbuffer_render_pass(VkdfScene *s, bool for_dynamic)
       atts[idx].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
       atts[idx].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
       atts[idx].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-      atts[idx].initialLayout = for_dynamic ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
-                                              VK_IMAGE_LAYOUT_UNDEFINED;
-      atts[idx].finalLayout = for_dynamic ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
-                                            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+      atts[idx].initialLayout =
+         for_dynamic ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL :
+                       VK_IMAGE_LAYOUT_UNDEFINED;
+      atts[idx].finalLayout =
+         for_dynamic ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
+                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
       atts[idx].flags = 0;
       idx++;
    }
@@ -2926,8 +3049,36 @@ prepare_deferred_render_passes(VkdfScene *s)
 }
 
 static void
+prepare_depth_prepass_render_passes(VkdfScene *s)
+{
+   s->rp.depth_static_geom.renderpass =
+      create_depth_renderpass(s, VK_ATTACHMENT_LOAD_OP_CLEAR, false);
+
+   s->rp.depth_static_geom.framebuffer =
+      create_depth_framebuffer(s,
+                               s->rt.width,
+                               s->rt.height,
+                               s->rp.depth_static_geom.renderpass,
+                               s->rt.depth.view);
+
+   s->rp.depth_dynamic_geom.renderpass =
+      create_depth_renderpass(s, VK_ATTACHMENT_LOAD_OP_LOAD, false);
+
+   s->rp.depth_dynamic_geom.framebuffer =
+      create_depth_framebuffer(s,
+                               s->rt.width,
+                               s->rt.height,
+                               s->rp.depth_dynamic_geom.renderpass,
+                               s->rt.depth.view);
+}
+
+static void
 prepare_scene_render_passes(VkdfScene *s)
 {
+   if (s->rp.do_depth_prepass) {
+      prepare_depth_prepass_render_passes(s);
+   }
+
    if (!s->rp.do_deferred) {
       prepare_forward_render_passes(s);
    } else {
@@ -3000,6 +3151,28 @@ vkdf_scene_prepare(VkdfScene *s)
    prepare_scene_lights(s);
    prepare_scene_render_passes(s);
    prepare_scene_present_command_buffers(s);
+}
+
+static void
+record_dynamic_objects_command_buffer(VkdfScene *s,
+                                      VkCommandBuffer cmd_buf,
+                                      VkRenderPassBeginInfo *rp_begin)
+{
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+   vkCmdBeginRenderPass(cmd_buf, rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   const bool is_depth_prepass =
+      rp_begin->renderPass == s->rp.depth_dynamic_geom.renderpass;
+   s->callbacks.record_commands(s->ctx, cmd_buf, s->dynamic.visible,
+                                true, is_depth_prepass, s->callbacks.data);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   vkdf_command_buffer_end(cmd_buf);
 }
 
 static void
@@ -3160,18 +3333,17 @@ update_dirty_objects(VkdfScene *s)
    s->dynamic.materials_dirty = false;
 
    // Record dynamic object rendering command buffer
-   if (s->cmd_buf.dynamic) {
+   if (s->cmd_buf.dynamic)
       new_inactive_cmd_buf(s, 0, s->cmd_buf.dynamic);
-   }
+   if (s->cmd_buf.depth_dynamic)
+      new_inactive_cmd_buf(s, 0, s->cmd_buf.depth_dynamic);
+
    if (s->dynamic.visible_obj_count > 0) {
-      VkCommandBuffer cmd_buf;
+      VkCommandBuffer cmd_buf[2];
       vkdf_create_command_buffer(s->ctx,
                                  s->cmd_buf.pool[0],
                                  VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                                 1, &cmd_buf);
-
-      vkdf_command_buffer_begin(cmd_buf,
-                                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+                                 s->rp.do_depth_prepass ? 2 : 1, cmd_buf);
 
       VkRenderPassBeginInfo rp_begin =
          vkdf_renderpass_begin_new(s->rp.dynamic_geom.renderpass,
@@ -3179,20 +3351,24 @@ update_dirty_objects(VkdfScene *s)
                                    0, 0, s->rt.width, s->rt.height,
                                    0, NULL);
 
-      vkCmdBeginRenderPass(cmd_buf, &rp_begin, VK_SUBPASS_CONTENTS_INLINE);
+      record_dynamic_objects_command_buffer(s, cmd_buf[0], &rp_begin);
 
-      record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+      s->cmd_buf.dynamic = cmd_buf[0];
 
-      s->callbacks.record_commands(s->ctx, cmd_buf, s->dynamic.visible, true,
-                                   s->callbacks.data);
+      if (s->rp.do_depth_prepass) {
+         rp_begin =
+            vkdf_renderpass_begin_new(s->rp.depth_dynamic_geom.renderpass,
+                                      s->rp.depth_dynamic_geom.framebuffer,
+                                      0, 0, s->rt.width, s->rt.height,
+                                      0, NULL);
 
-      vkCmdEndRenderPass(cmd_buf);
+         record_dynamic_objects_command_buffer(s, cmd_buf[1], &rp_begin);
 
-      vkdf_command_buffer_end(cmd_buf);
-
-      s->cmd_buf.dynamic = cmd_buf;
+         s->cmd_buf.depth_dynamic = cmd_buf[1];
+      }
    } else {
       s->cmd_buf.dynamic = 0;
+      s->cmd_buf.depth_dynamic = 0;
    }
 }
 
@@ -3313,9 +3489,7 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s)
       bool cmd_buf_changes = update_cmd_bufs(s);
 
       if (!s->cmd_buf.primary || cmd_buf_changes) {
-         if (s->cmd_buf.primary)
-            new_inactive_cmd_buf(s, 0, s->cmd_buf.primary);
-         s->cmd_buf.primary = build_primary_cmd_buf(s);
+         build_primary_cmd_buf(s);
       }
    }
 }
@@ -3416,6 +3590,37 @@ vkdf_scene_draw(VkdfScene *s)
       s->sync.present_fence_active = false;
    }
 
+   // Execute rendering command for the depth-prepass
+   if (s->rp.do_depth_prepass) {
+      if (!s->cmd_buf.depth_dynamic) {
+         vkdf_command_buffer_execute(s->ctx,
+                                     s->cmd_buf.depth_primary,
+                                     &wait_stage,
+                                     wait_sem_count, wait_sem,
+                                     1, &s->sync.depth_draw_sem);
+      } else {
+         vkdf_command_buffer_execute(s->ctx,
+                                     s->cmd_buf.depth_primary,
+                                     &wait_stage,
+                                     wait_sem_count, wait_sem,
+                                     1, &s->sync.depth_draw_static_sem);
+
+         wait_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+         wait_sem_count = 1;
+         wait_sem = &s->sync.depth_draw_static_sem;
+
+         vkdf_command_buffer_execute(s->ctx,
+                                     s->cmd_buf.depth_dynamic,
+                                     &wait_stage,
+                                     wait_sem_count, wait_sem,
+                                     1, &s->sync.depth_draw_sem);
+      }
+
+      wait_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.depth_draw_sem;
+   }
+
    // Execute rendering commands for static and dynamic geometry
    if (!s->cmd_buf.dynamic) {
       vkdf_command_buffer_execute(s->ctx,
@@ -3433,6 +3638,7 @@ vkdf_scene_draw(VkdfScene *s)
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.draw_static_sem;
+
       vkdf_command_buffer_execute(s->ctx,
                                   s->cmd_buf.dynamic,
                                   &wait_stage,

@@ -224,7 +224,8 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
 
 static void
 record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
-                      GHashTable *sets, bool is_dynamic, void *data)
+                      GHashTable *sets, bool is_dynamic,
+                      bool is_deth_prepass, void *data)
 {
    SceneResources *res = (SceneResources *) data;
 
