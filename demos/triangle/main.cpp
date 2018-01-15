@@ -311,6 +311,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             1,
                                             vi_attribs,
                                             false,
+                                            VK_COMPARE_OP_LESS,
                                             res->render_pass,
                                             res->pipeline_layout,
                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,

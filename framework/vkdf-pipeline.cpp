@@ -8,6 +8,7 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          uint32_t num_vi_attribs,
                          VkVertexInputAttributeDescription *vi_attribs,
                          bool enable_depth_test,
+                         VkCompareOp depth_compare_op,
                          VkRenderPass render_pass,
                          VkPipelineLayout pipeline_layout,
                          VkPrimitiveTopology primitive,
@@ -80,7 +81,7 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    ds.flags = 0;
    ds.depthTestEnable = enable_depth_test;
    ds.depthWriteEnable = enable_depth_test;
-   ds.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+   ds.depthCompareOp = depth_compare_op;
    ds.depthBoundsTestEnable = VK_FALSE;
    ds.minDepthBounds = 0;
    ds.maxDepthBounds = 0;

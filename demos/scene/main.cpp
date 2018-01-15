@@ -347,6 +347,7 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
                                2,
                                vi_attribs,
                                true,
+                               VK_COMPARE_OP_LESS,
                                renderpass,
                                res->pipelines.obj.layout,
                                primitive,
