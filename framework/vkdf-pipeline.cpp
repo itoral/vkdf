@@ -13,6 +13,7 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          VkPipelineLayout pipeline_layout,
                          VkPrimitiveTopology primitive,
                          VkCullModeFlagBits cull_mode,
+                         uint32_t num_color_attachments,
                          VkShaderModule vs_module,
                          VkShaderModule fs_module)
 {
@@ -96,21 +97,23 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    ds.front = ds.back;
 
    // Blending
-   VkPipelineColorBlendAttachmentState att_state[1];
-   att_state[0].colorWriteMask = 0xf;
-   att_state[0].blendEnable = VK_FALSE;
-   att_state[0].alphaBlendOp = VK_BLEND_OP_ADD;
-   att_state[0].colorBlendOp = VK_BLEND_OP_ADD;
-   att_state[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-   att_state[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-   att_state[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-   att_state[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+   VkPipelineColorBlendAttachmentState att_state[32];
+   for (uint32_t i = 0; i < num_color_attachments; i++) {
+      att_state[i].colorWriteMask = 0xf;
+      att_state[i].blendEnable = VK_FALSE;
+      att_state[i].alphaBlendOp = VK_BLEND_OP_ADD;
+      att_state[i].colorBlendOp = VK_BLEND_OP_ADD;
+      att_state[i].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+      att_state[i].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      att_state[i].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      att_state[i].dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+   }
 
    VkPipelineColorBlendStateCreateInfo cb;
    cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
    cb.flags = 0;
    cb.pNext = NULL;
-   cb.attachmentCount = 1;
+   cb.attachmentCount = num_color_attachments;
    cb.pAttachments = att_state;
    cb.logicOpEnable = VK_FALSE;
    cb.logicOp = VK_LOGIC_OP_COPY;
@@ -141,9 +144,11 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
                                         VK_SHADER_STAGE_VERTEX_BIT,
                                         vs_module);
-   vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
-                                        VK_SHADER_STAGE_FRAGMENT_BIT,
-                                        fs_module);
+   if (fs_module) {
+      vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
+                                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                                           fs_module);
+   }
 
    // Create pipeline
    VkGraphicsPipelineCreateInfo pipeline_info;
@@ -163,7 +168,7 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    pipeline_info.pColorBlendState = &cb;
    pipeline_info.pDynamicState = &dynamic_state_info;
    pipeline_info.pStages = shader_stages;
-   pipeline_info.stageCount = 2;
+   pipeline_info.stageCount = fs_module ? 2 : 1;
    pipeline_info.renderPass = render_pass;
    pipeline_info.subpass = 0;
 

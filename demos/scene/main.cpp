@@ -352,6 +352,7 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
                                res->pipelines.obj.layout,
                                primitive,
                                VK_CULL_MODE_BACK_BIT,
+                               1,
                                res->shaders.obj.vs,
                                res->shaders.obj.fs);
 }

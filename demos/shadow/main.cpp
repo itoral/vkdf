@@ -1277,6 +1277,7 @@ create_pipeline(VkdfContext *ctx, SceneResources *res, bool init_cache)
                                    res->pipeline_layout,
                                    VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                    VK_CULL_MODE_BACK_BIT,
+                                   1,
                                    res->vs_module,
                                    res->fs_module);
 }
@@ -1426,6 +1427,7 @@ create_ui_tile_pipeline(VkdfContext *ctx, SceneResources *res)
                                    res->ui_tile_pipeline_layout,
                                    VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                    VK_CULL_MODE_BACK_BIT,
+                                   1,
                                    res->ui_tile_vs_module,
                                    res->ui_tile_fs_module);
 }

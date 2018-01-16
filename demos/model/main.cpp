@@ -531,6 +531,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             res->pipeline_layout,
                                             primitive,
                                             VK_CULL_MODE_BACK_BIT,
+                                            1,
                                             res->vs_module,
                                             res->fs_module);
 

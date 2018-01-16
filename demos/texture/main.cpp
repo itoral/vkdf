@@ -545,6 +545,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             res->pipeline_layout,
                                             VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                             VK_CULL_MODE_NONE,
+                                            1,
                                             res->vs_module,
                                             res->fs_module);
 

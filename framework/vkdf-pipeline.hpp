@@ -14,6 +14,7 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          VkPipelineLayout pipeline_layout,
                          VkPrimitiveTopology primitive,
                          VkCullModeFlagBits cull_mode,
+                         uint32_t num_color_attachments,
                          VkShaderModule vs_module,
                          VkShaderModule fs_module);
 

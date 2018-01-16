@@ -541,6 +541,7 @@ init_obj_pipeline(SceneResources *res, bool dynamic)
                                res->pipelines.layout.common,
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                VK_CULL_MODE_BACK_BIT,
+                               1,
                                res->shaders.obj.vs,
                                res->shaders.obj.fs);
 }
@@ -587,6 +588,7 @@ init_floor_pipeline(SceneResources *res, bool init_cache)
                                res->pipelines.layout.common,
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                VK_CULL_MODE_BACK_BIT,
+                               1,
                                res->shaders.floor.vs,
                                res->shaders.floor.fs);
 }
@@ -941,6 +943,7 @@ create_debug_tile_pipeline(SceneResources *res)
                                res->debug.pipeline.layout,
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                VK_CULL_MODE_BACK_BIT,
+                               1,
                                res->debug.shaders.vs,
                                res->debug.shaders.fs);
 }
