@@ -2747,6 +2747,13 @@ update_dirty_lights(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
       VkdfLight *l = sl->light;
 
+      // Directional ligthts are special because they need new shadow maps
+      // when the camera moves around
+      if (vkdf_light_casts_shadows(l) &&
+          vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL &&
+          vkdf_camera_has_dirty_position(s->camera))
+         vkdf_light_set_dirty_shadows(l, true);
+
       if (vkdf_light_is_dirty(l))
          s->lights_dirty = true;
 
