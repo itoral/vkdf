@@ -3498,6 +3498,8 @@ vkdf_scene_update_cmd_bufs(VkdfScene *s)
       if (!s->cmd_buf.primary || cmd_buf_changes) {
          build_primary_cmd_buf(s);
       }
+
+      vkdf_camera_set_dirty(s->camera, false);
    }
 }
 

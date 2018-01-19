@@ -1765,7 +1765,6 @@ scene_update(VkdfContext *ctx, void *data)
    if (ENABLE_CLIPPING)
       update_visible_sponza_meshes(res);
    vkdf_scene_update_cmd_bufs(res->scene);
-   vkdf_camera_set_dirty(res->camera, false); // FIXME: this should be done by the scene
 }
 
 static void
