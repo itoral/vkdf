@@ -875,14 +875,13 @@ vec3_module(glm::vec3 p, int xaxis, int yaxis, int zaxis)
 static void
 init_matrices(SceneResources *res)
 {
+   const glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->camera);
+   res->projection = *proj;
+
    glm::mat4 clip = glm::mat4(1.0f, 0.0f, 0.0f, 0.0f,
                               0.0f,-1.0f, 0.0f, 0.0f,
                               0.0f, 0.0f, 0.5f, 0.0f,
                               0.0f, 0.0f, 0.5f, 1.0f);
-
-   res->projection =  clip * glm::perspective(glm::radians(45.0f),
-                                              (float) WIN_WIDTH / WIN_HEIGHT,
-                                              SCENE_NEAR, SCENE_FAR);
 
    res->ui_tile_mvp = clip * glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f);
 
@@ -1452,7 +1451,9 @@ init_camera(VkdfContext *ctx)
 {
    float cam_z = -ROOM_DEPTH / 2.0 * TILE_DEPTH - 10.0f;
    VkdfCamera *camera = vkdf_camera_new(0.0f, 10.0f, cam_z,   // Position
-                                        0.0f, 0.0f, 1.0f);    // View dir
+                                        0.0f, 0.0f, 1.0f,     // View dir
+                                        45.0f, SCENE_NEAR, SCENE_FAR,
+                                        (float) WIN_WIDTH / WIN_HEIGHT);
    vkdf_camera_look_at(camera, 0.0f, 0.0f, 0.0f);
    return camera;
 }

@@ -56,7 +56,8 @@ enum {
 
 VkdfCamera *
 vkdf_camera_new(float px, float py, float pz,
-                float rx, float ry, float rz);
+                float rx, float ry, float rz,
+                float fov, float near, float far, float aspect_ratio);
 
 void
 vkdf_camera_free(VkdfCamera *cam);

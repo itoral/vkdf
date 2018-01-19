@@ -2,11 +2,13 @@
 
 VkdfCamera *
 vkdf_camera_new(float px, float py, float pz,
-               float rx, float ry, float rz)
+               float rx, float ry, float rz,
+               float fov, float near, float far, float aspect_ratio)
 {
    VkdfCamera *cam = g_new0(VkdfCamera, 1);
    vkdf_camera_set_position(cam, px, py, pz);
    vkdf_camera_set_rotation(cam, rx, ry, rz);
+   vkdf_camera_set_projection(cam, fov, near, far, aspect_ratio);
    return cam;
 }
 

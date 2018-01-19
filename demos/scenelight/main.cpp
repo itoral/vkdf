@@ -382,10 +382,9 @@ init_scene(SceneResources *res)
    VkdfContext *ctx = res->ctx;
 
    res->camera = vkdf_camera_new(0.0f, 10.0f, -30.0f,
-                                 0.0f, 180.0f, 0.0f);
-   // FIXME: we should pass the projection in the constructor
-   vkdf_camera_set_projection(res->camera,
-                              45.0f, 0.1f, 500.0f, WIN_WIDTH / WIN_HEIGHT);
+                                 0.0f, 180.0f, 0.0f,
+                                 45.0f, 0.1f, 500.0f, WIN_WIDTH / WIN_HEIGHT);
+
    vkdf_camera_look_at(res->camera, 0.0f, 3.0f, 0.0f);
 
    glm::vec3 scene_origin = glm::vec3(-50.0f, -50.0f, -50.0f);
