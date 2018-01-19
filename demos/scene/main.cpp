@@ -508,7 +508,7 @@ scene_update(VkdfContext *ctx, void *data)
    SceneResources *res = (SceneResources *) data;
 
    update_camera(res); // FIXME: this should be a callback called from the scene
-   vkdf_scene_update_cmd_bufs(res->scene);
+   vkdf_scene_update(res->scene);
 }
 
 static void

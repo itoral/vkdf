@@ -1764,7 +1764,7 @@ scene_update(VkdfContext *ctx, void *data)
    update_objects(res);
    if (ENABLE_CLIPPING)
       update_visible_sponza_meshes(res);
-   vkdf_scene_update_cmd_bufs(res->scene);
+   vkdf_scene_update(res->scene);
 }
 
 static void

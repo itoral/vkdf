@@ -534,7 +534,7 @@ vkdf_scene_set_scene_callbacks(VkdfScene *s,
 }
 
 void
-vkdf_scene_update_cmd_bufs(VkdfScene *s);
+vkdf_scene_update(VkdfScene *s);
 
 void
 vkdf_scene_optimize_clip_boxes(VkdfScene *s);

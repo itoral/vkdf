@@ -3464,7 +3464,7 @@ update_cmd_bufs(VkdfScene *s)
 }
 
 void
-vkdf_scene_update_cmd_bufs(VkdfScene *s)
+vkdf_scene_update(VkdfScene *s)
 {
    // Record the gbuffer merge command if needed
    if (s->rp.do_deferred && !s->cmd_buf.gbuffer_merge)

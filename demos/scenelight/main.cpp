@@ -1196,7 +1196,7 @@ scene_update(VkdfContext *ctx, void *data)
    update_objects(res);
    update_lights(res);
 
-   vkdf_scene_update_cmd_bufs(res->scene);
+   vkdf_scene_update(res->scene);
 }
 
 static void
