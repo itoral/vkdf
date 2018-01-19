@@ -3580,29 +3580,6 @@ scene_draw(VkdfScene *s)
       wait_sem = &s->sync.shadow_maps_sem;
    }
 
-   /* ========== Submit rendering jobs for the current frame ========== */
-
-   // If we are still presenting the previous frame (actually, copying the
-   // previous frame to the swapchain) we have to wait for that to finish
-   // before rendering the new one. Otherwise we would probably corrupt the
-   // copy of the previous frame to the swapchain.
-   while (s->sync.present_fence_active) {
-      VkResult status;
-      do {
-         status = vkWaitForFences(s->ctx->device,
-                                  1, &s->sync.present_fence,
-                                  true, 1000ull);
-#if ENABLE_DEBUG
-         if (status == VK_NOT_READY || status == VK_TIMEOUT) {
-            vkdf_info("debug: perf: scene: warning: "
-                      "gpu busy, cpu stall before draw\n");
-         }
-#endif
-      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
-      vkResetFences(s->ctx->device, 1, &s->sync.present_fence);
-      s->sync.present_fence_active = false;
-   }
-
    // Execute rendering command for the depth-prepass
    if (s->rp.do_depth_prepass) {
       if (!s->cmd_buf.depth_dynamic) {
@@ -3632,6 +3609,29 @@ scene_draw(VkdfScene *s)
       wait_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.depth_draw_sem;
+   }
+
+   /* ========== Submit rendering jobs for the current frame ========== */
+
+   // If we are still presenting the previous frame (actually, copying the
+   // previous frame to the swapchain) we have to wait for that to finish
+   // before rendering the new one. Otherwise we would probably corrupt the
+   // copy of the previous frame to the swapchain.
+   while (s->sync.present_fence_active) {
+      VkResult status;
+      do {
+         status = vkWaitForFences(s->ctx->device,
+                                  1, &s->sync.present_fence,
+                                  true, 1000ull);
+#if ENABLE_DEBUG
+         if (status == VK_NOT_READY || status == VK_TIMEOUT) {
+            vkdf_info("debug: perf: scene: warning: "
+                      "gpu busy, cpu stall before draw\n");
+         }
+#endif
+      } while (status == VK_NOT_READY || status == VK_TIMEOUT);
+      vkResetFences(s->ctx->device, 1, &s->sync.present_fence);
+      s->sync.present_fence_active = false;
    }
 
    // Execute rendering commands for static and dynamic geometry
