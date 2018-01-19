@@ -3463,9 +3463,13 @@ update_cmd_bufs(VkdfScene *s)
    return cmd_buf_changes;
 }
 
-void
-vkdf_scene_update(VkdfScene *s)
+static void
+scene_update(VkdfScene *s)
 {
+   // Let the application update its state first
+   if (s->callbacks.update_state)
+      s->callbacks.update_state(s->callbacks.data);
+
    // Record the gbuffer merge command if needed
    if (s->rp.do_deferred && !s->cmd_buf.gbuffer_merge)
       prepare_scene_gbuffer_merge_command_buffer(s);
@@ -3503,8 +3507,8 @@ vkdf_scene_update(VkdfScene *s)
    }
 }
 
-VkSemaphore
-vkdf_scene_draw(VkdfScene *s)
+static void
+scene_draw(VkdfScene *s)
 {
    VkPipelineStageFlags wait_stage;
    uint32_t wait_sem_count;
@@ -3696,6 +3700,28 @@ vkdf_scene_draw(VkdfScene *s)
 
    s->sync.present_fence_active = true;
    free_inactive_command_buffers(s);
+}
 
-   return s->sync.draw_sem;
+static inline void
+event_loop_update(VkdfContext *ctx, void *data)
+{
+   VkdfScene *s = (VkdfScene *) data;
+   scene_update(s);
+}
+
+static inline void
+event_loop_render(VkdfContext *ctx, void *data)
+{
+   VkdfScene *s = (VkdfScene *) data;
+   scene_draw(s);
+}
+
+void
+vkdf_scene_event_loop_run(VkdfScene *s)
+{
+  vkdf_event_loop_run(s->ctx,
+                      true,
+                      event_loop_update,
+                      event_loop_render,
+                      s);
 }

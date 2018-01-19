@@ -183,6 +183,45 @@ record_scene_commands(VkdfContext *ctx,
 }
 
 static void
+update_camera(SceneResources *res)
+{
+   const float mov_speed = 0.15f;
+   const float rot_speed = 1.0f;
+
+   VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
+   GLFWwindow *window = res->ctx->window;
+
+   float base_speed = 1.0f;
+
+   // Rotation
+   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
+   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
+
+   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
+   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
+
+   // Stepping
+   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
+      float step_speed = base_speed * mov_speed;
+      vkdf_camera_step(cam, step_speed, 1, 1, 1);
+   } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+      float step_speed = -base_speed * mov_speed;
+      vkdf_camera_step(cam, step_speed, 1, 1, 1);
+   }
+}
+
+static void
+scene_update(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   update_camera(res);
+}
+
+static void
 init_scene(SceneResources *res)
 {
    VkdfContext *ctx = res->ctx;
@@ -220,6 +259,7 @@ init_scene(SceneResources *res)
 #endif
 
    vkdf_scene_set_scene_callbacks(res->scene,
+                                  scene_update,
                                   record_update_resources_command,
                                   record_scene_commands,
                                   NULL,
@@ -471,65 +511,6 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 }
 
 static void
-update_camera(SceneResources *res)
-{
-   const float mov_speed = 0.15f;
-   const float rot_speed = 1.0f;
-
-   VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
-   GLFWwindow *window = res->ctx->window;
-
-   float base_speed = 1.0f;
-
-   // Rotation
-   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
-
-   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
-
-   // Stepping
-   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
-      float step_speed = base_speed * mov_speed;
-      vkdf_camera_step(cam, step_speed, 1, 1, 1);
-   } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
-      float step_speed = -base_speed * mov_speed;
-      vkdf_camera_step(cam, step_speed, 1, 1, 1);
-   }
-}
-
-static void
-scene_update(VkdfContext *ctx, void *data)
-{
-   SceneResources *res = (SceneResources *) data;
-
-   update_camera(res); // FIXME: this should be a callback called from the scene
-   vkdf_scene_update(res->scene);
-}
-
-static void
-scene_render(VkdfContext *ctx, void *data)
-{
-   SceneResources *res = (SceneResources *) data;
-   vkdf_scene_draw(res->scene);
-
-#if 0
-   uint32_t total = 0;
-   GList *iter = res->scene->visible;
-   while (iter) {
-      VkdfSceneTile *t = (VkdfSceneTile *) iter->data;
-      total += t->obj_count;
-      iter = g_list_next(iter);
-   }
-   printf("%d tiles VISIBLE (%d objs)\n", g_list_length(res->scene->visible), total);
-#endif
-}
-
-static void
 destroy_models(SceneResources *res)
 {
    vkdf_model_free(res->ctx, res->cube_model);
@@ -594,7 +575,7 @@ main()
    vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
-   vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
+   vkdf_scene_event_loop_run(resources.scene);
 
    cleanup_resources(&resources);
    vkdf_cleanup(&ctx);

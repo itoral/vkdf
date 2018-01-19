@@ -626,6 +626,47 @@ record_gbuffer_merge_commands(VkdfContext *ctx,
 }
 
 static void
+update_camera(SceneResources *res)
+{
+   const float mov_speed = 0.15f;
+   const float rot_speed = 1.0f;
+
+   VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
+   GLFWwindow *window = res->ctx->window;
+
+   float base_speed = 1.0f;
+
+   // Rotation
+   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
+   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
+
+   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
+   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
+      vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
+
+   // Stepping
+   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
+      float step_speed = base_speed * mov_speed;
+      vkdf_camera_step(cam, step_speed, 1, 1, 1);
+   } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+      float step_speed = -base_speed * mov_speed;
+      vkdf_camera_step(cam, step_speed, 1, 1, 1);
+   }
+}
+
+static void
+scene_update(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   update_camera(res);
+   if (ENABLE_CLIPPING)
+      update_visible_sponza_meshes(res);
+}
+
+static void
 init_scene(SceneResources *res)
 {
    VkdfContext *ctx = res->ctx;
@@ -647,6 +688,7 @@ init_scene(SceneResources *res)
                                cache_size, 1);
 
    vkdf_scene_set_scene_callbacks(res->scene,
+                                  scene_update,
                                   record_update_resources_command,
                                   ENABLE_DEFERRED_RENDERING ?
                                      record_gbuffer_scene_commands :
@@ -1720,54 +1762,6 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 }
 
 static void
-update_camera(SceneResources *res)
-{
-   const float mov_speed = 0.15f;
-   const float rot_speed = 1.0f;
-
-   VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
-   GLFWwindow *window = res->ctx->window;
-
-   float base_speed = 1.0f;
-
-   // Rotation
-   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
-
-   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
-
-   // Stepping
-   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
-      float step_speed = base_speed * mov_speed;
-      vkdf_camera_step(cam, step_speed, 1, 1, 1);
-   } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
-      float step_speed = -base_speed * mov_speed;
-      vkdf_camera_step(cam, step_speed, 1, 1, 1);
-   }
-}
-
-static void
-update_objects(SceneResources *res)
-{
-}
-
-static void
-scene_update(VkdfContext *ctx, void *data)
-{
-   SceneResources *res = (SceneResources *) data;
-   update_camera(res); // FIXME: this should be a callback called from the scene
-   update_objects(res);
-   if (ENABLE_CLIPPING)
-      update_visible_sponza_meshes(res);
-   vkdf_scene_update(res->scene);
-}
-
-static void
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -1783,13 +1777,6 @@ postprocess_draw(VkdfContext *ctx,
                                &debug_tile_wait_stages,
                                1, &scene_draw_sem,
                                1, &postprocess_draw_sem);
-}
-
-static void
-scene_render(VkdfContext *ctx, void *data)
-{
-   SceneResources *res = (SceneResources *) data;
-   vkdf_scene_draw(res->scene);
 }
 
 static void
@@ -1989,7 +1976,7 @@ main()
    vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
-   vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
+   vkdf_scene_event_loop_run(resources.scene);
 
    cleanup_resources(&resources);
    vkdf_cleanup(&ctx);

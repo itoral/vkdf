@@ -87,6 +87,7 @@ struct _VkdfSceneTile {
    VkdfSceneTile *subtiles;        // Subtiles within this tile
 };
 
+typedef void (*VkdfSceneUpdateStateCB)(void *);
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, bool, void *);
 typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
@@ -244,10 +245,11 @@ struct _VkdfScene {
    } sync;
 
    struct {
-      VkdfSceneUpdateResourcesCB update_resources;
-      VkdfSceneCommandsCB record_commands;
-      VkdfScenePostprocessCB postprocess;
-      VkdfSceneGbufferMergeCommandsCB gbuffer_merge;
+      VkdfSceneUpdateStateCB update_state;            // Updates application state, camera, etc
+      VkdfSceneUpdateResourcesCB update_resources;    // Updates rendering resources used by command buffers
+      VkdfSceneCommandsCB record_commands;            // Records command buffers
+      VkdfScenePostprocessCB postprocess;             // Executes post-processing command buffers
+      VkdfSceneGbufferMergeCommandsCB gbuffer_merge;  // Records Gbuffer merge command buffer (deferred only)
       void *data;
    } callbacks;
 
@@ -522,11 +524,13 @@ vkdf_scene_add_light(VkdfScene *s,
 
 inline void
 vkdf_scene_set_scene_callbacks(VkdfScene *s,
+                               VkdfSceneUpdateStateCB us_cb,
                                VkdfSceneUpdateResourcesCB ur_cb,
                                VkdfSceneCommandsCB cmd_cb,
                                VkdfScenePostprocessCB postprocess_cb,
                                void *data)
 {
+   s->callbacks.update_state = us_cb;
    s->callbacks.update_resources = ur_cb;
    s->callbacks.record_commands = cmd_cb;
    s->callbacks.postprocess = postprocess_cb;
@@ -534,13 +538,7 @@ vkdf_scene_set_scene_callbacks(VkdfScene *s,
 }
 
 void
-vkdf_scene_update(VkdfScene *s);
-
-void
 vkdf_scene_optimize_clip_boxes(VkdfScene *s);
-
-VkSemaphore
-vkdf_scene_draw(VkdfScene *s);
 
 void
 vkdf_scene_enable_deferred_rendering(VkdfScene *s,
@@ -567,5 +565,8 @@ vkdf_scene_get_gbuffer_image(VkdfScene *s, uint32_t index)
    assert(index < s->rt.gbuffer_size);
    return &s->rt.gbuffer[index];
 }
+
+void
+vkdf_scene_event_loop_run(VkdfScene *s);
 
 #endif
