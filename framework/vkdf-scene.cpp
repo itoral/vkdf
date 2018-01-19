@@ -3575,7 +3575,7 @@ scene_draw(VkdfScene *s)
 
       g_free(cmd_bufs);
 
-      wait_stage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+      wait_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.shadow_maps_sem;
    }
