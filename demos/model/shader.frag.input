@@ -3,12 +3,8 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_ARB_shading_language_420pack : enable
 
-struct Material {
-    vec4 diffuse;
-    vec4 ambient;
-    vec4 specular;
-    float shininess;
-};
+// Include lighting.glsl for Material data type
+INCLUDE(../../data/glsl/lighting.glsl)
 
 layout(std140, set = 0, binding = 2) uniform materials_ubo {
    // The number of materials varies depending on the model, so
