@@ -23,7 +23,11 @@ typedef struct {
       VkdfPlane planes[6];    // frustum planes
    } frustum;
 
+   /* If you add new flags here, check if they need to be cleared in
+    * vkdf_camera_set_dirty()
+    */
    bool dirty;
+   bool dirty_position;
    bool dirty_viewdir;
    bool dirty_view_matrix;
    bool dirty_rot_matrix;
@@ -102,10 +106,27 @@ vkdf_camera_is_dirty(VkdfCamera *cam)
    return cam->dirty;
 }
 
+inline bool
+vkdf_camera_has_dirty_position(VkdfCamera *cam)
+{
+   assert(!cam->dirty_position || cam->dirty);
+   return cam->dirty_position;
+}
+
 inline void
 vkdf_camera_set_dirty(VkdfCamera *cam, bool dirty)
 {
    cam->dirty = dirty;
+   if (!dirty) {
+      /* Most of our dirty states relate to cached data, in the sense that when
+       * they are False it means that we can reused cached data. We use them to
+       * save us from doing redundant expensive computations. When the user
+       * signals that the camera is no longer dirty, it means that it is done
+       * using it in that frame, but that doesn't invalidate any cached data,
+       * so here we only clear flags that are not used for caching purposes.
+       */
+      cam->dirty_position = false;
+   }
 }
 
 glm::mat4

@@ -54,6 +54,7 @@ vkdf_camera_set_position(VkdfCamera *cam, float px, float py, float pz)
    cam->pos.y = py;
    cam->pos.z = pz;
    cam->dirty = true;
+   cam->dirty_position = true;
    cam->dirty_frustum = true;
    cam->dirty_view_matrix = true;
 }
@@ -84,6 +85,7 @@ vkdf_camera_move(VkdfCamera *cam, float dx, float dy, float dz)
    cam->pos.y += dy;
    cam->pos.z += dz;
    cam->dirty = true;
+   cam->dirty_position = true;
    cam->dirty_frustum = true;
    cam->dirty_view_matrix = true;
 }
@@ -168,6 +170,7 @@ vkdf_camera_step(VkdfCamera *cam, float d, int stepX, int stepY, int stepZ)
    cam->pos.y += view.y * d;
    cam->pos.z += view.z * d;
    cam->dirty = true;
+   cam->dirty_position = true;
    cam->dirty_frustum = true;
    cam->dirty_view_matrix = true;
 }
@@ -187,6 +190,7 @@ vkdf_camera_strafe(VkdfCamera *cam, float d)
    cam->pos.y += strafe.y * d;
    cam->pos.z += strafe.z * d;
    cam->dirty = true;
+   cam->dirty_position = true;
    cam->dirty_frustum = true;
    cam->dirty_view_matrix = true;
 }
