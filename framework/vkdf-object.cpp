@@ -10,6 +10,7 @@ init_object(VkdfObject *obj, const glm::vec3 &pos)
    obj->dirty = true;
    obj->dirty_model_matrix = true;
    obj->dirty_box = true;
+   obj->dirty_mesh_boxes = true;
 }
 
 VkdfObject *
@@ -56,6 +57,8 @@ vkdf_object_free(VkdfObject *obj)
 {
    // Models are not owned by the objects
    g_free(obj);
+   if (obj->mesh_boxes)
+      g_free(obj->mesh_boxes);
 }
 
 glm::mat4
@@ -127,4 +130,50 @@ vkdf_object_get_box(VkdfObject *obj)
    if (obj->dirty_box)
       compute_box(obj);
    return &obj->box;
+}
+
+static void
+compute_mesh_boxes(VkdfObject *obj)
+{
+   assert(obj->model);
+   const VkdfModel *model = obj->model;
+
+   uint32_t num_meshes = model->meshes.size();
+   assert(num_meshes > 0);
+
+   if (!obj->mesh_boxes)
+      obj->mesh_boxes = g_new(VkdfBox, num_meshes);
+
+   for (uint32_t i = 0; i < num_meshes; i++) {
+      // Get the mesh's box, scaled by the object dimensions
+      VkdfBox *box = &obj->mesh_boxes[i];
+      vkdf_mesh_get_scaled_box(model->meshes[i], obj->scale, box);
+
+      // Apply the object translation transform to the box
+      box->center += obj->pos;
+
+      // Apply the object rotation transform to the box
+      if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
+         glm::mat4 Model(1.0f);
+         Model = glm::translate(Model, box->center);
+         // FIXME: use quaternion
+         if (obj->rot.x)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
+         if (obj->rot.y)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.y), glm::vec3(0, 1, 0));
+         if (obj->rot.z)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.z), glm::vec3(0, 0, 1));
+         Model = glm::translate(Model, -box->center);
+         vkdf_box_transform(box, &Model);
+      }
+   }
+
+   vkdf_object_set_dirty_mesh_boxes(obj, false);
+}
+
+const VkdfBox *
+vkdf_object_get_mesh_boxes(VkdfObject *obj)
+{  if (obj->dirty_mesh_boxes)
+      compute_mesh_boxes(obj);
+   return obj->mesh_boxes;
 }
