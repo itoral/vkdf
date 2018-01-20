@@ -71,7 +71,7 @@ process_mesh(const aiScene *scene, const aiMesh *mesh)
    // Material data
    _mesh->material_idx = mesh->mMaterialIndex;
 
-   vkdf_mesh_compute_size(_mesh);
+   vkdf_mesh_compute_box(_mesh);
 
    return _mesh;
 }
@@ -286,7 +286,7 @@ vkdf_model_load(const char *file)
 
    aiReleaseImport(scene);
 
-   vkdf_model_compute_size(model);
+   vkdf_model_compute_box(model);
 
    return model;
 }
@@ -462,35 +462,47 @@ vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
 }
 
 void
-vkdf_model_compute_size(VkdfModel *model)
+vkdf_model_compute_box(VkdfModel *model)
 {
-   model->size.min = glm::vec3(999999999.0f, 999999999.0f, 999999999.0f);
-   model->size.max = glm::vec3(-999999999.0f, -999999999.0f, -999999999.0f);
+   glm::vec3 min = glm::vec3(999999999.0f, 999999999.0f, 999999999.0f);
+   glm::vec3 max = glm::vec3(-999999999.0f, -999999999.0f, -999999999.0f);
 
    for (uint32_t i = 0; i < model->meshes.size(); i++) {
       VkdfMesh *mesh = model->meshes[i];
-      if (mesh->size.w == 0.0f && mesh->size.h == 0.0f && mesh->size.d == 0.0f)
-         vkdf_mesh_compute_size(mesh);
+      const VkdfBox *m_box = vkdf_mesh_get_box(mesh);
+      if (m_box->w == 0.0f && m_box->h == 0.0f && m_box->d == 0.0f)
+         vkdf_mesh_compute_box(mesh);
 
-      if (mesh->size.min.x < model->size.min.x)
-         model->size.min.x = mesh->size.min.x;
-      if (mesh->size.max.x > model->size.max.x)
-         model->size.max.x = mesh->size.max.x;
+      glm::vec3 m_min = glm::vec3(m_box->center.x - m_box->w,
+                                  m_box->center.y - m_box->h,
+                                  m_box->center.z - m_box->d);
 
-      if (mesh->size.min.y < model->size.min.y)
-         model->size.min.y = mesh->size.min.y;
-      if (mesh->size.max.y > model->size.max.y)
-         model->size.max.y = mesh->size.max.y;
+      glm::vec3 m_max = glm::vec3(m_box->center.x + m_box->w,
+                                  m_box->center.y + m_box->h,
+                                  m_box->center.z + m_box->d);
 
-      if (mesh->size.min.z < model->size.min.z)
-         model->size.min.z = mesh->size.min.z;
-      if (mesh->size.max.z > model->size.max.z)
-         model->size.max.z = mesh->size.max.z;
+      if (m_min.x < min.x)
+         min.x = m_min.x;
+      if (m_max.x > max.x)
+         max.x = m_max.x;
+
+      if (m_min.y < min.y)
+         min.y = m_min.y;
+      if (m_max.y > max.y)
+         max.y = m_max.y;
+
+      if (m_min.z < min.z)
+         min.z = m_min.z;
+      if (m_max.z > max.z)
+         max.z = m_max.z;
    }
 
-   model->size.w = model->size.max.x - model->size.min.x;
-   model->size.h = model->size.max.y - model->size.min.y;
-   model->size.d = model->size.max.z - model->size.min.z;
+   model->box.center.x = (max.x + min.x) / 2.0f;
+   model->box.center.y = (max.y + min.y) / 2.0f;
+   model->box.center.z = (max.z + min.z) / 2.0f;
+   model->box.w = (max.x - min.x) / 2.0f;
+   model->box.h = (max.y - min.y) / 2.0f;
+   model->box.d = (max.z - min.z) / 2.0f;
 }
 
 void

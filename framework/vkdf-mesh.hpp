@@ -20,16 +20,11 @@ typedef struct {
 
    VkPrimitiveTopology primitive;
 
-   struct {
-      float w;
-      float h;
-      float d;
-      glm::vec3 min;
-      glm::vec3 max;
-   } size;
-
    /* Position of the center of the mesh (in mesh/model coordinate space) */
    glm::vec3 pos;
+
+   /* Bounding box (in model-space coordinates) */
+   VkdfBox box;
 } VkdfMesh;
 
 VkdfMesh *
@@ -89,30 +84,21 @@ void
 vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh);
 
 void
-vkdf_mesh_compute_size(VkdfMesh *mesh);
+vkdf_mesh_compute_box(VkdfMesh *mesh);
 
-inline float
-vkdf_mesh_get_width(VkdfMesh *mesh)
+inline const VkdfBox *
+vkdf_mesh_get_box(VkdfMesh *mesh)
 {
-   return mesh->size.w;
+   return &mesh->box;
 }
 
-inline float
-vkdf_mesh_get_height(VkdfMesh *mesh)
+inline void
+vkdf_mesh_get_scaled_box(VkdfMesh *mesh, glm::vec3 &scale, VkdfBox *box)
 {
-   return mesh->size.h;
-}
-
-inline float
-vkdf_mesh_get_depth(VkdfMesh *mesh)
-{
-   return mesh->size.d;
-}
-
-inline glm::vec3
-vkdf_mesh_get_center_pos(VkdfMesh *mesh)
-{
-   return mesh->pos;
+   box->center = mesh->box.center * scale;
+   box->w = mesh->box.w * scale.x;
+   box->h = mesh->box.h * scale.y;
+   box->d = mesh->box.d * scale.z;
 }
 
 #endif

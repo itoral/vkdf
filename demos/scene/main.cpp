@@ -440,7 +440,7 @@ init_meshes(SceneResources *res)
 
    res->cube_model = vkdf_model_new();
    vkdf_model_add_mesh(res->cube_model, res->cube_mesh);
-   vkdf_model_compute_size(res->cube_model);
+   vkdf_model_compute_box(res->cube_model);
 
    vkdf_model_add_material(res->cube_model, &red);
    vkdf_model_add_material(res->cube_model, &green);

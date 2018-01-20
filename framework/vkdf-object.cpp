@@ -21,7 +21,7 @@ vkdf_object_new_from_mesh(const glm::vec3 &pos, VkdfMesh *mesh)
 
    obj->model = vkdf_model_new();
    vkdf_model_add_mesh(obj->model, mesh);
-   vkdf_model_compute_size(obj->model);
+   vkdf_model_compute_box(obj->model);
 
    return obj;
 }

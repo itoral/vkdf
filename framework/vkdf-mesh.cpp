@@ -88,7 +88,7 @@ vkdf_cube_mesh_new(VkdfContext *ctx)
       mesh->normals.push_back(face_normals[i / 6]);
    }
 
-   vkdf_mesh_compute_size(mesh);
+   vkdf_mesh_compute_box(mesh);
 
    return mesh;
 }
@@ -111,7 +111,7 @@ vkdf_tile_mesh_new(VkdfContext *ctx)
       mesh->normals.push_back(glm::vec3(0.0f, 1.0f, 0.0f));
    }
 
-   vkdf_mesh_compute_size(mesh);
+   vkdf_mesh_compute_box(mesh);
 
    return mesh;
 }
@@ -139,7 +139,7 @@ vkdf_2d_tile_mesh_new(VkdfContext *ctx)
       mesh->uvs.push_back(uvs[i]);
    }
 
-   vkdf_mesh_compute_size(mesh);
+   vkdf_mesh_compute_box(mesh);
 
    return mesh;
 }
@@ -348,35 +348,34 @@ vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh)
 }
 
 void
-vkdf_mesh_compute_size(VkdfMesh *mesh)
+vkdf_mesh_compute_box(VkdfMesh *mesh)
 {
-   mesh->size.min = glm::vec3(999999999.0f, 999999999.0f, 999999999.0f);
-   mesh->size.max = glm::vec3(-999999999.0f, -999999999.0f, -999999999.0f);
+   glm::vec3 min = glm::vec3(999999999.0f, 999999999.0f, 999999999.0f);
+   glm::vec3 max = glm::vec3(-999999999.0f, -999999999.0f, -999999999.0f);
 
    for (uint32_t i = 0; i < mesh->vertices.size(); i++) {
       glm::vec3 *v = &mesh->vertices[i];
 
-      if (v->x < mesh->size.min.x)
-         mesh->size.min.x = v->x;
-      else if (v->x > mesh->size.max.x)
-         mesh->size.max.x = v->x;
+      if (v->x < min.x)
+         min.x = v->x;
+      else if (v->x > max.x)
+         max.x = v->x;
 
-      if (v->y < mesh->size.min.y)
-         mesh->size.min.y = v->y;
-      else if (v->y > mesh->size.max.y)
-         mesh->size.max.y = v->y;
+      if (v->y < min.y)
+         min.y = v->y;
+      else if (v->y > max.y)
+         max.y = v->y;
 
-      if (v->z < mesh->size.min.z)
-         mesh->size.min.z = v->z;
-      else if (v->z > mesh->size.max.z)
-         mesh->size.max.z = v->z;
+      if (v->z < min.z)
+         min.z = v->z;
+      else if (v->z > max.z)
+         max.z = v->z;
    }
 
-   mesh->size.w = mesh->size.max.x - mesh->size.min.x;
-   mesh->size.h = mesh->size.max.y - mesh->size.min.y;
-   mesh->size.d = mesh->size.max.z - mesh->size.min.z;
-
-   mesh->pos.x = (mesh->size.max.x + mesh->size.min.x) / 2.0f;
-   mesh->pos.y = (mesh->size.max.y + mesh->size.min.y) / 2.0f;
-   mesh->pos.z = (mesh->size.max.z + mesh->size.min.z) / 2.0f;
+   mesh->box.center.x = (max.x + min.x) / 2.0f;
+   mesh->box.center.y = (max.y + min.y) / 2.0f;
+   mesh->box.center.z = (max.z + min.z) / 2.0f;
+   mesh->box.w = (max.x - min.x) / 2.0f;
+   mesh->box.h = (max.y - min.y) / 2.0f;
+   mesh->box.d = (max.z - min.z) / 2.0f;
 }

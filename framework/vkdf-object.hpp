@@ -84,19 +84,19 @@ vkdf_object_get_model_matrix(VkdfObject *obj);
 inline float
 vkdf_object_width(VkdfObject *obj)
 {
-   return obj->model->size.w * obj->scale.x;
+   return 2.0f * obj->model->box.w * obj->scale.x;
 }
 
 inline float
 vkdf_object_height(VkdfObject *obj)
 {
-   return obj->model->size.h * obj->scale.y;
+   return 2.0f * obj->model->box.h * obj->scale.y;
 }
 
 inline float
 vkdf_object_depth(VkdfObject *obj)
 {
-   return obj->model->size.d * obj->scale.z;
+   return 2.0f * obj->model->box.d * obj->scale.z;
 }
 
 VkdfBox *

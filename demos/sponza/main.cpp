@@ -186,14 +186,15 @@ compute_sponza_mesh_boxes(SceneResources *res)
    VkdfObject *obj = res->sponza_obj;
    VkdfModel *model = res->sponza_model;
 
-   // FIXME: we should put this in a helper in the framework
    for (uint32_t i = 0; i < model->meshes.size(); i++) {
+      // Get the mesh's box, scaled by the object dimensions
       VkdfBox box;
-      box.center = obj->pos + vkdf_mesh_get_center_pos(model->meshes[i]) * obj->scale;
-      box.w = vkdf_mesh_get_width(model->meshes[i]) * obj->scale.x / 2.0f;
-      box.h = vkdf_mesh_get_height(model->meshes[i]) * obj->scale.y / 2.0f;
-      box.d = vkdf_mesh_get_depth(model->meshes[i]) * obj->scale.z / 2.0f;
+      vkdf_mesh_get_scaled_box(model->meshes[i], obj->scale, &box);
 
+      // Apply the object translation transform to the box
+      box.center += obj->pos;
+
+      // Apply the object rotation transform to the box
       if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
          glm::mat4 Model(1.0f);
          Model = glm::translate(Model, box.center);
