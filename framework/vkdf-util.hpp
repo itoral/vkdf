@@ -69,4 +69,20 @@ vkdf_compute_rotation_matrix(glm::vec3 rot);
 glm::vec3
 vkdf_compute_viewdir(glm::vec3 rot);
 
+inline void
+vkdf_color_clear_set(VkClearValue *value, const glm::vec4 &color)
+{
+   value->color.float32[0] = color.x;
+   value->color.float32[1] = color.y;
+   value->color.float32[2] = color.z;
+   value->color.float32[3] = color.w;
+}
+
+inline void
+vkdf_depth_stencil_clear_set(VkClearValue *value, float d, float s)
+{
+   value->depthStencil.depth = d;
+   value->depthStencil.stencil = s;
+}
+
 #endif

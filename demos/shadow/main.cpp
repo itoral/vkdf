@@ -399,12 +399,8 @@ static void
 render_pass_commands(VkdfContext *ctx, SceneResources *res)
 {
    VkClearValue clear_values[2];
-   clear_values[0].color.float32[0] = 0.0f;
-   clear_values[0].color.float32[1] = 0.0f;
-   clear_values[0].color.float32[2] = 0.0f;
-   clear_values[0].color.float32[3] = 1.0f;
-   clear_values[1].depthStencil.depth = 1.0f;
-   clear_values[1].depthStencil.stencil = 0;
+   vkdf_color_clear_set(&clear_values[0], glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+   vkdf_depth_stencil_clear_set(&clear_values[1], 1.0f, 0);
 
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;

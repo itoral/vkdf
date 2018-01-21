@@ -630,14 +630,10 @@ init_scene(SceneResources *res)
                                   res);
 
    VkClearValue color_clear;
-   color_clear.color.float32[0] = 0.2f;
-   color_clear.color.float32[1] = 0.4f;
-   color_clear.color.float32[2] = 0.8f;
-   color_clear.color.float32[3] = 1.0f;
+   vkdf_color_clear_set(&color_clear, glm::vec4(0.2f, 0.4f, 0.8f, 1.0f));
 
    VkClearValue depth_clear;
-   depth_clear.depthStencil.depth = 1.0f;
-   depth_clear.depthStencil.stencil = 0;
+   vkdf_depth_stencil_clear_set(&depth_clear, 1.0f, 0);
 
    /* For deferred rendering we skip color clearing. Pixels not rendered during
     * the gbuffer pass will be rendered in the clear color in the shader

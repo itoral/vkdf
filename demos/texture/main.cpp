@@ -138,10 +138,7 @@ static void
 render_pass_commands(VkdfContext *ctx, DemoResources *res, uint32_t index)
 {
    VkClearValue clear_values[1];
-   clear_values[0].color.float32[0] = 0.0f;
-   clear_values[0].color.float32[1] = 0.0f;
-   clear_values[0].color.float32[2] = 0.0f;
-   clear_values[0].color.float32[3] = 1.0f;
+   vkdf_color_clear_set(clear_values, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;

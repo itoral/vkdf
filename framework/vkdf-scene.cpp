@@ -2205,8 +2205,7 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                              VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
    VkClearValue clear_values[1];
-   clear_values[0].depthStencil.depth = 1.0f;
-   clear_values[0].depthStencil.stencil = 0;
+   vkdf_depth_stencil_clear_set(clear_values, 1.0, 0);
 
    uint32_t shadow_map_size = sl->shadow.spec.shadow_map_size;
 
@@ -2768,12 +2767,8 @@ vkdf_scene_set_clear_values(VkdfScene *s,
    if (color) {
       s->rp.clear_values[0] = *color;
    } else {
-      VkClearValue color_clear;
-      color_clear.color.float32[0] = 0.0f;
-      color_clear.color.float32[1] = 0.0f;
-      color_clear.color.float32[2] = 0.0f;
-      color_clear.color.float32[3] = 1.0f;
-      s->rp.clear_values[0] = color_clear;
+      vkdf_color_clear_set(&s->rp.clear_values[0],
+                           glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
    }
 
    s->rp.clear_values[1] = *depth;
@@ -2945,18 +2940,11 @@ static void
 prepare_deferred_render_passes(VkdfScene *s)
 {
    /* Setup depth and gbuffer color clear values */
-   VkClearValue depth_clear;
-   depth_clear.depthStencil.depth = 1.0f;
-   depth_clear.depthStencil.stencil = 0;
-   s->rp.gbuffer_clear_values[0] = depth_clear;
+   vkdf_depth_stencil_clear_set(&s->rp.gbuffer_clear_values[0], 1.0f, 0);
 
    for (uint32_t i = 0; i < s->rt.gbuffer_size; i++) {
-      VkClearValue color_clear;
-      color_clear.color.float32[0] = 0.0f;
-      color_clear.color.float32[1] = 0.0f;
-      color_clear.color.float32[2] = 0.0f;
-      color_clear.color.float32[3] = 0.0f;
-      s->rp.gbuffer_clear_values[i + 1] = color_clear;
+      vkdf_color_clear_set(&s->rp.gbuffer_clear_values[i + 1],
+                           glm::vec4(0.0f, 0.0f, 0.0f, 0.0f));
    }
 
    /* Depth + GBuffer render passes */

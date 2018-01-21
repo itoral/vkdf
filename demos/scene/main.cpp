@@ -470,14 +470,10 @@ init_objects(SceneResources *res)
    }
 
    VkClearValue color_clear;
-   color_clear.color.float32[0] = 0.0f;
-   color_clear.color.float32[1] = 0.0f;
-   color_clear.color.float32[2] = 0.0f;
-   color_clear.color.float32[3] = 1.0f;
+   vkdf_color_clear_set(&color_clear, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
    VkClearValue depth_clear;
-   depth_clear.depthStencil.depth = 1.0f;
-   depth_clear.depthStencil.stencil = 0;
+   vkdf_depth_stencil_clear_set(&depth_clear, 1.0f, 0);
 
    vkdf_scene_set_clear_values(res->scene, &color_clear, &depth_clear);
 
