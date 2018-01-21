@@ -654,12 +654,7 @@ init_scene(SceneResources *res)
    vkdf_light_enable_shadows(light, true);
 
    VkdfSceneShadowSpec shadow_spec;
-   shadow_spec.shadow_map_near = 5.0f;
-   shadow_spec.shadow_map_far = 110.0f;
-   shadow_spec.shadow_map_size = 4096;
-   shadow_spec.depth_bias_const_factor = 1.0f;
-   shadow_spec.depth_bias_slope_factor = 2.0f;
-   shadow_spec.pfc_kernel_size = 2;
+   vkdf_scene_shadow_spec_set(&shadow_spec, 4096, 5.0f, 110.0f, 1.0f, 2.0f, 2);
 
    vkdf_scene_add_light(res->scene, light, &shadow_spec);
 

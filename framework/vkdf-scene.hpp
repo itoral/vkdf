@@ -565,4 +565,21 @@ vkdf_scene_get_gbuffer_image(VkdfScene *s, uint32_t index)
 void
 vkdf_scene_event_loop_run(VkdfScene *s);
 
+inline void
+vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
+                           uint32_t shadow_map_size,
+                           float near_plane,
+                           float far_plane,
+                           float depth_bias_const_factor,
+                           float depth_bias_slope_factor,
+                           uint32_t pcf_kernel_size)
+{
+   spec->shadow_map_size = shadow_map_size;
+   spec->shadow_map_near = near_plane;
+   spec->shadow_map_far = far_plane;
+   spec->depth_bias_const_factor = depth_bias_const_factor;
+   spec->depth_bias_slope_factor = depth_bias_slope_factor;
+   spec->pfc_kernel_size = pcf_kernel_size;
+}
+
 #endif

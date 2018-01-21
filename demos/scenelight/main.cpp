@@ -874,12 +874,8 @@ init_lights(SceneResources *res)
    vkdf_light_enable_shadows(res->lights[idx], true);
 
    VkdfSceneShadowSpec shadow_spec;
-   shadow_spec.shadow_map_near = 0.1f;
-   shadow_spec.shadow_map_far = 100.0f;
-   shadow_spec.shadow_map_size = 1024;
-   shadow_spec.depth_bias_const_factor = 4.0f;
-   shadow_spec.depth_bias_slope_factor = 1.5f;
-   shadow_spec.pfc_kernel_size = 2;
+   vkdf_scene_shadow_spec_set(&shadow_spec, 1024, 0.1f, 100.0f, 4.0f, 1.5f, 2);
+
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 
    // Light 1
@@ -899,12 +895,8 @@ init_lights(SceneResources *res)
    vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 10.0f));
    vkdf_light_enable_shadows(res->lights[idx], true);
 
-   shadow_spec.shadow_map_near = 0.1f;
-   shadow_spec.shadow_map_far = 100.0f;
-   shadow_spec.shadow_map_size = 1024;
-   shadow_spec.depth_bias_const_factor = 4.0f;
-   shadow_spec.depth_bias_slope_factor = 1.5f;
-   shadow_spec.pfc_kernel_size = 2;
+   vkdf_scene_shadow_spec_set(&shadow_spec, 1024, 0.1f, 100.0f, 4.0f, 1.5f, 2);
+
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 }
 
