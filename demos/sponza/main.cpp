@@ -112,7 +112,6 @@ typedef struct {
    VkdfMesh *tile_mesh;
    VkdfModel *sponza_model;
    VkdfObject *sponza_obj;
-   VkdfBox sponza_mesh_boxes[400];
    bool sponza_mesh_visible[400];
 
    VkSampler sponza_sampler;
@@ -181,50 +180,6 @@ init_ubos(SceneResources *res)
 }
 
 void
-compute_sponza_mesh_boxes(SceneResources *res)
-{
-   VkdfObject *obj = res->sponza_obj;
-   VkdfModel *model = res->sponza_model;
-
-   for (uint32_t i = 0; i < model->meshes.size(); i++) {
-      // Get the mesh's box, scaled by the object dimensions
-      VkdfBox box;
-      vkdf_mesh_get_scaled_box(model->meshes[i], obj->scale, &box);
-
-      // Apply the object translation transform to the box
-      box.center += obj->pos;
-
-      // Apply the object rotation transform to the box
-      if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
-         glm::mat4 Model(1.0f);
-         Model = glm::translate(Model, box.center);
-         // FIXME: use quaternion
-         if (obj->rot.x)
-            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
-         if (obj->rot.y)
-            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.y), glm::vec3(0, 1, 0));
-         if (obj->rot.z)
-            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.z), glm::vec3(0, 0, 1));
-         Model = glm::translate(Model, -box.center);
-         vkdf_box_transform(&box, &Model);
-      }
-
-      res->sponza_mesh_boxes[i] = box;
-   }
-}
-
-static inline uint32_t
-frustum_contains_box(VkdfBox *box,
-                     VkdfBox *frustum_box,
-                     VkdfPlane *frustum_planes)
-{
-   if (!vkdf_box_collision(box, frustum_box))
-      return OUTSIDE;
-
-   return vkdf_box_is_in_frustum(box, frustum_planes);
-}
-
-void
 update_visible_sponza_meshes(SceneResources *res)
 {
    VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
@@ -233,13 +188,9 @@ update_visible_sponza_meshes(SceneResources *res)
 
    VkdfBox *cam_box = vkdf_camera_get_frustum_box(camera);
    VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(camera);
-
-   VkdfModel *model = res->sponza_model;
-   for (uint32_t i = 0; i < model->meshes.size(); i++) {
-      VkdfBox *box = &res->sponza_mesh_boxes[i];
-      res->sponza_mesh_visible[i] =
-         frustum_contains_box(box, cam_box, cam_planes) != OUTSIDE;
-   }
+   vkdf_object_get_visible_meshes(res->sponza_obj,
+                                  cam_box, cam_planes,
+                                  res->sponza_mesh_visible);
 }
 
 static bool
@@ -1486,7 +1437,6 @@ init_objects(SceneResources *res)
    vkdf_scene_add_object(res->scene, "sponza", obj);
 
    res->sponza_obj = obj;
-   compute_sponza_mesh_boxes(res);
 }
 
 static void
