@@ -200,25 +200,7 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
                              &mesh->vertex_buf.buf,     // Buffers
                              offsets);                  // Offsets
 
-      if (mesh->index_buf.buf == 0) {
-         vkCmdDraw(cmd_buf,
-                   mesh->vertices.size(),               // vertex count
-                   count,                               // instance count
-                   0,                                   // first vertex
-                   first_instance);                     // first instance
-      } else {
-         vkCmdBindIndexBuffer(cmd_buf,
-                              mesh->index_buf.buf,      // Buffer
-                              0,                        // Offset
-                              VK_INDEX_TYPE_UINT32);    // Index type
-
-         vkCmdDrawIndexed(cmd_buf,
-                          mesh->indices.size(),         // index count
-                          count,                        // instance count
-                          0,                            // first index
-                          0,                            // first vertex
-                          first_instance);              // first instance
-      }
+      vkdf_mesh_draw(mesh, cmd_buf, count, first_instance);
    }
 }
 

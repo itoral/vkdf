@@ -379,3 +379,30 @@ vkdf_mesh_compute_box(VkdfMesh *mesh)
    mesh->box.h = (max.y - min.y) / 2.0f;
    mesh->box.d = (max.z - min.z) / 2.0f;
 }
+
+void
+vkdf_mesh_draw(VkdfMesh *mesh,
+               VkCommandBuffer cmd_buf,
+               uint32_t instance_count,
+               uint32_t first_instance)
+{
+   if (mesh->index_buf.buf == 0) {
+      vkCmdDraw(cmd_buf,
+                mesh->vertices.size(),               // vertex count
+                instance_count,                      // instance count
+                0,                                   // first vertex
+                first_instance);                     // first instance
+   } else {
+      vkCmdBindIndexBuffer(cmd_buf,
+                           mesh->index_buf.buf,      // Buffer
+                           0,                        // Offset
+                           VK_INDEX_TYPE_UINT32);    // Index type
+
+      vkCmdDrawIndexed(cmd_buf,
+                       mesh->indices.size(),         // index count
+                       instance_count,               // instance count
+                       0,                            // first index
+                       0,                            // first vertex
+                       first_instance);              // first instance
+   }
+}

@@ -101,5 +101,11 @@ vkdf_mesh_get_scaled_box(VkdfMesh *mesh, glm::vec3 &scale, VkdfBox *box)
    box->d = mesh->box.d * scale.z;
 }
 
+void
+vkdf_mesh_draw(VkdfMesh *mesh,
+               VkCommandBuffer cmd_buf,
+               uint32_t instance_count,
+               uint32_t first_instance);
+
 #endif
 
