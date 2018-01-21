@@ -1310,22 +1310,11 @@ ensure_set_infos(VkdfSceneTile *t, GList *set_ids)
 }
 
 static inline uint32_t
-frustum_contains_box(VkdfBox *box,
-                     VkdfBox *frustum_box,
-                     VkdfPlane *frustum_planes)
-{
-   if (!vkdf_box_collision(box, frustum_box))
-      return OUTSIDE;
-
-   return vkdf_box_is_in_frustum(box, frustum_planes);
-}
-
-static inline uint32_t
 tile_is_visible(VkdfSceneTile *t, VkdfBox *visible_box, VkdfPlane *fp)
 {
    if (t->obj_count == 0)
       return OUTSIDE;
-   return frustum_contains_box(&t->box, visible_box, fp);
+   return vkdf_box_is_in_frustum(&t->box, visible_box, fp);
 }
 
 static inline uint32_t
@@ -1336,7 +1325,7 @@ subtile_is_visible(VkdfSceneTile *t, VkdfPlane *fp)
 
    // We only check subtiles if the parent tile is inside the camera's box,
    // so no need to check if a subtile is inside it
-   return vkdf_box_is_in_frustum(&t->box, fp);
+   return vkdf_box_is_in_frustum(&t->box, NULL, fp);
 }
 
 static GList *
@@ -2582,7 +2571,7 @@ find_dynamic_objects_for_light(VkdfScene *s,
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
          if (vkdf_object_casts_shadows(obj)) {
             VkdfBox *obj_box = vkdf_object_get_box(obj);
-            if (frustum_contains_box(obj_box, light_box, light_planes) != OUTSIDE) {
+            if (vkdf_box_is_in_frustum(obj_box, light_box, light_planes) != OUTSIDE) {
                dyn_info->objs = g_list_prepend(dyn_info->objs, obj);
                dyn_info->shadow_caster_count++;
                start_index++;
@@ -3248,7 +3237,7 @@ update_dirty_objects(VkdfScene *s)
          // camera is not dirty and the object was visible in the previous
          // frame.
          VkdfBox *obj_box = vkdf_object_get_box(obj);
-         if (frustum_contains_box(obj_box, cam_box, cam_planes) != OUTSIDE) {
+         if (vkdf_box_is_in_frustum(obj_box, cam_box, cam_planes) != OUTSIDE) {
             // Update host buffer for UBO upload
             glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
 

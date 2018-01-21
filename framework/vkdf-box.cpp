@@ -120,8 +120,8 @@ vkdf_box_transform(VkdfBox *box, glm::mat4 *transform)
    box->d = (maxZ - minZ) / 2.0f;
 }
 
-uint32_t
-vkdf_box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
+static uint32_t
+box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
 {
    uint32_t result = INSIDE;
    uint32_t in, out;
@@ -144,6 +144,20 @@ vkdf_box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
    }
 
    return result;
+}
+
+uint32_t
+vkdf_box_is_in_frustum(VkdfBox *box,
+                       VkdfBox *frustum_box,
+                       VkdfPlane *frustum_planes)
+{
+   if (frustum_box && !vkdf_box_collision(box, frustum_box))
+      return OUTSIDE;
+
+   if (frustum_planes)
+      return box_is_in_frustum(box, frustum_planes);
+
+   return INSIDE;
 }
 
 uint32_t

@@ -178,20 +178,6 @@ vkdf_object_get_mesh_boxes(VkdfObject *obj)
    return obj->mesh_boxes;
 }
 
-static inline uint32_t
-frustum_contains_box(VkdfBox *box,
-                     VkdfBox *frustum_box,
-                     VkdfPlane *frustum_planes)
-{
-   if (frustum_box && !vkdf_box_collision(box, frustum_box))
-      return OUTSIDE;
-
-   if (frustum_planes)
-      return vkdf_box_is_in_frustum(box, frustum_planes);
-
-   return INSIDE;
-}
-
 bool
 vkdf_object_get_visible_meshes(VkdfObject *obj,
                                VkdfBox *frustum_box,
@@ -205,7 +191,7 @@ vkdf_object_get_visible_meshes(VkdfObject *obj,
    for (uint32_t i = 0; i < model->meshes.size(); i++) {
       VkdfBox *box = (VkdfBox *) &mesh_boxes[i];
       visible[i] =
-         frustum_contains_box(box, frustum_box, frustum_planes) != OUTSIDE;
+         vkdf_box_is_in_frustum(box, frustum_box, frustum_planes) != OUTSIDE;
       any_visible |= visible[i];
    }
 

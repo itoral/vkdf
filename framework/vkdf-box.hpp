@@ -25,7 +25,9 @@ void
 vkdf_box_transform(VkdfBox *box, glm::mat4 *transform);
 
 uint32_t
-vkdf_box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes);
+vkdf_box_is_in_frustum(VkdfBox *box,
+                       VkdfBox *frustum_box,
+                       VkdfPlane *frustum_planes);
 
 uint32_t
 vkdf_box_is_in_cone(VkdfBox *box, glm::vec3 top, glm::vec3 dir, float cutoff);
