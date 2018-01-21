@@ -69,19 +69,4 @@ vkdf_compute_rotation_matrix(glm::vec3 rot);
 glm::vec3
 vkdf_compute_viewdir(glm::vec3 rot);
 
-void
-vkdf_compute_frustum_vertices(glm::vec3 origin,
-                              glm::vec3 rot,
-                              float near_dist,
-                              float far_dist,
-                              float fov,
-                              float aspect_ratio,
-                              glm::vec3 *f);
-
-void
-vkdf_compute_frustum_planes(glm::vec3 *f, VkdfPlane *p);
-
-void
-vkdf_compute_frustum_clip_box(glm::vec3 *f, VkdfBox *box);
-
 #endif

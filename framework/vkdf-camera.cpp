@@ -214,12 +214,12 @@ vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z)
 static void
 compute_frustum(VkdfCamera *cam)
 {
-   vkdf_compute_frustum_vertices(cam->pos, cam->rot,
+   vkdf_frustum_compute_vertices(cam->pos, cam->rot,
                                  cam->proj.near_plane, cam->proj.far_plane,
                                  cam->proj.fov, cam->proj.aspect_ratio,
                                  cam->frustum.vertices);
-   vkdf_compute_frustum_clip_box(cam->frustum.vertices, &cam->frustum.box);
-   vkdf_compute_frustum_planes(cam->frustum.vertices, cam->frustum.planes);
+   vkdf_frustum_compute_clip_box(cam->frustum.vertices, &cam->frustum.box);
+   vkdf_frustum_compute_planes(cam->frustum.vertices, cam->frustum.planes);
    cam->dirty_frustum = false;
 }
 

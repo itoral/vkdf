@@ -727,13 +727,13 @@ compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
    VkdfSceneShadowSpec *spec = &sl->shadow.spec;
 
    glm::vec3 f[8];
-   vkdf_compute_frustum_vertices(cam->pos, cam->rot,
+   vkdf_frustum_compute_vertices(cam->pos, cam->rot,
                                  spec->shadow_map_near, spec->shadow_map_far,
                                  cam->proj.fov, cam->proj.aspect_ratio,
                                  f);
 
    VkdfBox box;
-   vkdf_compute_frustum_clip_box(f, &box);
+   vkdf_frustum_compute_clip_box(f, &box);
 
    float w = 2.0f * box.w;
    float h = 2.0f * box.h;
@@ -2117,7 +2117,7 @@ scene_light_compute_frustum(VkdfScene *s, VkdfSceneLight *sl)
       float aperture_angle =
          RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
 
-      vkdf_compute_frustum_vertices(
+      vkdf_frustum_compute_vertices(
          vkdf_light_get_position(sl->light),
          vkdf_light_get_rotation(sl->light),
          sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
@@ -2125,7 +2125,7 @@ scene_light_compute_frustum(VkdfScene *s, VkdfSceneLight *sl)
          1.0f,
          sl->frustum.vertices);
    } else if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL) {
-      vkdf_compute_frustum_vertices(vkdf_camera_get_position(s->camera),
+      vkdf_frustum_compute_vertices(vkdf_camera_get_position(s->camera),
                                     vkdf_camera_get_rotation(s->camera),
                                     sl->shadow.spec.shadow_map_near,
                                     sl->shadow.spec.shadow_map_far,
@@ -2134,8 +2134,8 @@ scene_light_compute_frustum(VkdfScene *s, VkdfSceneLight *sl)
                                     sl->frustum.vertices);
    }
 
-   vkdf_compute_frustum_clip_box(sl->frustum.vertices, &sl->frustum.box);
-   vkdf_compute_frustum_planes(sl->frustum.vertices, sl->frustum.planes);
+   vkdf_frustum_compute_clip_box(sl->frustum.vertices, &sl->frustum.box);
+   vkdf_frustum_compute_planes(sl->frustum.vertices, sl->frustum.planes);
    sl->frustum.dirty = false;
 }
 
