@@ -186,8 +186,8 @@ update_visible_sponza_meshes(SceneResources *res)
    if (!vkdf_camera_is_dirty(camera))
       return;
 
-   VkdfBox *cam_box = vkdf_camera_get_frustum_box(camera);
-   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(camera);
+   const VkdfBox *cam_box = vkdf_camera_get_frustum_box(camera);
+   const VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(camera);
    vkdf_object_get_visible_meshes(res->sponza_obj,
                                   cam_box, cam_planes,
                                   res->sponza_mesh_visible);

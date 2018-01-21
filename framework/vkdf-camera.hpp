@@ -17,11 +17,7 @@ typedef struct {
    glm::mat4 view_matrix;
    glm::mat4 rot_matrix;
 
-   struct {
-      VkdfBox box;            // frustum's box
-      glm::vec3 vertices[8];  // frustum vertices
-      VkdfPlane planes[6];    // frustum planes
-   } frustum;
+   VkdfFrustum frustum;
 
    /* If you add new flags here, check if they need to be cleared in
     * vkdf_camera_set_dirty()
@@ -33,26 +29,6 @@ typedef struct {
    bool dirty_rot_matrix;
    bool dirty_frustum;
 } VkdfCamera;
-
-enum {
-  FRUSTUM_FTR = 0,
-  FRUSTUM_FTL,
-  FRUSTUM_FBR,
-  FRUSTUM_FBL,
-  FRUSTUM_NTR,
-  FRUSTUM_NTL,
-  FRUSTUM_NBR,
-  FRUSTUM_NBL,
-};
-
-enum {
-   FRUSTUM_FAR = 0,
-   FRUSTUM_NEAR,
-   FRUSTUM_LEFT,
-   FRUSTUM_RIGHT,
-   FRUSTUM_TOP,
-   FRUSTUM_BOTTOM,
-};
 
 VkdfCamera *
 vkdf_camera_new(float px, float py, float pz,
@@ -136,13 +112,13 @@ vkdf_camera_get_view_matrix(VkdfCamera *cam);
 glm::mat4
 vkdf_camera_get_rotation_matrix(VkdfCamera *cam);
 
-glm::vec3 *
+const glm::vec3 *
 vkdf_camera_get_frustum_vertices(VkdfCamera *cam);
 
-VkdfBox *
+const VkdfBox *
 vkdf_camera_get_frustum_box(VkdfCamera *cam);
 
-VkdfPlane *
+const VkdfPlane *
 vkdf_camera_get_frustum_planes(VkdfCamera *cam);
 
 #endif

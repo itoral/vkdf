@@ -726,18 +726,16 @@ compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
    assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL);
    VkdfSceneShadowSpec *spec = &sl->shadow.spec;
 
-   glm::vec3 f[8];
-   vkdf_frustum_compute_vertices(cam->pos, cam->rot,
-                                 spec->shadow_map_near, spec->shadow_map_far,
-                                 cam->proj.fov, cam->proj.aspect_ratio,
-                                 f);
+   VkdfFrustum f;
+   vkdf_frustum_compute(&f, false, true,
+                        cam->pos, cam->rot,
+                        spec->shadow_map_near, spec->shadow_map_far,
+                        cam->proj.fov, cam->proj.aspect_ratio);
 
-   VkdfBox box;
-   vkdf_frustum_compute_clip_box(f, &box);
-
-   float w = 2.0f * box.w;
-   float h = 2.0f * box.h;
-   float d = 2.0f * box.d;
+   const VkdfBox *box = vkdf_frustum_get_box(&f);
+   float w = 2.0f * box->w;
+   float h = 2.0f * box->h;
+   float d = 2.0f * box->d;
 
    glm::mat4 proj(1.0f);
    proj[0][0] =  2.0f / w;
@@ -825,7 +823,7 @@ vkdf_scene_add_light(VkdfScene *s,
    else
       vkdf_light_set_dirty(light, true);
 
-   slight->frustum.dirty = true;
+   slight->dirty_frustum = true;
 
    s->lights.push_back(slight);
 }
@@ -1310,7 +1308,9 @@ ensure_set_infos(VkdfSceneTile *t, GList *set_ids)
 }
 
 static inline uint32_t
-tile_is_visible(VkdfSceneTile *t, VkdfBox *visible_box, VkdfPlane *fp)
+tile_is_visible(VkdfSceneTile *t,
+                const VkdfBox *visible_box,
+                const VkdfPlane *fp)
 {
    if (t->obj_count == 0)
       return OUTSIDE;
@@ -1318,7 +1318,7 @@ tile_is_visible(VkdfSceneTile *t, VkdfBox *visible_box, VkdfPlane *fp)
 }
 
 static inline uint32_t
-subtile_is_visible(VkdfSceneTile *t, VkdfPlane *fp)
+subtile_is_visible(VkdfSceneTile *t, const VkdfPlane *fp)
 {
    if (t->obj_count == 0)
       return OUTSIDE;
@@ -1329,7 +1329,9 @@ subtile_is_visible(VkdfSceneTile *t, VkdfPlane *fp)
 }
 
 static GList *
-find_visible_subtiles(VkdfSceneTile *t, VkdfPlane *fplanes, GList *visible)
+find_visible_subtiles(VkdfSceneTile *t,
+                      const VkdfPlane *fplanes,
+                      GList *visible)
 {
    // If the tile can't be subdivided, then take the entire tile as visible
    if (!t->subtiles)
@@ -1370,8 +1372,8 @@ static GList *
 find_visible_tiles(VkdfScene *s,
                    uint32_t first_tile_idx,
                    uint32_t last_tile_idx,
-                   VkdfBox *visible_box,
-                   VkdfPlane *fplanes)
+                   const VkdfBox *visible_box,
+                   const VkdfPlane *fplanes)
 {
    GList *visible = NULL;
    for (uint32_t i = first_tile_idx; i <= last_tile_idx; i++) {
@@ -2104,66 +2106,37 @@ create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
                                sl->shadow.shadow_map.view);
 }
 
-// FIXME: we should have a frustum object, then we could put these functions
-// there and share the logic between the lights, the camera, etc instead
-// of replicating camera code here.
-static void
-scene_light_compute_frustum(VkdfScene *s, VkdfSceneLight *sl)
+static const VkdfFrustum *
+scene_light_get_frustum(VkdfScene *s, VkdfSceneLight *sl)
 {
    // FIXME: support point lights
    assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
 
+   if (!sl->dirty_frustum)
+      return &sl->frustum;
+
    if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT) {
       float aperture_angle =
          RAD_TO_DEG(vkdf_light_get_aperture_angle(sl->light));
-
-      vkdf_frustum_compute_vertices(
-         vkdf_light_get_position(sl->light),
-         vkdf_light_get_rotation(sl->light),
-         sl->shadow.spec.shadow_map_near, sl->shadow.spec.shadow_map_far,
-         aperture_angle,
-         1.0f,
-         sl->frustum.vertices);
+      vkdf_frustum_compute(&sl->frustum, true, true,
+                           vkdf_light_get_position(sl->light),
+                           vkdf_light_get_rotation(sl->light),
+                           sl->shadow.spec.shadow_map_near,
+                           sl->shadow.spec.shadow_map_far,
+                           aperture_angle,
+                           1.0f);
    } else if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL) {
-      vkdf_frustum_compute_vertices(vkdf_camera_get_position(s->camera),
-                                    vkdf_camera_get_rotation(s->camera),
-                                    sl->shadow.spec.shadow_map_near,
-                                    sl->shadow.spec.shadow_map_far,
-                                    s->camera->proj.fov,
-                                    s->camera->proj.aspect_ratio,
-                                    sl->frustum.vertices);
+      vkdf_frustum_compute(&sl->frustum, true, true,
+                           vkdf_camera_get_position(s->camera),
+                           vkdf_camera_get_rotation(s->camera),
+                           sl->shadow.spec.shadow_map_near,
+                           sl->shadow.spec.shadow_map_far,
+                           s->camera->proj.fov,
+                           s->camera->proj.aspect_ratio);
    }
 
-   vkdf_frustum_compute_clip_box(sl->frustum.vertices, &sl->frustum.box);
-   vkdf_frustum_compute_planes(sl->frustum.vertices, sl->frustum.planes);
-   sl->frustum.dirty = false;
-}
-
-VkdfBox *
-scene_light_get_frustum_box(VkdfScene *s, VkdfSceneLight *sl)
-{
-   if (sl->frustum.dirty)
-      scene_light_compute_frustum(s, sl);
-
-   return &sl->frustum.box;
-}
-
-glm::vec3 *
-scene_light_get_frustum_vertices(VkdfScene *s, VkdfSceneLight *sl)
-{
-   if (sl->frustum.dirty)
-      scene_light_compute_frustum(s, sl);
-
-   return sl->frustum.vertices;
-}
-
-VkdfPlane *
-scene_light_get_frustum_planes(VkdfScene *s, VkdfSceneLight *sl)
-{
-   if (sl->frustum.dirty)
-      scene_light_compute_frustum(s, sl);
-
-   return sl->frustum.planes;
+   sl->dirty_frustum = false;
+   return &sl->frustum;
 }
 
 static void
@@ -2177,8 +2150,9 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
    assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
 
    // Compute light frustum bounds for clipping
-   VkdfBox *frustum_box = scene_light_get_frustum_box(s, sl);
-   VkdfPlane *frustum_planes = scene_light_get_frustum_planes(s, sl);
+   const VkdfFrustum *f = scene_light_get_frustum(s, sl);
+   const VkdfBox *frustum_box = vkdf_frustum_get_box(f);
+   const VkdfPlane *frustum_planes = vkdf_frustum_get_planes(f);
 
    // Find the list of tiles visible to this light
    // FIXME: thread this?
@@ -2553,8 +2527,9 @@ find_dynamic_objects_for_light(VkdfScene *s,
    // FIXME: Support point lights
    assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
 
-   VkdfBox *light_box = scene_light_get_frustum_box(s, sl);
-   VkdfPlane *light_planes = scene_light_get_frustum_planes(s, sl);
+   const VkdfFrustum *f = scene_light_get_frustum(s, sl);
+   const VkdfBox *light_box = vkdf_frustum_get_box(f);
+   const VkdfPlane *light_planes = vkdf_frustum_get_planes(f);
 
    uint32_t start_index = 0;
    g_hash_table_iter_init(&iter, s->dynamic.sets);
@@ -2747,7 +2722,7 @@ update_dirty_lights(VkdfScene *s)
          s->lights_dirty = true;
 
       if (vkdf_light_has_dirty_shadows(l))
-         sl->frustum.dirty = true;
+         sl->dirty_frustum = true;
 
       if (!vkdf_light_casts_shadows(l))
          continue;
@@ -3178,8 +3153,8 @@ update_dirty_objects(VkdfScene *s)
    if (s->obj_count == s->static_obj_count)
       return;
 
-   VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
-   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
+   const VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
+   const VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
 
    // Keep track of the number of visible dynamic objects in the scene so we
    // can compute start indices for each visible set in the UBO with the
@@ -3375,8 +3350,8 @@ thread_update_cmd_bufs(uint32_t thread_id, void *arg)
 
    VkdfScene *s = data->s;
 
-   VkdfBox *visible_box = data->visible_box;
-   VkdfPlane *fplanes = data->fplanes;
+   const VkdfBox *visible_box = data->visible_box;
+   const VkdfPlane *fplanes = data->fplanes;
 
    uint32_t first_idx = data->first_idx;
    uint32_t last_idx = data->last_idx;
@@ -3417,8 +3392,8 @@ thread_update_cmd_bufs(uint32_t thread_id, void *arg)
 static bool
 update_cmd_bufs(VkdfScene *s)
 {
-   VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
-   VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
+   const VkdfBox *cam_box = vkdf_camera_get_frustum_box(s->camera);
+   const VkdfPlane *cam_planes = vkdf_camera_get_frustum_planes(s->camera);
 
    for (uint32_t thread_idx = 0;
         thread_idx < s->thread.num_threads;

@@ -211,47 +211,40 @@ vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z)
    cam->dirty_rot_matrix = true;
 }
 
-static void
+static inline void
 compute_frustum(VkdfCamera *cam)
 {
-   vkdf_frustum_compute_vertices(cam->pos, cam->rot,
-                                 cam->proj.near_plane, cam->proj.far_plane,
-                                 cam->proj.fov, cam->proj.aspect_ratio,
-                                 cam->frustum.vertices);
-   vkdf_frustum_compute_clip_box(cam->frustum.vertices, &cam->frustum.box);
-   vkdf_frustum_compute_planes(cam->frustum.vertices, cam->frustum.planes);
+   vkdf_frustum_compute(&cam->frustum, true, true,
+                        cam->pos, cam->rot,
+                        cam->proj.near_plane, cam->proj.far_plane,
+                        cam->proj.fov, cam->proj.aspect_ratio);
+
    cam->dirty_frustum = false;
 }
 
-VkdfBox *
+const VkdfBox *
 vkdf_camera_get_frustum_box(VkdfCamera *cam)
 {
-   if (cam->dirty_frustum) {
+   if (cam->dirty_frustum)
       compute_frustum(cam);
-      cam->dirty_frustum = false;
-   }
 
-   return &cam->frustum.box;
+   return vkdf_frustum_get_box(&cam->frustum);
 }
 
-glm::vec3 *
+const glm::vec3 *
 vkdf_camera_get_frustum_vertices(VkdfCamera *cam)
 {
-   if (cam->dirty_frustum) {
+   if (cam->dirty_frustum)
       compute_frustum(cam);
-      cam->dirty_frustum = false;
-   }
 
-   return cam->frustum.vertices;
+   return vkdf_frustum_get_vertices(&cam->frustum);
 }
 
-VkdfPlane *
+const VkdfPlane *
 vkdf_camera_get_frustum_planes(VkdfCamera *cam)
 {
-   if (cam->dirty_frustum) {
+   if (cam->dirty_frustum)
       compute_frustum(cam);
-      cam->dirty_frustum = false;
-   }
 
-   return cam->frustum.planes;
+   return vkdf_frustum_get_planes(&cam->frustum);
 }

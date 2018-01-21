@@ -202,8 +202,8 @@ vkdf_object_has_dirty_box(VkdfObject *obj)
 
 bool
 vkdf_object_get_visible_meshes(VkdfObject *obj,
-                               VkdfBox *frustum_box,
-                               VkdfPlane *frustum_planes,
+                               const VkdfBox *frustum_box,
+                               const VkdfPlane *frustum_planes,
                                bool *visible);
 
 #undef SET_FIELD

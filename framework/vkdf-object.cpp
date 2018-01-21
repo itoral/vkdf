@@ -180,8 +180,8 @@ vkdf_object_get_mesh_boxes(VkdfObject *obj)
 
 bool
 vkdf_object_get_visible_meshes(VkdfObject *obj,
-                               VkdfBox *frustum_box,
-                               VkdfPlane *frustum_planes,
+                               const VkdfBox *frustum_box,
+                               const VkdfPlane *frustum_planes,
                                bool *visible)
 {
    bool any_visible = false;

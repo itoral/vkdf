@@ -1,7 +1,7 @@
 #include "vkdf.hpp"
 
 glm::vec3
-vkdf_box_get_vertex(VkdfBox *box, uint32_t index)
+vkdf_box_get_vertex(const VkdfBox *box, uint32_t index)
 {
    switch (index) {
    case 0:
@@ -27,7 +27,7 @@ vkdf_box_get_vertex(VkdfBox *box, uint32_t index)
 }
 
 bool
-vkdf_box_is_inside(VkdfBox *box, glm::vec3 &p)
+vkdf_box_is_inside(const VkdfBox *box, glm::vec3 &p)
 {
    float xmin = box->center.x - box->w;
    float xmax = box->center.x + box->w;
@@ -42,7 +42,7 @@ vkdf_box_is_inside(VkdfBox *box, glm::vec3 &p)
 }
 
 bool
-vkdf_box_collision(VkdfBox *box1, VkdfBox *box2)
+vkdf_box_collision(const VkdfBox *box1, const VkdfBox *box2)
 {
    float xmin1 = box1->center.x - box1->w;
    float xmax1 = box1->center.x + box1->w;
@@ -121,7 +121,7 @@ vkdf_box_transform(VkdfBox *box, glm::mat4 *transform)
 }
 
 static uint32_t
-box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
+box_is_in_frustum(const VkdfBox *box, const VkdfPlane *fplanes)
 {
    uint32_t result = INSIDE;
    uint32_t in, out;
@@ -147,9 +147,9 @@ box_is_in_frustum(VkdfBox *box, VkdfPlane *fplanes)
 }
 
 uint32_t
-vkdf_box_is_in_frustum(VkdfBox *box,
-                       VkdfBox *frustum_box,
-                       VkdfPlane *frustum_planes)
+vkdf_box_is_in_frustum(const VkdfBox *box,
+                       const VkdfBox *frustum_box,
+                       const VkdfPlane *frustum_planes)
 {
    if (frustum_box && !vkdf_box_collision(box, frustum_box))
       return OUTSIDE;
@@ -161,7 +161,8 @@ vkdf_box_is_in_frustum(VkdfBox *box,
 }
 
 uint32_t
-vkdf_box_is_in_cone(VkdfBox *box, glm::vec3 top, glm::vec3 dir, float cutoff)
+vkdf_box_is_in_cone(const VkdfBox *box,
+                    glm::vec3 top, glm::vec3 dir, float cutoff)
 {
    // Consider some errors margin to account for accumulated precission errors
    // in the computations and specially, CPU/GPU precission differences in

@@ -28,12 +28,8 @@ typedef struct {
       uint32_t thread_id;        // Thread used to create the command buffer
       GList *visible;
    } shadow;
-   struct {
-      bool dirty;
-      VkdfBox box;
-      glm::vec3 vertices[8];
-      VkdfPlane planes[6];
-   } frustum;
+   VkdfFrustum frustum;
+   bool dirty_frustum;
 } VkdfSceneLight;
 
 typedef struct _VkdfSceneTile VkdfSceneTile;
@@ -44,8 +40,8 @@ struct TileThreadData {
    VkdfScene *s;
    uint32_t first_idx;
    uint32_t last_idx;
-   VkdfBox *visible_box;
-   VkdfPlane *fplanes;
+   const VkdfBox *visible_box;
+   const VkdfPlane *fplanes;
    GList *visible;
    bool cmd_buf_changes;
 };
