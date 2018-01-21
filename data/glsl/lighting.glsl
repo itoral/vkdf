@@ -89,7 +89,7 @@ float
 compute_shadow_factor(vec4 light_space_pos,
                       sampler2DShadow shadow_map,
                       uint shadow_map_size,
-                      uint pfc_size)
+                      uint pcf_size)
 {
    // Convert light space position to NDC
    vec3 light_space_ndc = light_space_pos.xyz /= light_space_pos.w;
@@ -107,8 +107,8 @@ compute_shadow_factor(vec4 light_space_pos,
    vec2 shadow_map_coord = light_space_ndc.xy * 0.5 + 0.5;
 
    // compute total number of samples to take from the shadow map
-   int pfc_size_minus_1 = int(pfc_size - 1);
-   float kernel_size = 2.0 * pfc_size_minus_1 + 1.0;
+   int pcf_size_minus_1 = int(pcf_size - 1);
+   float kernel_size = 2.0 * pcf_size_minus_1 + 1.0;
    float num_samples = kernel_size * kernel_size;
 
    // Counter for the shadow map samples not in the shadow
@@ -116,15 +116,15 @@ compute_shadow_factor(vec4 light_space_pos,
 
    // Take samples from the shadow map
    float shadow_map_texel_size = 1.0 / shadow_map_size;
-   for (int x = -pfc_size_minus_1; x <= pfc_size_minus_1; x++)
-   for (int y = -pfc_size_minus_1; y <= pfc_size_minus_1; y++) {
-      // Compute coordinate for this PFC sample
-      vec3 pfc_coord =
+   for (int x = -pcf_size_minus_1; x <= pcf_size_minus_1; x++)
+   for (int y = -pcf_size_minus_1; y <= pcf_size_minus_1; y++) {
+      // Compute coordinate for this PCF sample
+      vec3 pcf_coord =
 		vec3(shadow_map_coord + vec2(x, y) * shadow_map_texel_size,
              light_space_ndc.z);
 
       // Check if the sample is in light or in the shadow
-      lighted_count += texture(shadow_map, pfc_coord);
+      lighted_count += texture(shadow_map, pcf_coord);
 
    }
 
@@ -141,7 +141,7 @@ compute_lighting(Light l,
                  vec4 light_space_pos,
                  sampler2DShadow shadow_map,
                  uint shadow_map_size,
-                 uint pfc_size)
+                 uint pcf_size)
 {
    vec3 light_to_pos_norm;
    float att_factor;
@@ -152,7 +152,7 @@ compute_lighting(Light l,
    float shadow_factor;
    if (receives_shadows) {
       shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
-                                            shadow_map_size, pfc_size);
+                                            shadow_map_size, pcf_size);
    } else {
       shadow_factor = 1.0;
    }

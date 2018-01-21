@@ -803,7 +803,7 @@ vkdf_scene_add_light(VkdfScene *s,
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
    if (light->casts_shadows) {
-      assert(spec->pfc_kernel_size >= 1);
+      assert(spec->pcf_kernel_size >= 1);
       slight->shadow.spec = *spec;
       slight->shadow.shadow_map =
          create_shadow_map_image(s, spec->shadow_map_size);
@@ -1487,7 +1487,7 @@ create_dynamic_object_ubo(VkdfScene *s)
 struct _shadow_map_ubo_data {
    glm::mat4 light_viewproj;
    uint32_t shadow_map_size;
-   uint32_t pfc_kernel_size;
+   uint32_t pcf_kernel_size;
    uint32_t padding[2]; // Keep this struct 16-byte aligned
 };
 
@@ -2451,8 +2451,8 @@ record_scene_light_resource_updates(VkdfScene *s)
                 &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
          memcpy(&data.shadow_map_size,
                 &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
-         memcpy(&data.pfc_kernel_size,
-                &sl->shadow.spec.pfc_kernel_size, sizeof(uint32_t));
+         memcpy(&data.pcf_kernel_size,
+                &sl->shadow.spec.pcf_kernel_size, sizeof(uint32_t));
 
          vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                            s->ubo.light.buf.buf,

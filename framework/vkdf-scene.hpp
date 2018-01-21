@@ -12,7 +12,7 @@ typedef struct {
 
    // PFC kernel_size: valid values start at 1 (no PFC, 1 sample) to
    // N (2*(N-1)+1)^2 samples).
-   uint32_t pfc_kernel_size;
+   uint32_t pcf_kernel_size;
 } VkdfSceneShadowSpec;
 
 typedef struct {
@@ -579,7 +579,7 @@ vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
    spec->shadow_map_far = far_plane;
    spec->depth_bias_const_factor = depth_bias_const_factor;
    spec->depth_bias_slope_factor = depth_bias_slope_factor;
-   spec->pfc_kernel_size = pcf_kernel_size;
+   spec->pcf_kernel_size = pcf_kernel_size;
 }
 
 #endif
