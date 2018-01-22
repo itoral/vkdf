@@ -32,4 +32,28 @@ vkdf_pipeline_fill_shader_stage_info(VkPipelineShaderStageCreateInfo *info,
    info->module = module;
 }
 
+static inline void
+vkdf_vertex_binding_set(VkVertexInputBindingDescription *desc,
+                        uint32_t binding,
+                        VkVertexInputRate input_rate,
+                        uint32_t stride)
+{
+   desc->binding = binding;
+   desc->inputRate = input_rate;
+   desc->stride = stride;
+}
+
+static inline void
+vkdf_vertex_attrib_set(VkVertexInputAttributeDescription *desc,
+                       uint32_t binding,
+                       uint32_t location,
+                       VkFormat format,
+                       uint32_t offset)
+{
+   desc->binding = binding;
+   desc->location = location;
+   desc->format = format;
+   desc->offset = offset;
+}
+
 #endif
