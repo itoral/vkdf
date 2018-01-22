@@ -480,37 +480,25 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    // Pipeline
    res->pipeline_layout = create_pipeline_layout(ctx, res->set_layout);
 
-   // Vertex attribute binding 0: position and normal
    VkVertexInputBindingDescription vi_bindings[2];
-   vi_bindings[0].binding = 0;
-   vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride =
-      vkdf_mesh_get_vertex_data_stride(res->model->meshes[0]);
-
-   // Vertex attribute binding 1: material index (per-instance)
-   vi_bindings[1].binding = 1;
-   vi_bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-   vi_bindings[1].stride = sizeof(uint32_t);
-
    VkVertexInputAttributeDescription vi_attribs[3];
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
+   // Vertex attribute binding 0: position and normal
+   uint32_t stride = vkdf_mesh_get_vertex_data_stride(res->model->meshes[0]);
+   vkdf_vertex_binding_set(&vi_bindings[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
-   // binding 0, location 1: normal
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[1].offset = 12;
+   // Vertex attribute binding 1: material index (per-instance)
+   vkdf_vertex_binding_set(&vi_bindings[1],
+                           1, VK_VERTEX_INPUT_RATE_INSTANCE, sizeof(uint32_t));
 
-   // binding 1, location 2: per-instance material index
-   vi_attribs[2].binding = 1;
-   vi_attribs[2].location = 2;
-   vi_attribs[2].format = VK_FORMAT_R32_UINT;
-   vi_attribs[2].offset = 0;
+   /* binding 0, location 0: position
+    * binding 0, location 1: normal
+    * binding 1, location 2: per-instance material index
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32B32_SFLOAT, 12);
+   vkdf_vertex_attrib_set(&vi_attribs[2], 1, 2, VK_FORMAT_R32_UINT, 0);
 
    // We assume all meshes in the model use the same primitive type
    VkdfMesh *mesh = res->model->meshes[0];

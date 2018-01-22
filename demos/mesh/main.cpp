@@ -366,23 +366,15 @@ init_resources(VkdfContext *ctx, DemoResources *res)
 
    // Vertex attribute binding 0: position and normal
    VkVertexInputBindingDescription vi_binding;
-   vi_binding.binding = 0;
-   vi_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding.stride = sizeof(VertexData);
+   vkdf_vertex_binding_set(&vi_binding,
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, sizeof(VertexData));
 
+   /* location 0: position
+    * location 1: normal
+    */
    VkVertexInputAttributeDescription vi_attribs[2];
-
-   // location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // location 1: normal
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[1].offset = 12;
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32B32_SFLOAT, 12);
 
    VkPrimitiveTopology primitive = vkdf_mesh_get_primitive(res->cube_mesh);
    res->pipeline = vkdf_create_gfx_pipeline(ctx,

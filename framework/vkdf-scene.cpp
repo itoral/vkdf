@@ -1927,16 +1927,13 @@ create_shadow_map_pipeline_for_mesh(VkdfScene *s, VkdfMesh *mesh)
    rs.lineWidth = 1.0f;
    rs.depthBiasEnable = VK_TRUE;
 
-   VkPipelineVertexInputStateCreateInfo vi;
    VkVertexInputBindingDescription vi_binding[1];
    VkVertexInputAttributeDescription vi_attribs[1];
-   vi_binding[0].binding = 0;
-   vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = vertex_data_stride;
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
+   vkdf_vertex_binding_set(&vi_binding[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, vertex_data_stride);
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+
+   VkPipelineVertexInputStateCreateInfo vi;
    vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
    vi.pNext = NULL;
    vi.flags = 0;

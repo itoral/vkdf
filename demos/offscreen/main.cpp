@@ -380,15 +380,13 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    res->pipeline_layout = create_pipeline_layout(ctx, res->set_layout);
 
    VkVertexInputBindingDescription vi_binding;
-   vi_binding.binding = 0;
-   vi_binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding.stride = sizeof(VertexData);
+   vkdf_vertex_binding_set(&vi_binding,
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, sizeof(VertexData));
+
 
    VkVertexInputAttributeDescription vi_attribs[1];
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-   vi_attribs[0].offset = 0;
+   vkdf_vertex_attrib_set(&vi_attribs[0],
+                          0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0);
 
    res->pipeline = vkdf_create_gfx_pipeline(ctx,
                                             NULL,

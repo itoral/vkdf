@@ -358,21 +358,15 @@ init_obj_pipeline(SceneResources *res, bool init_cache)
    VkVertexInputAttributeDescription vi_attribs[2];
 
    // Vertex attribute binding 0: position, normal
-   vi_bindings[0].binding = 0;
-   vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride = 2 * sizeof(glm::vec3);
+   uint32_t stride = 2 * sizeof(glm::vec3);
+   vkdf_vertex_binding_set(&vi_bindings[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // binding 0, location 1: normal
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[1].offset = 12;
+   /* binding 0, location 0: position
+    * binding 0, location 1: normal
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32B32_SFLOAT, 12);
 
    VkRenderPass renderpass = vkdf_scene_get_static_render_pass(res->scene);
 

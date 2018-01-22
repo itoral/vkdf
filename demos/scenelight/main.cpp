@@ -554,32 +554,23 @@ init_obj_pipeline(SceneResources *res, bool dynamic)
    VkVertexInputAttributeDescription vi_attribs[3];
 
    // Vertex attribute binding 0: position, normal, material
-   vi_bindings[0].binding = 0;
-   vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride = vkdf_mesh_get_vertex_data_stride(res->cube_mesh);
+   uint32_t stride =
+      vkdf_mesh_get_vertex_data_stride(res->cube_mesh);
+   vkdf_vertex_binding_set(&vi_bindings[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
    assert(vkdf_mesh_get_vertex_data_stride(res->tree_model->meshes[0]) ==
           vi_bindings[0].stride);
    assert(vkdf_mesh_get_vertex_data_stride(res->tree_model->meshes[1]) ==
           vi_bindings[0].stride);
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // binding 0, location 1: normal
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[1].offset = 12;
-
-   // binding 0, location 2: material
-   vi_attribs[2].binding = 0;
-   vi_attribs[2].location = 2;
-   vi_attribs[2].format = VK_FORMAT_R32_UINT;
-   vi_attribs[2].offset = 24;
+   /* binding 0, location 0: position
+    * binding 0, location 1: normal
+    * binding 0, location 2: material
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32B32_SFLOAT, 12);
+   vkdf_vertex_attrib_set(&vi_attribs[2], 0, 2, VK_FORMAT_R32_UINT, 24);
 
    VkPipeline *pipeline = dynamic ?
          &res->pipelines.obj.dynamic_pipeline :
@@ -614,27 +605,18 @@ init_floor_pipeline(SceneResources *res, bool init_cache)
    VkVertexInputAttributeDescription vi_attribs[3];
 
    // Vertex attribute binding 0: position, normal, material
-   vi_bindings[0].binding = 0;
-   vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride = vkdf_mesh_get_vertex_data_stride(res->floor_mesh);
+   uint32_t stride =
+      vkdf_mesh_get_vertex_data_stride(res->floor_mesh);
+   vkdf_vertex_binding_set(&vi_bindings[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // binding 0, location 1: normal
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[1].offset = 12;
-
-   // binding 0, location 2: material
-   vi_attribs[2].binding = 0;
-   vi_attribs[2].location = 2;
-   vi_attribs[2].format = VK_FORMAT_R32_UINT;
-   vi_attribs[2].offset = 24;
+   /* binding 0, location 0: position
+    * binding 0, location 1: normal
+    * binding 0, location 2: material
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32B32_SFLOAT, 12);
+   vkdf_vertex_attrib_set(&vi_attribs[2], 0, 2, VK_FORMAT_R32_UINT, 24);
 
    res->pipelines.floor.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
@@ -963,21 +945,15 @@ create_debug_tile_pipeline(SceneResources *res)
    VkVertexInputAttributeDescription vi_attribs[2];
 
    // Vertex attribute binding 0: position, uv
-   vi_binding[0].binding = 0;
-   vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = vkdf_mesh_get_vertex_data_stride(res->tile_mesh);
+   uint32_t stride = vkdf_mesh_get_vertex_data_stride(res->tile_mesh);
+   vkdf_vertex_binding_set(&vi_binding[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // binding 0, location 1: uv
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32_SFLOAT;
-   vi_attribs[1].offset = 12;
+   /* binding 0, location 0: position
+    * binding 0, location 1: uv
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32_SFLOAT, 12);
 
    res->debug.pipeline.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,

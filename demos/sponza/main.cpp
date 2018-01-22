@@ -1214,14 +1214,14 @@ create_depth_prepass_pipelines(SceneResources *res)
    // Base pipeline
    VkVertexInputBindingDescription vi_binding[1];
    VkVertexInputAttributeDescription vi_attribs[2];
-   vi_binding[0].binding = 0;
-   vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride =
+
+   uint32_t stride =
       vkdf_mesh_get_vertex_data_stride(res->sponza_model->meshes[0]);
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
+   vkdf_vertex_binding_set(&vi_binding[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
+
+   /* binding 0, location 0: position */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
 
    res->pipelines.depth_prepass =
       vkdf_create_gfx_pipeline(res->ctx,
@@ -1241,10 +1241,9 @@ create_depth_prepass_pipelines(SceneResources *res)
                                NULL);
 
    // Opacity pipeline (needs UV attribute & fragment shader)
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32_SFLOAT;
-   vi_attribs[1].offset = 48;
+
+   /* binding 0, location 1: UV coords */
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32_SFLOAT, 48);
 
    res->pipelines.depth_prepass_opacity =
       vkdf_create_gfx_pipeline(res->ctx,
@@ -1271,46 +1270,24 @@ init_sponza_pipelines(SceneResources *res)
    VkVertexInputAttributeDescription vi_attribs[6];
 
    // Vertex attribute binding 0: position, normal, material
-   vi_bindings[0].binding = 0;
-   vi_bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_bindings[0].stride =
+   uint32_t stride =
       vkdf_mesh_get_vertex_data_stride(res->sponza_model->meshes[0]);
+   vkdf_vertex_binding_set(&vi_bindings[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // binding 0, location 1: normal
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[1].offset = 12;
-
-   // binding 0, location 2: tangent
-   vi_attribs[2].binding = 0;
-   vi_attribs[2].location = 2;
-   vi_attribs[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[2].offset = 24;
-
-   // binding 0, location 3: bitangent
-   vi_attribs[3].binding = 0;
-   vi_attribs[3].location = 3;
-   vi_attribs[3].format = VK_FORMAT_R32G32B32_SFLOAT;
-   vi_attribs[3].offset = 36;
-
-   // binding 0, location 4: uv
-   vi_attribs[4].binding = 0;
-   vi_attribs[4].location = 4;
-   vi_attribs[4].format = VK_FORMAT_R32G32_SFLOAT;
-   vi_attribs[4].offset = 48;
-
-   // binding 0, location 5: material idx
-   vi_attribs[5].binding = 0;
-   vi_attribs[5].location = 5;
-   vi_attribs[5].format = VK_FORMAT_R32_UINT;
-   vi_attribs[5].offset = 56;
+   /* binding 0, location 0: position
+    * binding 0, location 1: normal
+    * binding 0, location 2: tangent
+    * binding 0, location 3: bitangent
+    * binding 0, location 4: uv
+    * binding 0, location 5: material idx
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32B32_SFLOAT, 12);
+   vkdf_vertex_attrib_set(&vi_attribs[2], 0, 2, VK_FORMAT_R32G32B32_SFLOAT, 24);
+   vkdf_vertex_attrib_set(&vi_attribs[3], 0, 3, VK_FORMAT_R32G32B32_SFLOAT, 36);
+   vkdf_vertex_attrib_set(&vi_attribs[4], 0, 4, VK_FORMAT_R32G32_SFLOAT, 48);
+   vkdf_vertex_attrib_set(&vi_attribs[5], 0, 5, VK_FORMAT_R32_UINT, 56);
 
    if (!ENABLE_DEFERRED_RENDERING)
       create_forward_pipelines(res, 1, vi_bindings, 6, vi_attribs);
@@ -1474,22 +1451,16 @@ create_debug_tile_pipeline(SceneResources *res)
    VkVertexInputBindingDescription vi_binding[1];
    VkVertexInputAttributeDescription vi_attribs[2];
 
-   // Vertex attribute binding 0: position, uv
-   vi_binding[0].binding = 0;
-   vi_binding[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-   vi_binding[0].stride = vkdf_mesh_get_vertex_data_stride(res->tile_mesh);
+   uint32_t stride =
+      vkdf_mesh_get_vertex_data_stride(res->tile_mesh);
+   vkdf_vertex_binding_set(&vi_binding[0],
+                           0, VK_VERTEX_INPUT_RATE_VERTEX, stride);
 
-   // binding 0, location 0: position
-   vi_attribs[0].binding = 0;
-   vi_attribs[0].location = 0;
-   vi_attribs[0].format = VK_FORMAT_R32G32_SFLOAT;
-   vi_attribs[0].offset = 0;
-
-   // binding 0, location 1: uv
-   vi_attribs[1].binding = 0;
-   vi_attribs[1].location = 1;
-   vi_attribs[1].format = VK_FORMAT_R32G32_SFLOAT;
-   vi_attribs[1].offset = 12;
+   /* binding 0, location 0: position
+    * binding 0, location 1: uv
+    */
+   vkdf_vertex_attrib_set(&vi_attribs[0], 0, 0, VK_FORMAT_R32G32_SFLOAT, 0);
+   vkdf_vertex_attrib_set(&vi_attribs[1], 0, 1, VK_FORMAT_R32G32_SFLOAT, 12);
 
    res->debug.pipeline.pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
