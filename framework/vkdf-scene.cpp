@@ -1072,16 +1072,28 @@ new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
 
    assert(t->obj_count > 0);
 
-   if (s->cache[job_id].size > 0) {
-      GList *found = g_list_find(s->cache[job_id].cached, t);
-      if (found) {
-         remove_from_cache(data, t);
-         s->cmd_buf.active[job_id] =
-            g_list_prepend(s->cmd_buf.active[job_id], t);
+   /* If we don't free secondaries we only need to record them once and we can
+    * reuse them whenever we need them again.
+    */
+   if (!SCENE_FREE_SECONDARIES) {
+      if (t->cmd_buf != 0) {
+         s->cmd_buf.active[job_id] = g_list_prepend(s->cmd_buf.active[job_id], t);
          return;
+      }
+   } else {
+      /* Otherwise, we may still find it in the cache */
+      if (s->cache[job_id].size > 0) {
+         GList *found = g_list_find(s->cache[job_id].cached, t);
+         if (found) {
+            remove_from_cache(data, t);
+            s->cmd_buf.active[job_id] =
+               g_list_prepend(s->cmd_buf.active[job_id], t);
+            return;
+         }
       }
    }
 
+   /* If we get here, it means we need to create and record a new one */
    VkCommandBuffer cmd_buf[2];
    vkdf_create_command_buffer(s->ctx,
                               s->cmd_buf.pool[job_id],
@@ -1146,6 +1158,11 @@ new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
    s->cmd_buf.active[job_id] =
       g_list_remove(s->cmd_buf.active[job_id], t);
 
+   /* If we're not freeing secondary command buffers, then we are done */
+   if (!SCENE_FREE_SECONDARIES)
+      return;
+
+   /* Otherwise, put it in the cache if we have one */
    VkdfSceneTile *expired;
    if (s->cache[job_id].max_size <= 0) {
       expired = t;
@@ -1164,6 +1181,10 @@ new_inactive_tile(struct TileThreadData *data, VkdfSceneTile *t)
    if (!expired)
       return;
 
+   /* If we got here, we have a command buffer to free, but we can't do it yet,
+    * since it may still be used by the GPU. Put it in a to-free list and
+    * free it when it is safe.
+    */
    struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
    info->cmd_buf[0] = expired->cmd_buf;
    if (s->rp.do_depth_prepass) {

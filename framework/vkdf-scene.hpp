@@ -4,6 +4,7 @@
 #define SCENE_MAX_GBUFFER_SIZE 8
 
 static const uint32_t SCENE_CMD_BUF_LIST_SIZE = 2;
+static const bool SCENE_FREE_SECONDARIES = false;
 
 typedef struct {
    uint32_t shadow_map_size;
