@@ -257,10 +257,13 @@ vkdf_scene_new(VkdfContext *ctx,
    s->cmd_buf.active = g_new(GList *, num_threads);
    s->cmd_buf.free = g_new(GList *, num_threads);
    for (uint32_t thread_idx = 0; thread_idx < num_threads; thread_idx++) {
-      s->cmd_buf.pool[thread_idx] = vkdf_create_gfx_command_pool(s->ctx, 0);
+      s->cmd_buf.pool[thread_idx] =
+         vkdf_create_gfx_command_pool(s->ctx,
+                                      VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
       s->cmd_buf.active[thread_idx] = NULL;
       s->cmd_buf.free[thread_idx] = NULL;
    }
+   s->cmd_buf.cur_idx = SCENE_CMD_BUF_LIST_SIZE - 1;
 
    s->thread.tile_data = g_new0(struct TileThreadData, num_threads);
    for (uint32_t thread_idx = 0; thread_idx < num_threads; thread_idx++) {
@@ -891,10 +894,27 @@ record_primary_cmd_buf(VkCommandBuffer cmd_buf,
 static void
 build_primary_cmd_buf(VkdfScene *s)
 {
-   if (s->cmd_buf.primary)
-      new_inactive_cmd_buf(s, 0, s->cmd_buf.primary);
-   if (s->cmd_buf.depth_primary)
-      new_inactive_cmd_buf(s, 0, s->cmd_buf.depth_primary);
+   s->cmd_buf.cur_idx = (s->cmd_buf.cur_idx + 1) % SCENE_CMD_BUF_LIST_SIZE;
+
+   VkCommandBuffer *primary = &s->cmd_buf.primary[s->cmd_buf.cur_idx];
+   VkCommandBuffer *depth_primary =
+      &s->cmd_buf.depth_primary[s->cmd_buf.cur_idx];
+
+   if (*primary)
+      vkResetCommandBuffer(*primary, 0);
+   if (*depth_primary)
+      vkResetCommandBuffer(*depth_primary, 0);
+
+   VkCommandBuffer cmd_buf[2];
+   if (*primary == 0) {
+      vkdf_create_command_buffer(s->ctx,
+                                 s->cmd_buf.pool[0],
+                                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                 s->rp.do_depth_prepass ? 2 : 1, cmd_buf);
+   } else {
+      cmd_buf[0] = *primary;
+      cmd_buf[1] = *depth_primary;
+   }
 
    GList *active = sort_active_tiles_by_distance(s);
 
@@ -919,12 +939,6 @@ build_primary_cmd_buf(VkdfScene *s)
       }
    }
 
-   VkCommandBuffer cmd_buf[2];
-   vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[0],
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              s->rp.do_depth_prepass ? 2 : 1, cmd_buf);
-
    uint32_t num_clear_values;
    VkClearValue *clear_values;
    if (s->rp.do_deferred) {
@@ -942,7 +956,7 @@ build_primary_cmd_buf(VkdfScene *s)
                                 num_clear_values, clear_values);
 
    record_primary_cmd_buf(cmd_buf[0], &rp_begin, cmd_buf_count, secondaries);
-   s->cmd_buf.primary = cmd_buf[0];
+   *primary = cmd_buf[0];
 
    if (s->rp.do_depth_prepass) {
       num_clear_values = 1;
@@ -956,7 +970,7 @@ build_primary_cmd_buf(VkdfScene *s)
 
       record_primary_cmd_buf(cmd_buf[1], &rp_begin,
                              cmd_buf_count, &secondaries[cmd_buf_count]);
-      s->cmd_buf.depth_primary = cmd_buf[1];
+      *depth_primary = cmd_buf[1];
    }
 
    g_free(secondaries);
@@ -3418,7 +3432,7 @@ scene_update(VkdfScene *s)
    if (vkdf_camera_is_dirty(s->camera)) {
       bool cmd_buf_changes = update_cmd_bufs(s);
 
-      if (!s->cmd_buf.primary || cmd_buf_changes) {
+      if (!s->cmd_buf.primary[s->cmd_buf.cur_idx] || cmd_buf_changes) {
          build_primary_cmd_buf(s);
       }
 
@@ -3503,13 +3517,13 @@ scene_draw(VkdfScene *s)
    if (s->rp.do_depth_prepass) {
       if (!s->cmd_buf.depth_dynamic) {
          vkdf_command_buffer_execute(s->ctx,
-                                     s->cmd_buf.depth_primary,
+                                     s->cmd_buf.depth_primary[s->cmd_buf.cur_idx],
                                      &wait_stage,
                                      wait_sem_count, wait_sem,
                                      1, &s->sync.depth_draw_sem);
       } else {
          vkdf_command_buffer_execute(s->ctx,
-                                     s->cmd_buf.depth_primary,
+                                     s->cmd_buf.depth_primary[s->cmd_buf.cur_idx],
                                      &wait_stage,
                                      wait_sem_count, wait_sem,
                                      1, &s->sync.depth_draw_static_sem);
@@ -3556,13 +3570,13 @@ scene_draw(VkdfScene *s)
    // Execute rendering commands for static and dynamic geometry
    if (!s->cmd_buf.dynamic) {
       vkdf_command_buffer_execute(s->ctx,
-                                  s->cmd_buf.primary,
+                                  s->cmd_buf.primary[s->cmd_buf.cur_idx],
                                   &wait_stage,
                                   wait_sem_count, wait_sem,
                                   1, &s->sync.draw_sem);
    } else {
       vkdf_command_buffer_execute(s->ctx,
-                                  s->cmd_buf.primary,
+                                  s->cmd_buf.primary[s->cmd_buf.cur_idx],
                                   &wait_stage,
                                   wait_sem_count, wait_sem,
                                   1, &s->sync.draw_static_sem);

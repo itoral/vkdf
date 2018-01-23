@@ -3,6 +3,8 @@
 
 #define SCENE_MAX_GBUFFER_SIZE 8
 
+static const uint32_t SCENE_CMD_BUF_LIST_SIZE = 2;
+
 typedef struct {
    uint32_t shadow_map_size;
    float shadow_map_near;
@@ -217,11 +219,12 @@ struct _VkdfScene {
       VkCommandPool *pool;
       GList **active;
       GList **free;
-      VkCommandBuffer depth_primary;     // Command buffer for depth-prepass static objs
-      VkCommandBuffer depth_dynamic;     // Command buffer for depth-prepass dynamic objs
-      VkCommandBuffer primary;           // Command buffer for rendering static objs
-      VkCommandBuffer dynamic;           // Command buffer for rendering dynamic objs
-      VkCommandBuffer update_resources;  // Command buffer for resource updates
+      uint32_t cur_idx;                                        // Index of the current command (for command buffer lists)
+      VkCommandBuffer depth_primary[SCENE_CMD_BUF_LIST_SIZE];  // Command buffer for depth-prepass static objs
+      VkCommandBuffer depth_dynamic;                           // Command buffer for depth-prepass dynamic objs
+      VkCommandBuffer primary[SCENE_CMD_BUF_LIST_SIZE];        // Command buffer for rendering static objs
+      VkCommandBuffer dynamic;                                 // Command buffer for rendering dynamic objs
+      VkCommandBuffer update_resources;                        // Command buffer for resource updates
       bool have_resource_updates;
       VkCommandBuffer *present;          // Command buffer rt -> swapchin copies
       VkCommandBuffer gbuffer_merge;     // Command buffer for deferred gbuffer merge
