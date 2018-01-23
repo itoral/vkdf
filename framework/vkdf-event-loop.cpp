@@ -6,6 +6,8 @@ static uint64_t _frames = 0;
 static double _frame_start_time = 0.0;
 static double _last_frame_time = 0.0;
 static double _total_time = 0.0;
+static double _frame_min_time = 1000000000.0;
+static double _frame_max_time = 0.0;
 
 static inline void
 frame_start()
@@ -20,11 +22,20 @@ frame_end()
    _last_frame_time = frame_end_time - _frame_start_time;
    _total_time += _last_frame_time;
 
+   if (_last_frame_time > _frame_max_time)
+      _frame_max_time = _last_frame_time;
+   else if (_last_frame_time < _frame_min_time)
+      _frame_min_time = _last_frame_time;
+
    _frames++;
    if (_frames == 60) {
-      vkdf_info("FPS: %.2f\n", _frames / _total_time);
+      vkdf_info("fps: %.2f, avg: %.4f min=%.4f, max = %.4f\n",
+                _frames / _total_time, _total_time / _frames,
+                _frame_min_time, _frame_max_time);
       _frames = 0;
       _total_time = 0.0;
+      _frame_min_time = 1000000;
+      _frame_max_time = 0.0;
    }
 }
 #endif
