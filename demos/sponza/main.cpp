@@ -1644,11 +1644,13 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    init_scene(res);
    init_meshes(res);
    init_objects(res);
-
-   vkdf_scene_prepare(res->scene);
-
    init_ubos(res);
    init_shaders(res);
+
+   /* We need to prepare the scene before we build the pipelines, since these
+    * will reference and bind resources provided by the scene
+    */
+   vkdf_scene_prepare(res->scene);
    init_pipelines(res);
 
    if (SHOW_DEBUG_TILE)
