@@ -4,18 +4,31 @@ VkSampler
 vkdf_create_sampler(VkdfContext *ctx,
                     VkSamplerAddressMode address_mode,
                     VkFilter filter,
-                    VkSamplerMipmapMode mipmap_mode)
+                    VkSamplerMipmapMode mipmap_mode,
+                    float max_anisotropy)
 {
    VkSampler sampler;
    VkResult result;
+
+   if (max_anisotropy >= 1.0f) {
+      const VkPhysicalDeviceLimits *limits = &ctx->phy_device_props.limits;
+      if (!ctx->phy_device_features.samplerAnisotropy) {
+         max_anisotropy = 0.0f;  /* disabled */
+         vkdf_info("sampler: disabled unsupported anisotropic filtering.");
+      }
+      else if (max_anisotropy > limits->maxSamplerAnisotropy) {
+         max_anisotropy = limits->maxSamplerAnisotropy;
+         vkdf_info("sampler: clamped maxAnisotropy to %.1f.", max_anisotropy);
+      }
+   }
 
    VkSamplerCreateInfo sampler_info = {};
    sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
    sampler_info.addressModeU = address_mode;
    sampler_info.addressModeV = address_mode;
    sampler_info.addressModeW = address_mode;
-   sampler_info.anisotropyEnable = false;
-   sampler_info.maxAnisotropy = 1.0f;
+   sampler_info.anisotropyEnable = max_anisotropy >= 1.0f;
+   sampler_info.maxAnisotropy = max_anisotropy;
    sampler_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
    sampler_info.unnormalizedCoordinates = false;
    sampler_info.compareEnable = false;

@@ -461,7 +461,8 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    res->sampler = vkdf_create_sampler(ctx,
                                       VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                       VK_FILTER_NEAREST,
-                                      VK_SAMPLER_MIPMAP_MODE_NEAREST);
+                                      VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                                      0.0f);
 
    // Render pass
    res->render_pass = create_render_pass(ctx);

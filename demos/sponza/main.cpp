@@ -12,6 +12,8 @@ const bool ENABLE_CLIPPING = true;
 const bool ENABLE_DEPTH_PREPASS = true;
 const bool ENABLE_DEFERRED_RENDERING = false;
 
+const float MAX_ANISOTROPY = 16.0f; // Set to 0 to disable anisotropic filtering
+
 enum {
    DIFFUSE_TEX_BINDING  = 0,
    NORMAL_TEX_BINDING   = 1,
@@ -696,7 +698,8 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          vkdf_create_sampler(res->ctx,
                              VK_SAMPLER_ADDRESS_MODE_REPEAT,
                              VK_FILTER_LINEAR,
-                             VK_SAMPLER_MIPMAP_MODE_LINEAR);
+                             VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                             MAX_ANISOTROPY);
 
    VkdfModel *model = res->sponza_model;
    assert(model->tex_materials.size() == model->materials.size());
@@ -991,7 +994,8 @@ init_pipeline_descriptors(SceneResources *res,
          vkdf_create_sampler(res->ctx,
                              VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                              VK_FILTER_NEAREST,
-                             VK_SAMPLER_MIPMAP_MODE_NEAREST);
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0f);
 
       for (uint32_t i = 0; i < res->scene->rt.gbuffer_size; i++) {
          VkdfImage *image = vkdf_scene_get_gbuffer_image(res->scene, i);
@@ -1420,7 +1424,8 @@ create_debug_tile_pipeline(SceneResources *res)
          vkdf_create_sampler(res->ctx,
                              VK_SAMPLER_ADDRESS_MODE_REPEAT,
                              VK_FILTER_LINEAR,
-                             VK_SAMPLER_MIPMAP_MODE_LINEAR);
+                             VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                             0.0f);
 
    vkdf_descriptor_set_sampler_update(res->ctx,
                                       res->debug.pipeline.sampler_set,
