@@ -62,6 +62,7 @@ struct _VkdfContext {
    VkPhysicalDevice phy_device;
    VkPhysicalDeviceProperties phy_device_props;
    VkPhysicalDeviceMemoryProperties phy_device_mem_props;
+   VkPhysicalDeviceFeatures phy_device_features;
    uint32_t queue_count;
    VkQueueFamilyProperties *queues;
    int32_t gfx_queue_index;

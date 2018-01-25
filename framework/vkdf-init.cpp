@@ -155,6 +155,7 @@ init_physical_device(VkdfContext *ctx)
    vkGetPhysicalDeviceProperties(ctx->phy_device, &ctx->phy_device_props);
    vkGetPhysicalDeviceMemoryProperties(ctx->phy_device,
                                        &ctx->phy_device_mem_props);
+   vkGetPhysicalDeviceFeatures(ctx->phy_device, &ctx->phy_device_features);
 }
 
 static void
