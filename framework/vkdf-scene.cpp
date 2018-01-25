@@ -2458,6 +2458,7 @@ record_scene_light_resource_updates(VkdfScene *s)
          if (!vkdf_light_is_dirty(sl->light))
             continue;
 
+         assert(light_inst_size < 64 * 1024);
          vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                            s->ubo.light.buf.buf,
                            i * light_inst_size, light_inst_size,
@@ -2485,6 +2486,7 @@ record_scene_light_resource_updates(VkdfScene *s)
          memcpy(&data.pcf_kernel_size,
                 &sl->shadow.spec.pcf_kernel_size, sizeof(uint32_t));
 
+         assert(shadow_map_inst_size < 64 * 1024);
          vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                            s->ubo.light.buf.buf,
                            base_offset + i * shadow_map_inst_size,
@@ -2616,6 +2618,7 @@ record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
    // If offset > 0 then we have at least one dynamic object that needs
    // to be updated
    if (offset > 0) {
+      assert(offset < 64 * 1024);
       vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                         s->dynamic.ubo.shadow_map.buf.buf,
                         0, offset, mem);
@@ -3276,12 +3279,25 @@ update_dirty_objects(VkdfScene *s)
    if (s->dynamic.visible_obj_count > 0) {
       s->cmd_buf.have_resource_updates = true;
 
+      /* We can only use VkCmdUpdateBuffer for small updates, but that should
+       * be okay assuming that we won't have too many dynamic objects in a
+       * scene (as in many hundreds of them).
+       *
+       * FIXME: vkCmdUpdateBuffer is not the most efficient thing to do, but
+       * it has the advantage that the update won't happen until the command
+       * buffer executes and we ensure it won't until it is dafe to update
+       * the UBO. If we want to implement an alternative we will need to use
+       * a ring a UBOs and command buffers so that we do buffer updates against
+       * buffers that are not being accessed by commands in execution.
+       */
+      assert(obj_offset < 64 * 1024);
       vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                         s->dynamic.ubo.obj.buf.buf,
                         0, obj_offset,
                         s->dynamic.ubo.obj.host_buf);
 
       if (s->dynamic.materials_dirty) {
+         assert(mat_offset < 64 * 1024);
          vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                            s->dynamic.ubo.material.buf.buf,
                            0, mat_offset,
