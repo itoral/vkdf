@@ -407,9 +407,9 @@ vkdf_scene_free(VkdfScene *s)
       vkDestroyRenderPass(s->ctx->device, s->rp.gbuffer_merge.renderpass, NULL);
    if (s->rp.do_depth_prepass) {
       vkDestroyRenderPass(s->ctx->device,
-                          s->rp.depth_static_geom.renderpass, NULL);
+                          s->rp.dpp_static_geom.renderpass, NULL);
       vkDestroyRenderPass(s->ctx->device,
-                          s->rp.depth_dynamic_geom.renderpass, NULL);
+                          s->rp.dpp_dynamic_geom.renderpass, NULL);
    }
 
    vkDestroyFramebuffer(s->ctx->device, s->rp.static_geom.framebuffer, NULL);
@@ -418,9 +418,9 @@ vkdf_scene_free(VkdfScene *s)
       vkDestroyFramebuffer(s->ctx->device, s->rp.gbuffer_merge.framebuffer, NULL);
    if (s->rp.do_depth_prepass) {
       vkDestroyFramebuffer(s->ctx->device,
-                           s->rp.depth_static_geom.framebuffer, NULL);
+                           s->rp.dpp_static_geom.framebuffer, NULL);
       vkDestroyFramebuffer(s->ctx->device,
-                           s->rp.depth_dynamic_geom.framebuffer, NULL);
+                           s->rp.dpp_dynamic_geom.framebuffer, NULL);
    }
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++)
@@ -897,13 +897,12 @@ build_primary_cmd_buf(VkdfScene *s)
    s->cmd_buf.cur_idx = (s->cmd_buf.cur_idx + 1) % SCENE_CMD_BUF_LIST_SIZE;
 
    VkCommandBuffer *primary = &s->cmd_buf.primary[s->cmd_buf.cur_idx];
-   VkCommandBuffer *depth_primary =
-      &s->cmd_buf.depth_primary[s->cmd_buf.cur_idx];
+   VkCommandBuffer *dpp_primary = &s->cmd_buf.dpp_primary[s->cmd_buf.cur_idx];
 
    if (*primary)
       vkResetCommandBuffer(*primary, 0);
-   if (*depth_primary)
-      vkResetCommandBuffer(*depth_primary, 0);
+   if (*dpp_primary)
+      vkResetCommandBuffer(*dpp_primary, 0);
 
    VkCommandBuffer cmd_buf[2];
    if (*primary == 0) {
@@ -913,7 +912,7 @@ build_primary_cmd_buf(VkdfScene *s)
                                  s->rp.do_depth_prepass ? 2 : 1, cmd_buf);
    } else {
       cmd_buf[0] = *primary;
-      cmd_buf[1] = *depth_primary;
+      cmd_buf[1] = *dpp_primary;
    }
 
    GList *active = sort_active_tiles_by_distance(s);
@@ -963,14 +962,14 @@ build_primary_cmd_buf(VkdfScene *s)
       clear_values = &s->rp.clear_values[1]; /* depth clear value */
 
       rp_begin =
-         vkdf_renderpass_begin_new(s->rp.depth_static_geom.renderpass,
-                                   s->rp.depth_static_geom.framebuffer,
+         vkdf_renderpass_begin_new(s->rp.dpp_static_geom.renderpass,
+                                   s->rp.dpp_static_geom.framebuffer,
                                    0, 0, s->rt.width, s->rt.height,
                                    num_clear_values, clear_values);
 
       record_primary_cmd_buf(cmd_buf[1], &rp_begin,
                              cmd_buf_count, &secondaries[cmd_buf_count]);
-      *depth_primary = cmd_buf[1];
+      *dpp_primary = cmd_buf[1];
    }
 
    g_free(secondaries);
@@ -1126,8 +1125,8 @@ new_active_tile(struct TileThreadData *data, VkdfSceneTile *t)
    t->cmd_buf = cmd_buf[0];
 
    if (s->rp.do_depth_prepass) {
-      inheritance_info.renderPass = s->rp.depth_static_geom.renderpass;
-      inheritance_info.framebuffer = s->rp.depth_static_geom.framebuffer;
+      inheritance_info.renderPass = s->rp.dpp_static_geom.renderpass;
+      inheritance_info.framebuffer = s->rp.dpp_static_geom.framebuffer;
 
       vkdf_command_buffer_begin_secondary(cmd_buf[1],
                                           flags, &inheritance_info);
@@ -3012,24 +3011,24 @@ prepare_deferred_render_passes(VkdfScene *s)
 static void
 prepare_depth_prepass_render_passes(VkdfScene *s)
 {
-   s->rp.depth_static_geom.renderpass =
+   s->rp.dpp_static_geom.renderpass =
       create_depth_renderpass(s, VK_ATTACHMENT_LOAD_OP_CLEAR, false);
 
-   s->rp.depth_static_geom.framebuffer =
+   s->rp.dpp_static_geom.framebuffer =
       create_depth_framebuffer(s,
                                s->rt.width,
                                s->rt.height,
-                               s->rp.depth_static_geom.renderpass,
+                               s->rp.dpp_static_geom.renderpass,
                                s->rt.depth.view);
 
-   s->rp.depth_dynamic_geom.renderpass =
+   s->rp.dpp_dynamic_geom.renderpass =
       create_depth_renderpass(s, VK_ATTACHMENT_LOAD_OP_LOAD, false);
 
-   s->rp.depth_dynamic_geom.framebuffer =
+   s->rp.dpp_dynamic_geom.framebuffer =
       create_depth_framebuffer(s,
                                s->rt.width,
                                s->rt.height,
-                               s->rp.depth_dynamic_geom.renderpass,
+                               s->rp.dpp_dynamic_geom.renderpass,
                                s->rt.depth.view);
 }
 
@@ -3127,7 +3126,7 @@ record_dynamic_objects_command_buffer(VkdfScene *s,
    record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
 
    const bool is_depth_prepass =
-      rp_begin->renderPass == s->rp.depth_dynamic_geom.renderpass;
+      rp_begin->renderPass == s->rp.dpp_dynamic_geom.renderpass;
    s->callbacks.record_commands(s->ctx, cmd_buf, s->dynamic.visible,
                                 true, is_depth_prepass, s->callbacks.data);
 
@@ -3296,8 +3295,8 @@ update_dirty_objects(VkdfScene *s)
    // Record dynamic object rendering command buffer
    if (s->cmd_buf.dynamic)
       new_inactive_cmd_buf(s, 0, s->cmd_buf.dynamic);
-   if (s->cmd_buf.depth_dynamic)
-      new_inactive_cmd_buf(s, 0, s->cmd_buf.depth_dynamic);
+   if (s->cmd_buf.dpp_dynamic)
+      new_inactive_cmd_buf(s, 0, s->cmd_buf.dpp_dynamic);
 
    if (s->dynamic.visible_obj_count > 0) {
       VkCommandBuffer cmd_buf[2];
@@ -3318,18 +3317,18 @@ update_dirty_objects(VkdfScene *s)
 
       if (s->rp.do_depth_prepass) {
          rp_begin =
-            vkdf_renderpass_begin_new(s->rp.depth_dynamic_geom.renderpass,
-                                      s->rp.depth_dynamic_geom.framebuffer,
+            vkdf_renderpass_begin_new(s->rp.dpp_dynamic_geom.renderpass,
+                                      s->rp.dpp_dynamic_geom.framebuffer,
                                       0, 0, s->rt.width, s->rt.height,
                                       0, NULL);
 
          record_dynamic_objects_command_buffer(s, cmd_buf[1], &rp_begin);
 
-         s->cmd_buf.depth_dynamic = cmd_buf[1];
+         s->cmd_buf.dpp_dynamic = cmd_buf[1];
       }
    } else {
       s->cmd_buf.dynamic = 0;
-      s->cmd_buf.depth_dynamic = 0;
+      s->cmd_buf.dpp_dynamic = 0;
    }
 }
 
@@ -3536,15 +3535,15 @@ scene_draw(VkdfScene *s)
 
    // Execute rendering command for the depth-prepass
    if (s->rp.do_depth_prepass) {
-      if (!s->cmd_buf.depth_dynamic) {
+      if (!s->cmd_buf.dpp_dynamic) {
          vkdf_command_buffer_execute(s->ctx,
-                                     s->cmd_buf.depth_primary[s->cmd_buf.cur_idx],
+                                     s->cmd_buf.dpp_primary[s->cmd_buf.cur_idx],
                                      &wait_stage,
                                      wait_sem_count, wait_sem,
                                      1, &s->sync.depth_draw_sem);
       } else {
          vkdf_command_buffer_execute(s->ctx,
-                                     s->cmd_buf.depth_primary[s->cmd_buf.cur_idx],
+                                     s->cmd_buf.dpp_primary[s->cmd_buf.cur_idx],
                                      &wait_stage,
                                      wait_sem_count, wait_sem,
                                      1, &s->sync.depth_draw_static_sem);
@@ -3554,7 +3553,7 @@ scene_draw(VkdfScene *s)
          wait_sem = &s->sync.depth_draw_static_sem;
 
          vkdf_command_buffer_execute(s->ctx,
-                                     s->cmd_buf.depth_dynamic,
+                                     s->cmd_buf.dpp_dynamic,
                                      &wait_stage,
                                      wait_sem_count, wait_sem,
                                      1, &s->sync.depth_draw_sem);

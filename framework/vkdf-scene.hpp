@@ -138,12 +138,12 @@ struct _VkdfScene {
       struct {
          VkRenderPass renderpass;
          VkFramebuffer framebuffer;
-      } depth_static_geom;
+      } dpp_static_geom;
 
       struct {
          VkRenderPass renderpass;
          VkFramebuffer framebuffer;
-      } depth_dynamic_geom;
+      } dpp_dynamic_geom;
 
       // Forward or Deferred passes for static and dynamic geometry
       struct {
@@ -221,8 +221,8 @@ struct _VkdfScene {
       GList **active;
       GList **free;
       uint32_t cur_idx;                                        // Index of the current command (for command buffer lists)
-      VkCommandBuffer depth_primary[SCENE_CMD_BUF_LIST_SIZE];  // Command buffer for depth-prepass static objs
-      VkCommandBuffer depth_dynamic;                           // Command buffer for depth-prepass dynamic objs
+      VkCommandBuffer dpp_primary[SCENE_CMD_BUF_LIST_SIZE];    // Command buffer for depth-prepass static objs
+      VkCommandBuffer dpp_dynamic;                             // Command buffer for depth-prepass dynamic objs
       VkCommandBuffer primary[SCENE_CMD_BUF_LIST_SIZE];        // Command buffer for rendering static objs
       VkCommandBuffer dynamic;                                 // Command buffer for rendering dynamic objs
       VkCommandBuffer update_resources;                        // Command buffer for resource updates
@@ -364,13 +364,13 @@ vkdf_scene_prepare(VkdfScene *scene);
 inline VkRenderPass
 vkdf_scene_get_depth_prepass_static_render_pass(VkdfScene *s)
 {
-   return s->rp.depth_static_geom.renderpass;
+   return s->rp.dpp_static_geom.renderpass;
 }
 
 inline VkRenderPass
 vkdf_scene_get_depth_prepass_dynamic_render_pass(VkdfScene *s)
 {
-   return s->rp.depth_dynamic_geom.renderpass;
+   return s->rp.dpp_dynamic_geom.renderpass;
 }
 
 inline VkRenderPass
