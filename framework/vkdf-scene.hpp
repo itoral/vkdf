@@ -47,7 +47,7 @@ struct TileThreadData {
    bool cmd_buf_changes;
 };
 
-struct _DirtyShadowMap {
+struct _DirtyShadowMapInfo {
    VkdfSceneLight *sl;
    GHashTable *dyn_sets;
 };
@@ -58,7 +58,8 @@ struct LightThreadData {
    VkdfSceneLight *sl;
    VkdfBox *visible_box;
    VkdfPlane *fplanes;
-   struct _DirtyShadowMap *dirty_shadow_map;
+   bool has_dirty_shadow_map;
+   struct _DirtyShadowMapInfo shadow_map_info;
 };
 
 typedef struct {

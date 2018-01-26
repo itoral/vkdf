@@ -2584,7 +2584,8 @@ record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
 
    GList *sm_iter = dirty_shadow_maps;
    while (sm_iter) {
-      struct _DirtyShadowMap *ds = (struct _DirtyShadowMap *) sm_iter->data;
+      struct _DirtyShadowMapInfo *ds
+         = (struct _DirtyShadowMapInfo *) sm_iter->data;
       uint32_t count = 0;
 
       char *id;
@@ -2633,20 +2634,21 @@ record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
 }
 
 static inline void
-free_dirty_shadow_map_list(GList *dirty_shadow_maps)
+free_dirty_shadow_map_info_list(GList **dirty_shadow_map_list)
 {
-   if (!dirty_shadow_maps)
-      return;
+   assert(*dirty_shadow_map_list);
 
-   GList *iter = dirty_shadow_maps;
+   GList *iter = *dirty_shadow_map_list;
    do {
-      struct _DirtyShadowMap *ds = (struct _DirtyShadowMap *) iter->data;
+      struct _DirtyShadowMapInfo *ds =
+         (struct _DirtyShadowMapInfo *) iter->data;
       g_hash_table_foreach(ds->dyn_sets, destroy_set, NULL);
       g_hash_table_destroy(ds->dyn_sets);
-      g_free(ds);
+      /* warning: ds points to stack-allocated data so don't free it here */
       iter = g_list_next(iter);
    } while (iter);
-   g_list_free(dirty_shadow_maps);
+   g_list_free(*dirty_shadow_map_list);
+   *dirty_shadow_map_list = NULL;
 }
 
 static void
@@ -2666,9 +2668,8 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 
    // If the light has dirty shadows it means that its area of influence
    // has changed and we need to recompute its list of visible tiles.
-   bool needs_new_shadow_map;
    if (vkdf_light_has_dirty_shadows(l)) {
-      needs_new_shadow_map = true;
+      data->has_dirty_shadow_map = true;
       compute_light_view_projection(s, sl);
       compute_visible_tiles_for_light(s, sl);
    }
@@ -2681,12 +2682,11 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
    GHashTable *dyn_sets =
       find_dynamic_objects_for_light(s, sl, &has_dirty_objects);
 
-   needs_new_shadow_map = needs_new_shadow_map || has_dirty_objects;
+   data->has_dirty_shadow_map = data->has_dirty_shadow_map || has_dirty_objects;
 
-   if (needs_new_shadow_map) {
-      data->dirty_shadow_map = g_new(struct _DirtyShadowMap, 1);
-      data->dirty_shadow_map->sl = sl;
-      data->dirty_shadow_map->dyn_sets = dyn_sets;
+   if (data->has_dirty_shadow_map) {
+      data->shadow_map_info.sl = sl;
+      data->shadow_map_info.dyn_sets = dyn_sets;
    }
 }
 
@@ -2733,7 +2733,6 @@ update_dirty_lights(VkdfScene *s)
       data[data_count].id = i;
       data[data_count].s = s;
       data[data_count].sl = sl;
-      data[data_count].dirty_shadow_map = NULL;
 
       if (s->thread.pool) {
          has_thread_jobs = true;
@@ -2754,7 +2753,7 @@ update_dirty_lights(VkdfScene *s)
    // Check if we have at least one shadow map that we need to update.
    uint32_t i = 0;
    for (; i < data_count; i++) {
-      if (data[i].dirty_shadow_map)
+      if (data[i].has_dirty_shadow_map)
          break;
    }
 
@@ -2764,10 +2763,10 @@ update_dirty_lights(VkdfScene *s)
       s->shadow_maps_dirty = true;
       start_recording_shadow_maps_cmd_buf(s);
       for (; i < data_count; i++) {
-         if (data[i].dirty_shadow_map == NULL)
+         if (!data[i].has_dirty_shadow_map)
             continue;
 
-         struct _DirtyShadowMap *ds = data[i].dirty_shadow_map;
+         struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
          record_shadow_map_commands(s, ds->sl, ds->dyn_sets);
          dirty_shadow_map_list = g_list_prepend(dirty_shadow_map_list, ds);
       }
@@ -2777,8 +2776,7 @@ update_dirty_lights(VkdfScene *s)
    // Record commands to update dynamic shadow map resources for each light
    if (dirty_shadow_map_list) {
       record_scene_dynamic_shadow_map_resource_updates(s, dirty_shadow_map_list);
-      free_dirty_shadow_map_list(dirty_shadow_map_list);
-      dirty_shadow_map_list = NULL;
+      free_dirty_shadow_map_info_list(&dirty_shadow_map_list);
    }
 
    // Record the commands to update scene light resources for rendering
