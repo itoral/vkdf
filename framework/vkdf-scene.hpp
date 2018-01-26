@@ -27,8 +27,6 @@ typedef struct {
       VkdfImage shadow_map;
       VkFramebuffer framebuffer;
       VkSampler sampler;
-      VkCommandBuffer cmd_buf;   // Command buffer for shadow map
-      uint32_t thread_id;        // Thread used to create the command buffer
       GList *visible;
    } shadow;
    VkdfFrustum frustum;
@@ -199,7 +197,6 @@ struct _VkdfScene {
    uint32_t static_obj_count;           // Number of static (tiled) objects
    uint32_t static_shadow_caster_count; // Number of static objects that are shadow casters
    bool has_shadow_caster_lights;       // If we have any static objects that can cast shadows
-   GList *dirty_shadow_maps;            // List of lights with dirty shadow maps for the current frame
 
    /** 
     * active    : list of secondary command buffers that are active (that is,
@@ -227,6 +224,7 @@ struct _VkdfScene {
       VkCommandBuffer dynamic;                                 // Command buffer for rendering dynamic objs
       VkCommandBuffer update_resources;                        // Command buffer for resource updates
       bool have_resource_updates;
+      VkCommandBuffer shadow_maps;       // Command buffer for shadow map updates
       VkCommandBuffer *present;          // Command buffer rt -> swapchin copies
       VkCommandBuffer gbuffer_merge;     // Command buffer for deferred gbuffer merge
    } cmd_buf;

@@ -333,10 +333,6 @@ destroy_light(VkdfScene *s, VkdfSceneLight *slight)
       vkdf_destroy_image(s->ctx, &slight->shadow.shadow_map);
    if (slight->shadow.visible)
       g_list_free(slight->shadow.visible);
-   if (slight->shadow.cmd_buf)
-      vkFreeCommandBuffers(s->ctx->device,
-                           s->cmd_buf.pool[slight->shadow.thread_id],
-                           1, &slight->shadow.cmd_buf);
    if (slight->shadow.framebuffer)
       vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
    if (slight->shadow.sampler)
@@ -2214,26 +2210,36 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
 #endif
 }
 
+static inline void
+start_recording_shadow_maps_cmd_buf(VkdfScene *s)
+{
+   if (s->cmd_buf.shadow_maps)
+      new_inactive_cmd_buf(s, 0, s->cmd_buf.shadow_maps);
+
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &s->cmd_buf.shadow_maps);
+
+   vkdf_command_buffer_begin(s->cmd_buf.shadow_maps,
+                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+}
+
+static inline void
+stop_recording_shadow_maps_cmd_buf(VkdfScene *s)
+{
+   vkdf_command_buffer_end(s->cmd_buf.shadow_maps);
+}
+
 static void
-record_shadow_map_cmd_buf(VkdfScene *s,
-                          VkdfSceneLight *sl,
-                          GHashTable *dyn_sets,
-                          uint32_t thread_id)
+record_shadow_map_commands(VkdfScene *s,
+                           VkdfSceneLight *sl,
+                           GHashTable *dyn_sets)
 {
    assert(sl->shadow.shadow_map.image);
 
    // FIXME: support point lights
    assert(vkdf_light_get_type(sl->light) != VKDF_LIGHT_POINT);
-
-   assert(thread_id < s->thread.num_threads);
-   sl->shadow.thread_id = thread_id;
-   vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[thread_id],
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &sl->shadow.cmd_buf);
-
-   vkdf_command_buffer_begin(sl->shadow.cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
    VkClearValue clear_values[1];
    vkdf_depth_stencil_clear_set(clear_values, 1.0, 0);
@@ -2252,22 +2258,22 @@ record_shadow_map_cmd_buf(VkdfScene *s,
    rp_begin.clearValueCount = 1;
    rp_begin.pClearValues = clear_values;
 
-   vkCmdBeginRenderPass(sl->shadow.cmd_buf,
+   vkCmdBeginRenderPass(s->cmd_buf.shadow_maps,
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_INLINE);
 
    // Dynamic viewport / scissor / depth bias
-   record_viewport_and_scissor_commands(sl->shadow.cmd_buf,
+   record_viewport_and_scissor_commands(s->cmd_buf.shadow_maps,
                                         shadow_map_size,
                                         shadow_map_size);
 
-   vkCmdSetDepthBias(sl->shadow.cmd_buf,
+   vkCmdSetDepthBias(s->cmd_buf.shadow_maps,
                      sl->shadow.spec.depth_bias_const_factor,
                      0.0f,
                      sl->shadow.spec.depth_bias_slope_factor);
 
    // Push constants (Light View/projection)
-   vkCmdPushConstants(sl->shadow.cmd_buf,
+   vkCmdPushConstants(s->cmd_buf.shadow_maps,
                       s->shadows.pipeline.layout,
                       VK_SHADER_STAGE_VERTEX_BIT,
                       0, sizeof(_shadow_map_pcb), &sl->shadow.viewproj[0][0]);
@@ -2277,7 +2283,7 @@ record_shadow_map_cmd_buf(VkdfScene *s,
    // Render static objects
    if (s->static_shadow_caster_count > 0) {
       // Descriptor sets (UBO with object model matrices)
-      vkCmdBindDescriptorSets(sl->shadow.cmd_buf,
+      vkCmdBindDescriptorSets(s->cmd_buf.shadow_maps,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               s->shadows.pipeline.layout,
                               0,                               // First decriptor set
@@ -2325,7 +2331,7 @@ record_shadow_map_cmd_buf(VkdfScene *s,
                   assert(pipeline);
 
                   if (pipeline != current_pipeline) {
-                     vkCmdBindPipeline(sl->shadow.cmd_buf,
+                     vkCmdBindPipeline(s->cmd_buf.shadow_maps,
                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
                                        pipeline);
                      current_pipeline = pipeline;
@@ -2337,14 +2343,14 @@ record_shadow_map_cmd_buf(VkdfScene *s,
 
                   // Draw all instances
                   const VkDeviceSize offsets[1] = { 0 };
-                  vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
+                  vkCmdBindVertexBuffers(s->cmd_buf.shadow_maps,
                                          0,                       // Start Binding
                                          1,                       // Binding Count
                                          &mesh->vertex_buf.buf,   // Buffers
                                          offsets);                // Offsets
 
                   vkdf_mesh_draw(mesh,
-                                 sl->shadow.cmd_buf,
+                                 s->cmd_buf.shadow_maps,
                                  set_info->shadow_caster_count,
                                  set_info->shadow_caster_start_index);
                }
@@ -2356,7 +2362,7 @@ record_shadow_map_cmd_buf(VkdfScene *s,
    }
 
    // Render dynamic objects
-   vkCmdBindDescriptorSets(sl->shadow.cmd_buf,
+   vkCmdBindDescriptorSets(s->cmd_buf.shadow_maps,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            s->shadows.pipeline.layout,
                            0,                                   // First decriptor set
@@ -2397,7 +2403,7 @@ record_shadow_map_cmd_buf(VkdfScene *s,
          assert(pipeline);
 
          if (pipeline != current_pipeline) {
-            vkCmdBindPipeline(sl->shadow.cmd_buf,
+            vkCmdBindPipeline(s->cmd_buf.shadow_maps,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               pipeline);
             current_pipeline = pipeline;
@@ -2405,22 +2411,20 @@ record_shadow_map_cmd_buf(VkdfScene *s,
 
          // Draw all instances
          const VkDeviceSize offsets[1] = { 0 };
-         vkCmdBindVertexBuffers(sl->shadow.cmd_buf,
+         vkCmdBindVertexBuffers(s->cmd_buf.shadow_maps,
                                 0,                       // Start Binding
                                 1,                       // Binding Count
                                 &mesh->vertex_buf.buf,   // Buffers
                                 offsets);                // Offsets
 
          vkdf_mesh_draw(mesh,
-                        sl->shadow.cmd_buf,
+                        s->cmd_buf.shadow_maps,
                         set_info->shadow_caster_count,
                         set_info->shadow_caster_start_index);
       }
    }
 
-   vkCmdEndRenderPass(sl->shadow.cmd_buf);
-
-   vkdf_command_buffer_end(sl->shadow.cmd_buf);
+   vkCmdEndRenderPass(s->cmd_buf.shadow_maps);
 }
 
 static inline void
@@ -2442,8 +2446,7 @@ check_for_dirty_lights(VkdfScene *s)
 static bool
 record_scene_light_resource_updates(VkdfScene *s)
 {
-   if (!s->lights_dirty || !s->shadow_maps_dirty)
-      return false;
+   assert(s->lights_dirty || s->shadow_maps_dirty);
 
    uint32_t num_lights = s->lights.size();
 
@@ -2630,23 +2633,20 @@ record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
 }
 
 static inline void
-free_dirty_shadow_maps(VkdfScene *s)
+free_dirty_shadow_map_list(GList *dirty_shadow_maps)
 {
-   if (!s->dirty_shadow_maps)
+   if (!dirty_shadow_maps)
       return;
 
-   GList *iter = s->dirty_shadow_maps;
+   GList *iter = dirty_shadow_maps;
    do {
       struct _DirtyShadowMap *ds = (struct _DirtyShadowMap *) iter->data;
       g_hash_table_foreach(ds->dyn_sets, destroy_set, NULL);
       g_hash_table_destroy(ds->dyn_sets);
-      new_inactive_cmd_buf(s, ds->sl->shadow.thread_id, ds->sl->shadow.cmd_buf);
-      ds->sl->shadow.cmd_buf = 0;
       g_free(ds);
       iter = g_list_next(iter);
    } while (iter);
-   g_list_free(s->dirty_shadow_maps);
-   s->dirty_shadow_maps = NULL;
+   g_list_free(dirty_shadow_maps);
 }
 
 static void
@@ -2684,7 +2684,6 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
    needs_new_shadow_map = needs_new_shadow_map || has_dirty_objects;
 
    if (needs_new_shadow_map) {
-      record_shadow_map_cmd_buf(s, sl, dyn_sets, thread_id);
       data->dirty_shadow_map = g_new(struct _DirtyShadowMap, 1);
       data->dirty_shadow_map->sl = sl;
       data->dirty_shadow_map->dyn_sets = dyn_sets;
@@ -2694,9 +2693,10 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 static void
 update_dirty_lights(VkdfScene *s)
 {
-   free_dirty_shadow_maps(s);
+   s->shadow_maps_dirty = false;
 
-   if (s->lights.size() == 0)
+   uint32_t num_lights = s->lights.size();
+   if (num_lights == 0)
       return;
 
    // Go through the list of lights and check if they are dirty and if they
@@ -2706,11 +2706,11 @@ update_dirty_lights(VkdfScene *s)
    // If all lights are shadow casters then we can have as much that many
    // dirty shadow maps
    std::vector<struct LightThreadData> data;
-   data.resize(s->lights.size());
+   data.resize(num_lights);
    uint32_t data_count = 0;
 
    bool has_thread_jobs = false;
-   for (uint32_t i = 0; i < s->lights.size(); i++) {
+   for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
       VkdfLight *l = sl->light;
 
@@ -2747,24 +2747,52 @@ update_dirty_lights(VkdfScene *s)
       data_count++;
    }
 
-   // Collect list of dirty shadow maps from threads
+   // Wait for all threads to finish
    if (has_thread_jobs)
       vkdf_thread_pool_wait(s->thread.pool);
 
-   for (uint32_t i = 0; i < data_count; i++) {
-      if (data[i].dirty_shadow_map == NULL)
-         continue;
+   // Check if we have at least one shadow map that we need to update.
+   uint32_t i = 0;
+   for (; i < data_count; i++) {
+      if (data[i].dirty_shadow_map)
+         break;
+   }
 
+   // If we do, then record a cmd_buf with all the shadow map updates
+   GList *dirty_shadow_map_list = NULL;
+   if (i < data_count) {
       s->shadow_maps_dirty = true;
-      s->dirty_shadow_maps = g_list_prepend(s->dirty_shadow_maps,
-                                            data[i].dirty_shadow_map);
+      start_recording_shadow_maps_cmd_buf(s);
+      for (; i < data_count; i++) {
+         if (data[i].dirty_shadow_map == NULL)
+            continue;
+
+         struct _DirtyShadowMap *ds = data[i].dirty_shadow_map;
+         record_shadow_map_commands(s, ds->sl, ds->dyn_sets);
+         dirty_shadow_map_list = g_list_prepend(dirty_shadow_map_list, ds);
+      }
+      stop_recording_shadow_maps_cmd_buf(s);
+   }
+
+   // Record commands to update dynamic shadow map resources for each light
+   if (dirty_shadow_map_list) {
+      record_scene_dynamic_shadow_map_resource_updates(s, dirty_shadow_map_list);
+      free_dirty_shadow_map_list(dirty_shadow_map_list);
+      dirty_shadow_map_list = NULL;
    }
 
    // Record the commands to update scene light resources for rendering
-   record_scene_light_resource_updates(s);
+   if (s->lights_dirty || s->shadow_maps_dirty)
+      record_scene_light_resource_updates(s);
 
-   // Record commands to update dynamic shadow map resources for each light
-   record_scene_dynamic_shadow_map_resource_updates(s, s->dirty_shadow_maps);
+   // Clean-up dirty bits on the lights now
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      if (!vkdf_light_is_dirty(sl->light))
+         continue;
+      vkdf_light_set_dirty_shadows(sl->light, false);
+      vkdf_light_set_dirty(sl->light, false);
+   }
 }
 
 /**
@@ -3511,38 +3539,12 @@ scene_draw(VkdfScene *s)
    }
 
    // If we have dirty shadow maps, update them.
-   //
-   // This is the last stage for handling dirty lights in the scene, so we
-   // mark all of them them as not being dirty after this step.
-   if (s->dirty_shadow_maps) {
-      assert(s->shadow_maps_dirty == true);
-      VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, s->lights.size());
-      uint32_t count = 0;
-      GList *iter = s->dirty_shadow_maps;
-      while (iter) {
-         struct _DirtyShadowMap *ds = (_DirtyShadowMap *) iter->data;
-         VkdfSceneLight *sl = ds->sl;
-
-         assert(vkdf_light_casts_shadows(sl->light));
-         assert(sl->shadow.cmd_buf != 0);
-
-         cmd_bufs[count++] = sl->shadow.cmd_buf;
-
-         vkdf_light_set_dirty_shadows(sl->light, false);
-         vkdf_light_set_dirty(sl->light, false);
-
-         iter = g_list_next(iter);
-      }
-
-      assert(count > 0);
-      vkdf_command_buffer_execute_many(s->ctx,
-                                       cmd_bufs,
-                                       count,
-                                       &wait_stage,
-                                       wait_sem_count, wait_sem,
-                                       1, &s->sync.shadow_maps_sem);
-
-      g_free(cmd_bufs);
+   if (s->shadow_maps_dirty) {
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.shadow_maps,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.shadow_maps_sem);
 
       wait_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
       wait_sem_count = 1;
