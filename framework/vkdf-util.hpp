@@ -7,6 +7,14 @@
 #define ALIGN(value, align) (((value) + (align) - 1) & ~((align) - 1))
 
 inline float
+rand_float(float min, float max)
+{
+   float range = max - min;
+   float r = random() / ((float) RAND_MAX);
+   return  r * range + min;
+}
+
+inline float
 lerp(float a, float b, float f)
 {
     return a + f * (b - a);
