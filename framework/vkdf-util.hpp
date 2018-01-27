@@ -6,6 +6,12 @@
 
 #define ALIGN(value, align) (((value) + (align) - 1) & ~((align) - 1))
 
+inline float
+lerp(float a, float b, float f)
+{
+    return a + f * (b - a);
+}
+
 inline glm::vec3
 vec3(glm::vec4 v)
 {
