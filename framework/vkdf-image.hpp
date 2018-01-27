@@ -28,6 +28,16 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           VkdfImage *image);
 
 void
+vkdf_create_image_from_data(VkdfContext *ctx,
+                            VkCommandPool pool,
+                            uint32_t width,
+                            uint32_t height,
+                            VkFormat format,
+                            bool gen_mipmaps,
+                            const void *pixel_data,
+                            VkdfImage *image);
+
+void
 vkdf_destroy_image(VkdfContext *ctx, VkdfImage *image);
 
 VkImageSubresourceRange

@@ -562,6 +562,49 @@ guess_format_from_bpp(uint32_t bpp)
    }
 }
 
+static uint32_t
+get_bpp_for_format(VkFormat format)
+{
+   // FIXME: support more formats
+   switch (format) {
+      /* RGBA */
+      case VK_FORMAT_R32G32B32A32_SFLOAT:
+         return 128;
+      case VK_FORMAT_R16G16B16A16_SFLOAT:
+         return 64;
+      case VK_FORMAT_R8G8B8A8_UNORM:
+         return 32;
+
+      /* RGB */
+      case VK_FORMAT_R32G32B32_SFLOAT:
+         return 96;
+      case VK_FORMAT_R16G16B16_SFLOAT:
+         return 48;
+      case VK_FORMAT_R8G8B8_UNORM:
+         return 24;
+
+      /* RG */
+      case VK_FORMAT_R32G32_SFLOAT:
+         return 64;
+      case VK_FORMAT_R16G16_SFLOAT:
+         return 32;
+      case VK_FORMAT_R8G8_UNORM:
+         return 16;
+
+      /* R */
+      case VK_FORMAT_R32_SFLOAT:
+         return 32;
+      case VK_FORMAT_R16_SFLOAT:
+         return 16;
+      case VK_FORMAT_R8_UNORM:
+         return 8;
+
+      default:
+         vkdf_error("Unsupported image format (%u)", format);
+         return 32;
+   }
+}
+
 static void
 guess_swizzle_from_format(VkFormat format, VkComponentSwizzle *swz)
 {
@@ -659,4 +702,28 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           true, surf->pixels);
 
    return true;
+}
+
+void
+vkdf_create_image_from_data(VkdfContext *ctx,
+                            VkCommandPool pool,
+                            uint32_t width,
+                            uint32_t height,
+                            VkFormat format,
+                            bool gen_mipmaps,
+                            const void *pixel_data,
+                            VkdfImage *image)
+{
+   memset(image, 0, sizeof(VkdfImage));
+
+   uint32_t bpp = get_bpp_for_format(format);
+
+   VkComponentSwizzle swz[4];
+   guess_swizzle_from_format(format, swz);
+
+   create_image_from_data(ctx, pool,
+                          image, width, height,
+                          format, bpp, swz,
+                          gen_mipmaps,
+                          pixel_data);
 }
