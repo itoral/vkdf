@@ -320,18 +320,22 @@ compute_bpp_from_sdl_surface(SDL_Surface *surf)
 }
 
 static VkDeviceSize
-compute_gpu_image_size(SDL_Surface *surf,
+compute_gpu_image_size(uint32_t width,
+                       uint32_t height,
+                       uint32_t bpp,
+                       bool with_mipmaps,
                        uint32_t *num_levels,
                        struct _MipmapInfo **mip_levels)
 {
-   *num_levels = 1 + ((uint32_t) floorf(log2f(MAX2(surf->w, surf->h))));
+   if (with_mipmaps)
+      *num_levels = 1 + ((uint32_t) floorf(log2f(MAX2(width, height))));
+   else
+      *num_levels = 1;
    *mip_levels = g_new(struct _MipmapInfo, *num_levels);
 
-   uint32_t bpp = compute_bpp_from_sdl_surface(surf);
-
    VkDeviceSize total_bytes = 0;
-   uint32_t size_x = surf->w;
-   uint32_t size_y = surf->h;
+   uint32_t size_x = width;
+   uint32_t size_y = height;
    for (uint32_t i = 0; i < *num_levels; i++) {
       struct _MipmapInfo *info = &(*mip_levels)[i];
       info->bytes = size_x * size_y * bpp / 8;
@@ -364,8 +368,10 @@ vkdf_load_image_from_file(VkdfContext *ctx,
    // Upload pixel data to a host-visible staging buffer
    uint32_t num_levels;
    struct _MipmapInfo *mip_levels;
+   uint32_t bpp = compute_bpp_from_sdl_surface(surf);
    VkDeviceSize gpu_image_bytes =
-      compute_gpu_image_size(surf, &num_levels, &mip_levels);
+      compute_gpu_image_size(surf->w, surf->h, bpp,
+                             true, &num_levels, &mip_levels);
 
    VkdfBuffer buf =
       vkdf_create_buffer(ctx,
