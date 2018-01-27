@@ -37,3 +37,22 @@ vkdf_ssao_gen_tangent_samples(uint32_t num_samples,
    }
 }
 
+/**
+ * Generates 'num_samples' noise vector samples that can be used to rotate
+ * around the Z axis. These are used to rotate the fixed kernel of tangent
+ * space samples in view space for every pixel, introducing variability
+ * to avoid banding artifacts during the base SSAO pass.
+ */
+void
+vkdf_ssao_gen_noise_samples(uint32_t num_samples,
+                            std::vector<glm::vec3> *samples)
+{
+   for (uint32_t i = 0; i < num_samples; i++) {
+      glm::vec3 sample = glm::vec3(rand_float(-1.0f, 1.0f),
+                                   rand_float(-1.0f, 1.0f),
+                                   0.0f);
+      vkdf_vec3_normalize(&sample);
+      sample *= rand_float(0.0f, 1.0f);
+      samples->push_back(sample);
+   }
+}
