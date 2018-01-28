@@ -17,4 +17,14 @@ vkdf_ssao_gen_noise_image(VkdfContext *ctx,
                           const std::vector<glm::vec3> *samples,
                           VkdfImage *image);
 
+inline VkSampler
+vkdf_ssao_create_noise_sampler(VkdfContext *ctx)
+{
+   return vkdf_create_sampler(ctx,
+                              VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                              VK_FILTER_NEAREST,
+                              VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                              0.0f);
+}
+
 #endif
