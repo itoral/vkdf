@@ -1461,9 +1461,9 @@ create_debug_tile_pipeline(SceneResources *res)
 
    res->debug.sampler =
          vkdf_create_sampler(res->ctx,
-                             VK_SAMPLER_ADDRESS_MODE_REPEAT,
-                             VK_FILTER_LINEAR,
-                             VK_SAMPLER_MIPMAP_MODE_LINEAR,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_NEAREST,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
                              0.0f);
 
    vkdf_descriptor_set_sampler_update(res->ctx,
