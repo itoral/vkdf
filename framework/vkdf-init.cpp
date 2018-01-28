@@ -235,6 +235,11 @@ init_logical_device(VkdfContext *ctx)
    ctx->device_extensions = g_new0(const char *, ctx->device_extension_count);
    ctx->device_extensions[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
 
+   /* We enable some features only if they are supported  */
+   memset(&ctx->device_features, 0, sizeof(ctx->device_features));
+   ctx->device_features.samplerAnisotropy =
+      ctx->phy_device_features.samplerAnisotropy;
+
    VkDeviceCreateInfo device_info;
    device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
    device_info.pNext = NULL;
@@ -245,7 +250,7 @@ init_logical_device(VkdfContext *ctx)
    device_info.ppEnabledExtensionNames = ctx->device_extensions;
    device_info.enabledLayerCount = 0;
    device_info.ppEnabledLayerNames = NULL;
-   device_info.pEnabledFeatures = NULL;
+   device_info.pEnabledFeatures = &ctx->device_features;
 
    VkResult res =
       vkCreateDevice(ctx->phy_device, &device_info, NULL, &ctx->device);

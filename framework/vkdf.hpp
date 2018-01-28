@@ -72,6 +72,7 @@ struct _VkdfContext {
    VkDevice device;
    uint32_t device_extension_count;
    const char **device_extensions;
+   VkPhysicalDeviceFeatures device_features;
 
    // Window and surface
    GLFWwindow *window;
