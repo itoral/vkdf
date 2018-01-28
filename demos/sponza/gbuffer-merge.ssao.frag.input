@@ -29,11 +29,12 @@ layout(set = 2, binding = 2) uniform sampler2D tex_eye_light_position;
 layout(set = 2, binding = 3) uniform sampler2D tex_light_space_position;
 layout(set = 2, binding = 4) uniform sampler2D tex_diffuse;
 layout(set = 2, binding = 5) uniform sampler2D tex_specular;
+layout(set = 2, binding = 6) uniform sampler2D tex_ssao;
 
 layout(location = 0) out vec4 out_color;
 
 void main()
 {
-   float ambient_occlusion = 1.0f; /* No occlusion */
+   float ambient_occlusion = texture(tex_ssao, in_uv).r;
    INCLUDE(compute_deferred_lighting.glsl)
 }

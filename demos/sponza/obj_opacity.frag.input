@@ -54,6 +54,6 @@ void main()
    if (opacity < 0.01) {
       discard;
    } else {
-      INCLUDE(compute_frag_color.glsl)
+      INCLUDE(compute_forward_lighting.glsl)
    }
 }

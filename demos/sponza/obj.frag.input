@@ -48,5 +48,5 @@ layout(location = 0) out vec4 out_color;
 
 void main()
 {
-   INCLUDE(compute_frag_color.glsl)
+   INCLUDE(compute_forward_lighting.glsl)
 }

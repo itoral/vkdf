@@ -1,18 +1,39 @@
 #include "vkdf.hpp"
 
-const float WIN_WIDTH  = 1024.0f;
-const float WIN_HEIGHT = 768.0f;
+// ================================= CONFIG ===================================
 
-const bool SHOW_SPONZA_FLAG_MESH = false;
-const uint32_t SPONZA_FLAG_MESH_IDX = 4;
+/* Window resolution */
+const float    WIN_WIDTH                 = 1024.0f;
+const float    WIN_HEIGHT                = 768.0f;
+const bool     WIN_FULLSCREEN            = false;
 
-const bool SHOW_DEBUG_TILE = false;
+/* Sponza flag mesh */
+const bool     SHOW_SPONZA_FLAG_MESH     = false;
+const uint32_t SPONZA_FLAG_MESH_IDX      = 4;
 
-const bool ENABLE_CLIPPING = true;
-const bool ENABLE_DEPTH_PREPASS = true;
-const bool ENABLE_DEFERRED_RENDERING = false;
+/* Show debug texture */
+const bool     SHOW_DEBUG_TILE           = false;
 
-const float MAX_ANISOTROPY = 16.0f; // Set to 0 to disable anisotropic filtering
+/* Pipeline options */
+const bool     ENABLE_CLIPPING           = true;
+const bool     ENABLE_DEPTH_PREPASS      = true;
+const bool     ENABLE_DEFERRED_RENDERING = true;
+
+/* Anisotropic filtering */
+const float    MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
+
+/* Screen Space Ambient Occlusion */
+const bool     ENABLE_SSAO               = true;
+const uint32_t SSAO_NUM_SAMPLES          = 24;
+const float    SSAO_RADIUS               = 0.75f;
+const float    SSAO_BIAS                 = 0.05f;
+const float    SSAO_INTENSITY            = 3.0f;
+const uint32_t SSAO_BLUR_SIZE            = 2;     // Min=0 (no blur)
+const float    SSAO_DOWNSAMPLING         = 1.0f;  // Min=1.0 (no downsampling)
+const VkFilter SSAO_FILTER               = VK_FILTER_LINEAR;
+
+
+// =============================== Declarations ===============================
 
 enum {
    DIFFUSE_TEX_BINDING  = 0,
@@ -110,6 +131,7 @@ typedef struct {
       struct {
          VkShaderModule vs;
          VkShaderModule fs;
+         VkShaderModule fs_ssao;
       } gbuffer_merge;
    } shaders;
 
@@ -120,6 +142,7 @@ typedef struct {
 
    VkSampler sponza_sampler;
    VkSampler gbuffer_sampler;
+   VkSampler ssao_sampler;
 
    struct {
       VkdfImage image;
@@ -138,7 +161,6 @@ typedef struct {
       VkFramebuffer framebuffer;
       VkCommandBuffer cmd_buf;
    } debug;
-
 } SceneResources;
 
 static void
@@ -146,6 +168,9 @@ postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
                  void *data);
+
+
+// ============================== Implementation ==============================
 
 static inline VkdfBuffer
 create_ubo(VkdfContext *ctx, uint32_t size, uint32_t usage, uint32_t mem_props)
@@ -688,12 +713,14 @@ init_scene(SceneResources *res)
                                            VK_FORMAT_R8G8B8A8_UNORM);
    }
 
-   // Select source image for debug output.
-   if (SHOW_DEBUG_TILE) {
-      if (!ENABLE_DEFERRED_RENDERING)
-         res->debug.image = res->scene->lights[0]->shadow.shadow_map;
-      else
-         res->debug.image = res->scene->rt.gbuffer[0];
+   if (ENABLE_SSAO) {
+      vkdf_scene_enable_ssao(res->scene,
+                             SSAO_DOWNSAMPLING,
+                             SSAO_NUM_SAMPLES,
+                             SSAO_RADIUS,
+                             SSAO_BIAS,
+                             SSAO_INTENSITY,
+                             SSAO_BLUR_SIZE);
    }
 }
 
@@ -1017,9 +1044,12 @@ init_pipeline_descriptors(SceneResources *res,
 
    if (deferred) {
       /* Gbuffer textures */
+      uint32_t gbuffer_size =
+         res->scene->rt.gbuffer_size + (res->scene->ssao.enabled ? 1 : 0);
+
       res->pipelines.descr.gbuffer_tex_layout =
          vkdf_create_sampler_descriptor_set_layout(res->ctx, 0,
-                                                   res->scene->rt.gbuffer_size,
+                                                   gbuffer_size,
                                                    VK_SHADER_STAGE_FRAGMENT_BIT);
 
       res->pipelines.descr.gbuffer_tex_set =
@@ -1034,14 +1064,27 @@ init_pipeline_descriptors(SceneResources *res,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST,
                              0.0f);
 
-      for (uint32_t i = 0; i < res->scene->rt.gbuffer_size; i++) {
-         VkdfImage *image = vkdf_scene_get_gbuffer_image(res->scene, i);
+      uint32_t tex_idx = 0;
+      for (; tex_idx < res->scene->rt.gbuffer_size; tex_idx++) {
+         VkdfImage *image = vkdf_scene_get_gbuffer_image(res->scene, tex_idx);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.gbuffer_tex_set,
                                             res->gbuffer_sampler,
                                             image->view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                            i, 1);
+                                            tex_idx, 1);
+      }
+
+      if (res->scene->ssao.enabled) {
+         VkdfImage *ssao_image = vkdf_scene_get_ssao_image(res->scene);
+         res->ssao_sampler =
+            vkdf_ssao_create_ssao_sampler(res->ctx, SSAO_FILTER);
+         vkdf_descriptor_set_sampler_update(res->ctx,
+                                            res->pipelines.descr.gbuffer_tex_set,
+                                            res->ssao_sampler,
+                                            ssao_image->view,
+                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                            tex_idx, 1);
       }
 
       /* Gbuffer merge pipeline layout */
@@ -1188,10 +1231,13 @@ create_gbuffer_pipeline(VkdfContext *ctx,
 }
 
 static inline VkPipeline
-create_gbuffer_merge_pipeline(SceneResources *res)
+create_gbuffer_merge_pipeline(SceneResources *res, bool use_ssao)
 {
    const VkRenderPass renderpass =
       vkdf_scene_get_gbuffer_merge_render_pass(res->scene);
+
+   VkShaderModule fs = use_ssao ? res->shaders.gbuffer_merge.fs_ssao :
+                                  res->shaders.gbuffer_merge.fs;
 
    VkPipeline pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
@@ -1208,7 +1254,7 @@ create_gbuffer_merge_pipeline(SceneResources *res)
                                VK_CULL_MODE_BACK_BIT,
                                1,
                                res->shaders.gbuffer_merge.vs,
-                               res->shaders.gbuffer_merge.fs);
+                               fs);
    return pipeline;
 }
 
@@ -1245,7 +1291,8 @@ create_deferred_pipelines(SceneResources *res,
                               res->shaders.obj_gbuffer.vs,
                               res->shaders.obj_gbuffer.fs_opacity);
 
-   res->pipelines.gbuffer_merge = create_gbuffer_merge_pipeline(res);
+   res->pipelines.gbuffer_merge =
+      create_gbuffer_merge_pipeline(res, res->scene->ssao.enabled);
 }
 
 static void
@@ -1377,6 +1424,10 @@ init_shaders(SceneResources *res)
       vkdf_create_shader_module(res->ctx, "gbuffer-merge.vert.spv");
    res->shaders.gbuffer_merge.fs =
       vkdf_create_shader_module(res->ctx, "gbuffer-merge.frag.spv");
+
+   // SSAO (deferred)
+   res->shaders.gbuffer_merge.fs_ssao =
+      vkdf_create_shader_module(res->ctx, "gbuffer-merge.ssao.frag.spv");
 
    // Debug
    if (SHOW_DEBUG_TILE) {
@@ -1697,8 +1748,19 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    vkdf_scene_prepare(res->scene);
    init_pipelines(res);
 
-   if (SHOW_DEBUG_TILE)
+   if (SHOW_DEBUG_TILE) {
+      // Select source image for debug output.
+      if (res->scene->ssao.enabled) {
+         VkdfImage *ssao_image = vkdf_scene_get_ssao_image(res->scene);
+         res->debug.image = *ssao_image;
+      } else if (!ENABLE_DEFERRED_RENDERING) {
+         res->debug.image = res->scene->lights[0]->shadow.shadow_map;
+      } else {
+         res->debug.image = res->scene->rt.gbuffer[0];
+      }
+
       init_debug_tile_resources(res);
+   }
 }
 
 static void
@@ -1860,6 +1922,7 @@ destroy_shader_modules(SceneResources *res)
 
    vkDestroyShaderModule(res->ctx->device, res->shaders.gbuffer_merge.vs, NULL);
    vkDestroyShaderModule(res->ctx->device, res->shaders.gbuffer_merge.fs, NULL);
+   vkDestroyShaderModule(res->ctx->device, res->shaders.gbuffer_merge.fs_ssao, NULL);
 }
 
 static void
@@ -1896,6 +1959,7 @@ destroy_samplers(SceneResources *res)
    vkDestroySampler(res->ctx->device, res->debug.sampler, NULL);
    vkDestroySampler(res->ctx->device, res->sponza_sampler, NULL);
    vkDestroySampler(res->ctx->device, res->gbuffer_sampler, NULL);
+   vkDestroySampler(res->ctx->device, res->ssao_sampler, NULL);
 }
 
 void
@@ -1920,7 +1984,7 @@ main()
    VkdfContext ctx;
    SceneResources resources;
 
-   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, false, false, false);
+   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, WIN_FULLSCREEN, false, true);
    init_resources(&ctx, &resources);
 
    vkdf_scene_event_loop_run(resources.scene);

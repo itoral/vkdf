@@ -25,6 +25,8 @@ BUILT_SOURCES = \
     gbuffer-merge.vert.spv \
     gbuffer-merge.frag \
     gbuffer-merge.frag.spv \
+    gbuffer-merge.ssao.frag \
+    gbuffer-merge.ssao.frag.spv \
     debug-tile.vert.spv \
     debug-tile.frag.spv
 
@@ -89,6 +91,15 @@ gbuffer-merge.frag: gbuffer-merge.frag.input
 
 gbuffer-merge.frag.spv: gbuffer-merge.frag
 	$(top_srcdir)/$(GLSLANG) -V gbuffer-merge.frag -o gbuffer-merge.frag.spv
+
+
+# SSAO (deferred)
+
+gbuffer-merge.ssao.frag: gbuffer-merge.ssao.frag.input
+	python $(top_srcdir)/scripts/fixup-glsl.py gbuffer-merge.ssao.frag.input gbuffer-merge.ssao.frag
+
+gbuffer-merge.ssao.frag.spv: gbuffer-merge.ssao.frag
+	$(top_srcdir)/$(GLSLANG) -V gbuffer-merge.ssao.frag -o gbuffer-merge.ssao.frag.spv
 
 
 # Debug
