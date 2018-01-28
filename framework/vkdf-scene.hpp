@@ -162,6 +162,84 @@ struct _VkdfScene {
       } gbuffer_merge;
    } rp;
 
+   // SSAO resources
+   struct {
+      bool enabled;
+
+      /* Size of the SSAO texture */
+      uint32_t width;
+      uint32_t height;
+
+      /* Samples */
+      uint32_t num_samples;
+      std::vector<glm::vec3> samples;
+      struct {
+         VkdfBuffer buf;
+         VkDeviceSize size;
+      } samples_buf;
+
+      /* Noise */
+      uint32_t num_noise_samples;
+      std::vector<glm::vec3> noise;
+      uint32_t noise_image_dim;
+      VkdfImage noise_image;
+      VkSampler noise_sampler;
+      glm::vec2 noise_scale;
+
+      /* Shader parameters */
+      float radius;
+      float bias;
+      float intensity;
+      int32_t blur_size;
+
+      /* SSAO renderpasses */
+      struct {
+         struct {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout samples_set_layout;
+            VkDescriptorSet samples_set;
+            VkDescriptorSetLayout textures_set_layout;
+            VkDescriptorSet textures_set;
+            struct {
+               VkShaderModule vs;
+               VkShaderModule fs;
+            } shader;
+         } pipeline;
+
+         VkdfImage image;
+         struct {
+            VkRenderPass renderpass;
+            VkFramebuffer framebuffer;
+         } rp;
+
+         VkSampler gbuffer_sampler; // To sample from GBuffer (deferred only)
+      } base;
+
+      struct {
+         struct {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout ssao_tex_set_layout;
+            VkDescriptorSet ssao_tex_set;
+            struct {
+               // VS shader is shared with the base pass
+               VkShaderModule fs;
+            } shader;
+         } pipeline;
+
+         VkdfImage image;
+         struct {
+            VkRenderPass renderpass;
+            VkFramebuffer framebuffer;
+         } rp;
+
+         VkSampler input_sampler;  // To sample input SSAO texture
+      } blur;
+
+      VkCommandBuffer cmd_buf;
+   } ssao;
+
    VkFramebuffer framebuffer;
    uint32_t fb_width;
    uint32_t fb_height;
@@ -237,6 +315,7 @@ struct _VkdfScene {
       VkSemaphore depth_draw_sem;
       VkSemaphore draw_static_sem;
       VkSemaphore draw_sem;
+      VkSemaphore ssao_sem;
       VkSemaphore gbuffer_merge_sem;
       VkSemaphore postprocess_sem;
       VkFence present_fence;
@@ -297,6 +376,10 @@ struct _VkdfScene {
          VkDeviceSize size;
       } shadow_map;
    } ubo;
+
+   struct {
+      VkDescriptorPool pool;
+   } sampler;
 
    struct {
       uint32_t visible_obj_count;            // Number of dynamic objects that are visible
@@ -552,6 +635,15 @@ vkdf_scene_enable_depth_prepass(VkdfScene *s)
    s->rp.do_depth_prepass = true;
 }
 
+void
+vkdf_scene_enable_ssao(VkdfScene *s,
+                       float downsampling,
+                       uint32_t num_samples,
+                       float radius,
+                       float bias,
+                       float intensity,
+                       uint32_t blur_size);
+
 inline VkRenderPass
 vkdf_scene_get_gbuffer_merge_render_pass(VkdfScene *s)
 {
@@ -563,6 +655,15 @@ vkdf_scene_get_gbuffer_image(VkdfScene *s, uint32_t index)
 {
    assert(index < s->rt.gbuffer_size);
    return &s->rt.gbuffer[index];
+}
+
+inline VkdfImage *
+vkdf_scene_get_ssao_image(VkdfScene *s)
+{
+   if (s->ssao.blur_size > 0)
+      return &s->ssao.blur.image;
+   else
+      return &s->ssao.base.image; /* No blur */
 }
 
 void

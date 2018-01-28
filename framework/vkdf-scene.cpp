@@ -1,7 +1,21 @@
 #include "vkdf.hpp"
 
 #define JOIN(a,b) (a b)
+
 #define SHADOW_MAP_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/shadow-map.vert.spv")
+
+#define SSAO_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao.deferred.vert.spv")
+#define SSAO_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao.deferred.frag.spv")
+#define SSAO_BLUR_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao-blur.deferred.frag.spv")
+
+/**
+ * Input texture bindings for deferred SSAO base pass
+ */
+enum {
+   SSAO_POSITION_TEX_BINDING = 0,
+   SSAO_NORMAL_TEX_BINDING   = 1,
+   SSAO_NOISE_TEX_BINDING    = 2,
+};
 
 static const uint32_t MAX_MATERIALS_PER_MODEL =   32;
 static const uint32_t MAX_DYNAMIC_OBJECTS     = 1024;
@@ -161,6 +175,46 @@ vkdf_scene_enable_deferred_rendering(VkdfScene *s,
    va_end(ap);
 }
 
+void
+vkdf_scene_enable_ssao(VkdfScene *s,
+                       float downsampling,
+                       uint32_t num_samples,
+                       float radius,
+                       float bias,
+                       float intensity,
+                       uint32_t blur_size)
+{
+   /* Store the SSAO config and bail. SSAO depends on having depth info
+    * available so we postpone creating resources for it until we can
+    * verify this requirement. See prepare_scene_ssao().
+    */
+   s->ssao.enabled = true;
+
+   assert(num_samples > 0);
+   if (num_samples > 64) {
+      vkdf_info("scene:ssao: clamping num_samples to 64");
+      num_samples = 64;
+   }
+   s->ssao.num_samples = num_samples;
+
+   /* We use a fixed 4x4 noise image (16 samples) */
+   s->ssao.num_noise_samples = 16;
+   s->ssao.noise_image_dim = 4;
+
+   assert(radius > 0.0f && bias >= 0.0f);
+   s->ssao.radius = radius;
+   s->ssao.bias = bias;
+
+   assert(intensity > 0.0f);
+   s->ssao.intensity = intensity;
+
+   assert(blur_size >= 0.0f);
+   s->ssao.blur_size = blur_size;
+
+   assert(downsampling >= 1.0f);
+   s->ssao.width = s->rt.width / downsampling;
+   s->ssao.height = s->rt.height / downsampling;
+}
 
 VkdfScene *
 vkdf_scene_new(VkdfContext *ctx,
@@ -285,6 +339,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.depth_draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.ssao_sem = vkdf_create_semaphore(s->ctx);;
    s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
    s->sync.present_fence = vkdf_create_fence(s->ctx);
@@ -296,6 +351,11 @@ vkdf_scene_new(VkdfContext *ctx,
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
    s->dynamic.visible =
       g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+
+   s->sampler.pool =
+      vkdf_create_descriptor_pool(s->ctx,
+                                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                  32);
 
    create_render_target(s, s->ctx->width, s->ctx->height, s->ctx->surface_format);
 
@@ -372,6 +432,65 @@ destroy_shadow_map_pipeline(gpointer key, gpointer value, gpointer data)
    VkdfScene *s = (VkdfScene *) data;
    VkPipeline pipeline = (VkPipeline) value;
    vkDestroyPipeline(s->ctx->device, pipeline, NULL);
+}
+
+static void
+destroy_ssao_resources(VkdfScene *s)
+{
+   assert(s->ssao.enabled);
+
+   /* Pipeline layouts and descriptor sets  */
+   vkDestroyPipeline(s->ctx->device, s->ssao.base.pipeline.pipeline, NULL);
+   vkDestroyPipelineLayout(s->ctx->device, s->ssao.base.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->ubo.static_pool,
+                        1, &s->ssao.base.pipeline.samples_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->ssao.base.pipeline.samples_set_layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->ssao.base.pipeline.textures_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->ssao.base.pipeline.textures_set_layout, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->ssao.base.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->ssao.base.pipeline.shader.fs, NULL);
+
+   /* Samples buffer */
+   vkdf_destroy_buffer(s->ctx, &s->ssao.samples_buf.buf);
+
+   /* Noise texture and sampler */
+   vkDestroySampler(s->ctx->device, s->ssao.noise_sampler, NULL);
+   vkdf_destroy_image(s->ctx, &s->ssao.noise_image);
+
+   /* Gbuffer sampler */
+   vkDestroySampler(s->ctx->device, s->ssao.base.gbuffer_sampler, NULL);
+
+   /* SSAO render targets */
+   vkDestroyRenderPass(s->ctx->device, s->ssao.base.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->ssao.base.rp.framebuffer, NULL);
+   vkdf_destroy_image(s->ctx, &s->ssao.base.image);
+
+   /* SSAO blur resources  */
+   if (s->ssao.blur_size > 0) {
+      vkDestroyPipeline(s->ctx->device, s->ssao.blur.pipeline.pipeline, NULL);
+      vkDestroyPipelineLayout(s->ctx->device,
+                              s->ssao.blur.pipeline.layout, NULL);
+
+      vkDestroyDescriptorSetLayout(s->ctx->device,
+                                   s->ssao.blur.pipeline.ssao_tex_set_layout,
+                                   NULL);
+
+      vkDestroyShaderModule(s->ctx->device,
+                            s->ssao.blur.pipeline.shader.fs, NULL);
+
+      vkDestroySampler(s->ctx->device, s->ssao.blur.input_sampler, NULL);
+
+      vkDestroyRenderPass(s->ctx->device, s->ssao.blur.rp.renderpass, NULL);
+      vkDestroyFramebuffer(s->ctx->device, s->ssao.blur.rp.framebuffer, NULL);
+      vkdf_destroy_image(s->ctx, &s->ssao.blur.image);
+   }
 }
 
 void
@@ -451,6 +570,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_static_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.gbuffer_merge_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.ssao_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.present_fence, NULL);
 
@@ -489,6 +609,9 @@ vkdf_scene_free(VkdfScene *s)
    if (s->shadows.shaders.vs)
      vkDestroyShaderModule(s->ctx->device, s->shadows.shaders.vs, NULL);
 
+   if (s->ssao.enabled)
+      destroy_ssao_resources(s);
+
    // FIXME: have a list of buffers in the scene so that here we can just go
    // through the list and destory all of them without having to add another
    // deleter every time we start using a new buffer.
@@ -514,6 +637,7 @@ vkdf_scene_free(VkdfScene *s)
       vkdf_destroy_buffer(s->ctx, &s->dynamic.ubo.shadow_map.buf);
 
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
+   vkDestroyDescriptorPool(s->ctx->device, s->sampler.pool, NULL);
 
    g_free(s);
 }
@@ -3053,11 +3177,453 @@ prepare_depth_prepass_render_passes(VkdfScene *s)
                                s->rt.depth.view);
 }
 
+struct SsaoPCB {
+   glm::mat4 proj;
+   glm::vec2 noise_scale;
+   int32_t num_samples;
+   float radius;
+   float bias;
+   float intensity;
+};
+
+static VkCommandBuffer
+record_ssao_cmd_buf(VkdfScene *s)
+{
+   VkCommandBuffer cmd_buf;
+
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &cmd_buf);
+
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+   /* Base pass */
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->ssao.base.rp.renderpass,
+                                s->ssao.base.rp.framebuffer,
+                                0, 0, s->ssao.width, s->ssao.height,
+                                0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->ssao.width, s->ssao.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->ssao.base.pipeline.pipeline);
+
+   struct SsaoPCB pcb;
+   const glm::mat4 *proj_ptr = vkdf_camera_get_projection_ptr(s->camera);
+   memcpy(&pcb.proj[0][0], proj_ptr, sizeof(glm::mat4));
+   pcb.noise_scale = s->ssao.noise_scale;
+   pcb.num_samples = s->ssao.num_samples;
+   pcb.radius = s->ssao.radius;
+   pcb.bias = s->ssao.bias;
+   pcb.intensity = s->ssao.intensity;
+
+   vkCmdPushConstants(cmd_buf,
+                      s->ssao.base.pipeline.layout,
+                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(struct SsaoPCB), &pcb);
+
+   VkDescriptorSet descriptor_sets[] = {
+      s->ssao.base.pipeline.samples_set,
+      s->ssao.base.pipeline.textures_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->ssao.base.pipeline.layout,
+                           0, 2, descriptor_sets,  // First, count, sets
+                           0, NULL);               // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   /* Blur pass */
+   if (s->ssao.blur_size == 0) {
+      /* No blur */
+      vkdf_command_buffer_end(cmd_buf);
+      return cmd_buf;
+   }
+
+   rp_begin =
+      vkdf_renderpass_begin_new(s->ssao.blur.rp.renderpass,
+                                s->ssao.blur.rp.framebuffer,
+                                0, 0, s->ssao.width, s->ssao.height,
+                                0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->ssao.width, s->ssao.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->ssao.blur.pipeline.pipeline);
+
+   vkCmdPushConstants(cmd_buf,
+                      s->ssao.blur.pipeline.layout,
+                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(uint32_t), &s->ssao.blur_size);
+
+   VkDescriptorSet blur_descriptor_sets[] = {
+      s->ssao.blur.pipeline.ssao_tex_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->ssao.blur.pipeline.layout,
+                           0, 1, blur_descriptor_sets,  // First, count, sets
+                           0, NULL);                    // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   vkdf_command_buffer_end(cmd_buf);
+
+   return cmd_buf;
+}
+
+static void
+prepare_ssao_rendering(VkdfScene *s)
+{
+   /* SSAO render target output */
+   s->ssao.base.image =
+      vkdf_create_image(s->ctx,
+                        s->ssao.width,
+                        s->ssao.height,
+                        1,
+                        VK_IMAGE_TYPE_2D,
+                        VK_FORMAT_R8_UNORM,
+                        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                           VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
+                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                           VK_IMAGE_USAGE_SAMPLED_BIT,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_VIEW_TYPE_2D);
+
+   /* Render passes */
+   s->ssao.base.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->ssao.base.image.format,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+
+   /* Render targets */
+   s->ssao.base.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->ssao.base.rp.renderpass,
+                              s->ssao.base.image.view,
+                              s->ssao.width, s->ssao.height,
+                              0, NULL);
+
+   /* Base SSAO pipeline */
+   VkPushConstantRange pcb_range;
+   pcb_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   pcb_range.offset = 0;
+   pcb_range.size = sizeof(struct SsaoPCB);
+
+   VkPushConstantRange pcb_ranges[] = {
+      pcb_range,
+   };
+
+   s->ssao.base.pipeline.samples_set_layout =
+      vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
+                                            VK_SHADER_STAGE_FRAGMENT_BIT,
+                                            false);
+
+   s->ssao.base.pipeline.textures_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 3,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   VkDescriptorSetLayout layouts[] = {
+      s->ssao.base.pipeline.samples_set_layout,
+      s->ssao.base.pipeline.textures_set_layout
+   };
+
+   VkPipelineLayoutCreateInfo info;
+   info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   info.pNext = NULL;
+   info.pushConstantRangeCount = 1;
+   info.pPushConstantRanges = pcb_ranges;
+   info.setLayoutCount = 2;
+   info.pSetLayouts = layouts;
+   info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &info, NULL,
+                                   &s->ssao.base.pipeline.layout));
+
+   s->ssao.base.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, SSAO_VS_SHADER_PATH);
+
+   s->ssao.base.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, SSAO_FS_SHADER_PATH);
+
+   s->ssao.base.pipeline.pipeline =
+      vkdf_create_gfx_pipeline(s->ctx,
+                               NULL,
+                               0,
+                               NULL,
+                               0,
+                               NULL,
+                               false,
+                               VK_COMPARE_OP_ALWAYS,
+                               s->ssao.base.rp.renderpass,
+                               s->ssao.base.pipeline.layout,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                               VK_CULL_MODE_BACK_BIT,
+                               1,
+                               s->ssao.base.pipeline.shader.vs,
+                               s->ssao.base.pipeline.shader.fs);
+
+   /* Base SSAO descriptor sets */
+   s->ssao.base.pipeline.samples_set =
+      create_descriptor_set(s->ctx,
+                            s->ubo.static_pool,
+                            s->ssao.base.pipeline.samples_set_layout);
+
+   VkDeviceSize buf_offset = 0;
+   VkDeviceSize buf_size = s->ssao.samples_buf.size;
+   vkdf_descriptor_set_buffer_update(s->ctx,
+                                     s->ssao.base.pipeline.samples_set,
+                                     s->ssao.samples_buf.buf.buf,
+                                     0, 1, &buf_offset, &buf_size, false, true);
+
+   s->ssao.base.gbuffer_sampler = vkdf_ssao_create_gbuffer_sampler(s->ctx);
+
+   s->ssao.base.pipeline.textures_set =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->ssao.base.pipeline.textures_set_layout);
+
+   // FIXME: this assumes that gbuffer[0,1] are position and normal textures
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssao.base.pipeline.textures_set,
+                                      s->ssao.base.gbuffer_sampler,
+                                      s->rt.gbuffer[0].view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      SSAO_POSITION_TEX_BINDING, 1);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssao.base.pipeline.textures_set,
+                                      s->ssao.base.gbuffer_sampler,
+                                      s->rt.gbuffer[1].view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      SSAO_NORMAL_TEX_BINDING, 1);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssao.base.pipeline.textures_set,
+                                      s->ssao.noise_sampler,
+                                      s->ssao.noise_image.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      SSAO_NOISE_TEX_BINDING, 1);
+
+   if (s->ssao.blur_size > 0) {
+      /* Blur render target output */
+      if (s->ssao.blur_size > 0) {
+         s->ssao.blur.image =
+            vkdf_create_image(s->ctx,
+                              s->ssao.width,
+                              s->ssao.height,
+                              1,
+                              VK_IMAGE_TYPE_2D,
+                              VK_FORMAT_R8_UNORM,
+                              VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                                 VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
+                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                 VK_IMAGE_USAGE_SAMPLED_BIT,
+                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                              VK_IMAGE_ASPECT_COLOR_BIT,
+                              VK_IMAGE_VIEW_TYPE_2D);
+      }
+
+      /* Blur render pass */
+      s->ssao.blur.rp.renderpass =
+         vkdf_renderpass_simple_new(s->ctx,
+                                    s->ssao.blur.image.format,
+                                    VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                    VK_ATTACHMENT_STORE_OP_STORE,
+                                    VK_IMAGE_LAYOUT_UNDEFINED,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    VK_FORMAT_UNDEFINED,
+                                    VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                    VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                    VK_IMAGE_LAYOUT_UNDEFINED,
+                                    VK_IMAGE_LAYOUT_UNDEFINED);
+
+      /* Blur framebuffer */
+      s->ssao.blur.rp.framebuffer =
+         vkdf_create_framebuffer(s->ctx,
+                                 s->ssao.blur.rp.renderpass,
+                                 s->ssao.blur.image.view,
+                                 s->ssao.width, s->ssao.height,
+                                 0, NULL);
+
+      /* Blur SSAO pipeline */
+      VkPushConstantRange pcb_blur_range;
+      pcb_blur_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+      pcb_blur_range.offset = 0;
+      pcb_blur_range.size = sizeof(uint32_t);
+
+      VkPushConstantRange pcb_blur_ranges[] = {
+         pcb_blur_range,
+      };
+
+      s->ssao.blur.pipeline.ssao_tex_set_layout =
+         vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
+                                                   VK_SHADER_STAGE_FRAGMENT_BIT);
+
+      info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+      info.pNext = NULL;
+      info.pushConstantRangeCount = 1;
+      info.pPushConstantRanges = pcb_blur_ranges;
+      info.setLayoutCount = 1;
+      info.pSetLayouts = &s->ssao.blur.pipeline.ssao_tex_set_layout;
+      info.flags = 0;
+
+      VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &info, NULL,
+                                      &s->ssao.blur.pipeline.layout));
+
+      s->ssao.blur.pipeline.shader.fs =
+         vkdf_create_shader_module(s->ctx, SSAO_BLUR_FS_SHADER_PATH);
+
+      s->ssao.blur.pipeline.pipeline =
+         vkdf_create_gfx_pipeline(s->ctx,
+                                  NULL,
+                                  0,
+                                  NULL,
+                                  0,
+                                  NULL,
+                                  false,
+                                  VK_COMPARE_OP_ALWAYS,
+                                  s->ssao.blur.rp.renderpass,
+                                  s->ssao.blur.pipeline.layout,
+                                  VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                  VK_CULL_MODE_BACK_BIT,
+                                  1,
+                                  s->ssao.base.pipeline.shader.vs,
+                                  s->ssao.blur.pipeline.shader.fs);
+
+
+      /* Blur descriptor sets */
+      s->ssao.blur.input_sampler =
+         vkdf_ssao_create_ssao_sampler(s->ctx, VK_FILTER_NEAREST);
+
+      s->ssao.blur.pipeline.ssao_tex_set =
+         create_descriptor_set(s->ctx,
+                               s->sampler.pool,
+                               s->ssao.blur.pipeline.ssao_tex_set_layout);
+
+      vkdf_descriptor_set_sampler_update(s->ctx,
+                                         s->ssao.blur.pipeline.ssao_tex_set,
+                                         s->ssao.blur.input_sampler,
+                                         s->ssao.base.image.view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                         0, 1);
+   }
+
+   /* Command buffer */
+   s->ssao.cmd_buf = record_ssao_cmd_buf(s);
+}
+
+static void
+prepare_scene_ssao(VkdfScene *s)
+{
+   assert(s->ssao.enabled);
+
+   /* FIXME: We only support deferred for now */
+   if (!s->rp.do_deferred) {
+      vkdf_error("scene: SSAO is not supported in forward mode yet.");
+      s->ssao.enabled = false;
+      return;
+   }
+
+   /* SSAO requires depth information, which we assume is there if we
+    * are in deferred mode, but in forward it requires depth-prepass to be
+    * explicitly enabled.
+    *
+    * FIXME: Our SSAO implementation assumes that we have a Position texture
+    *        in the Gbuffer from which we can retriev linear Z values. In the
+    *        future we might want to make this more flexible and be able to
+    *        reconstruct linear Z without demanding a Position texture at all.
+    */
+   if (!s->rp.do_deferred && !s->rp.do_depth_prepass) {
+      vkdf_error("scene: cannot enable SSAO. Forward SSAO needs depth-prepass "
+                 "which has not been enabled.");
+      s->ssao.enabled = false;
+      return;
+   }
+
+   /* SSAO samples UBO */
+   vkdf_ssao_gen_tangent_samples(s->ssao.num_samples, &s->ssao.samples);
+
+   s->ssao.samples_buf.size =
+      ALIGN(sizeof(glm::vec3), 16) * s->ssao.num_samples;
+   s->ssao.samples_buf.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         s->ssao.samples_buf.size,
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   uint8_t *mem;
+   vkdf_memory_map(s->ctx, s->ssao.samples_buf.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **) &mem);
+
+   const uint32_t sample_size = sizeof(s->ssao.samples[0]);
+   for (uint32_t i = 0; i < s->ssao.num_samples; i++) {
+      memcpy(mem, &s->ssao.samples[i], sample_size);
+      mem += ALIGN(sample_size, 16);
+   }
+
+   vkdf_memory_unmap(s->ctx,
+                     s->ssao.samples_buf.buf.mem,
+                     s->ssao.samples_buf.buf.mem_props,
+                     0, VK_WHOLE_SIZE);
+
+   /* SSAO noise texture & sampler */
+   vkdf_ssao_gen_noise_samples(s->ssao.num_noise_samples, &s->ssao.noise);
+
+   vkdf_ssao_gen_noise_image(s->ctx,
+                             s->cmd_buf.pool[0],
+                             s->ssao.noise_image_dim,
+                             s->ssao.noise_image_dim,
+                             &s->ssao.noise,
+                             &s->ssao.noise_image);
+
+   s->ssao.noise_sampler = vkdf_ssao_create_noise_sampler(s->ctx);
+
+   s->ssao.noise_scale = glm::vec2(s->ssao.width / s->ssao.noise_image_dim,
+                                   s->ssao.height / s->ssao.noise_image_dim);
+
+   /* Setup render passes, pipelines and command buffers */
+   prepare_ssao_rendering(s);
+}
+
 static void
 prepare_scene_render_passes(VkdfScene *s)
 {
    if (s->rp.do_depth_prepass) {
       prepare_depth_prepass_render_passes(s);
+   }
+
+   if (s->ssao.enabled) {
+      prepare_scene_ssao(s);
    }
 
    if (!s->rp.do_deferred) {
@@ -3624,8 +4190,21 @@ scene_draw(VkdfScene *s)
    wait_sem_count = 1;
    wait_sem = &s->sync.draw_sem;
 
-   // Deferred merge pass
    if (s->rp.do_deferred) {
+      // SSAO
+      if (s->ssao.enabled) {
+         vkdf_command_buffer_execute(s->ctx,
+                                     s->ssao.cmd_buf,
+                                     &wait_stage,
+                                     wait_sem_count, wait_sem,
+                                     1, &s->sync.ssao_sem);
+
+         wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+         wait_sem_count = 1;
+         wait_sem = &s->sync.ssao_sem;
+      }
+
+      // Deferred merge pass
       vkdf_command_buffer_execute(s->ctx,
                                   s->cmd_buf.gbuffer_merge,
                                   &wait_stage,
