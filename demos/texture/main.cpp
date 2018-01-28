@@ -384,7 +384,7 @@ create_texture(VkdfContext *ctx, DemoResources *res)
                          VK_IMAGE_LAYOUT_UNDEFINED,
                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                          VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+                         VK_PIPELINE_STAGE_TRANSFER_BIT);
 
    // Copy all mipmap levels from the staging buffer to the image
    VkBufferImageCopy *regions = g_new0(VkBufferImageCopy, levels.num_levels);
