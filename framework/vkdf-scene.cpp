@@ -149,7 +149,8 @@ vkdf_scene_enable_deferred_rendering(VkdfScene *s,
                            1,
                            VK_IMAGE_TYPE_2D,
                            format_i,
-                           VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+                           VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+                              VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                               VK_IMAGE_USAGE_SAMPLED_BIT,
                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -670,6 +671,11 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
 static inline VkdfImage
 create_shadow_map_image(VkdfScene *s, uint32_t size)
 {
+   const VkFormatFeatureFlagBits shadow_map_features =
+      (VkFormatFeatureFlagBits)
+         (VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
+          VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+
    const VkImageUsageFlagBits shadow_map_usage =
    (VkImageUsageFlagBits) (VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
                            VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -680,7 +686,7 @@ create_shadow_map_image(VkdfScene *s, uint32_t size)
                             1,
                             VK_IMAGE_TYPE_2D,
                             VK_FORMAT_D32_SFLOAT,
-                            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                            shadow_map_features,
                             shadow_map_usage,
                             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                             VK_IMAGE_ASPECT_DEPTH_BIT,
