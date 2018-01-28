@@ -12,9 +12,10 @@ vkdf_create_sampler(VkdfContext *ctx,
 
    if (max_anisotropy >= 1.0f) {
       const VkPhysicalDeviceLimits *limits = &ctx->phy_device_props.limits;
-      if (!ctx->phy_device_features.samplerAnisotropy) {
+      if (!ctx->device_features.samplerAnisotropy) {
          max_anisotropy = 0.0f;  /* disabled */
-         vkdf_info("sampler: disabled unsupported anisotropic filtering.");
+         vkdf_error("sampler: ignoring request for anisotropic filtering. "
+                    "Feature is not enabled or is unsupported.");
       }
       else if (max_anisotropy > limits->maxSamplerAnisotropy) {
          max_anisotropy = limits->maxSamplerAnisotropy;
