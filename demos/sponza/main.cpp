@@ -226,6 +226,7 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
                       uint32_t first_instance,
                       VkPipelineLayout pipeline_layout,
                       VkPipelineLayout pipeline_opacity_layout,
+                      uint32_t descr_set_offset,
                       VkDescriptorSet *obj_tex_set,
                       bool for_depth_prepass)
 {
@@ -261,17 +262,10 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
          assert(tex_set);
 
          // Bind descriptor set with texture samplers for this material
-         //
-         // FIXME: validation layers assume that this unbinds any descriptor set
-         // after 3, even when count is only 1. We have bound the shadow map
-         // sampler at set 4 (for forward rendering), so that would be a
-         // problem. Need to check if this is how the spec states it works or
-         // if it is a bug in the validation layers it works just fine in
-         // Intel).
          vkCmdBindDescriptorSets(cmd_buf,
                                  VK_PIPELINE_BIND_POINT_GRAPHICS,
                                  required_pipeline_layout,
-                                 3,                      // First decriptor set
+                                 descr_set_offset,       // First decriptor set
                                  1,                      // Descriptor set count
                                  &tex_set,               // Descriptor sets
                                  0,                      // Dynamic offset count
@@ -285,7 +279,7 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
          vkCmdBindDescriptorSets(cmd_buf,
                                  VK_PIPELINE_BIND_POINT_GRAPHICS,
                                  required_pipeline_layout,
-                                 2,                      // First decriptor set
+                                 descr_set_offset,       // First decriptor set
                                  1,                      // Descriptor set count
                                  &tex_set,               // Descriptor sets
                                  0,                      // Dynamic offset count
@@ -325,6 +319,7 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
    glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->scene->camera);
    memcpy(&pcb_data.proj, &(*proj)[0][0], sizeof(pcb_data.proj));
 
+   uint32_t descriptor_set_count;
    if (!is_depth_prepass) {
       vkCmdPushConstants(cmd_buf,
                          res->pipelines.layout.base,
@@ -336,25 +331,18 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
          res->pipelines.descr.camera_view_set,
          res->pipelines.descr.obj_set,
          res->pipelines.descr.light_set,
-         0,
          res->pipelines.descr.shadow_map_sampler_set,
       };
+
+      descriptor_set_count =
+         sizeof(descriptor_sets) / sizeof(descriptor_sets[0]);
 
       vkCmdBindDescriptorSets(cmd_buf,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               res->pipelines.layout.base,
                               0,                        // First decriptor set
-                              3,                        // Descriptor set count
+                              descriptor_set_count,     // Descriptor set count
                               descriptor_sets,          // Descriptor sets
-                              0,                        // Dynamic offset count
-                              NULL);                    // Dynamic offsets
-
-      vkCmdBindDescriptorSets(cmd_buf,
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              res->pipelines.layout.base,
-                              4,                        // First decriptor set
-                              1,                        // Descriptor set count
-                              &descriptor_sets[4],      // Descriptor sets
                               0,                        // Dynamic offset count
                               NULL);                    // Dynamic offsets
    } else {
@@ -368,11 +356,14 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
          res->pipelines.descr.obj_set,
       };
 
+      descriptor_set_count =
+         sizeof(descriptor_sets) / sizeof(descriptor_sets[0]);
+
       vkCmdBindDescriptorSets(cmd_buf,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               res->pipelines.layout.depth_prepass,
                               0,                        // First decriptor set
-                              2,                        // Descriptor set count
+                              descriptor_set_count,     // Descriptor set count
                               descriptor_sets,          // Descriptor sets
                               0,                        // Dynamic offset count
                               NULL);                    // Dynamic offsets
@@ -415,6 +406,7 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
                set_info->count, set_info->start_index,
                pipeline_layout,
                pipeline_opacity_layout,
+               descriptor_set_count,
                tex_set,
                is_depth_prepass);
          continue;
@@ -438,6 +430,7 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
    glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->scene->camera);
    memcpy(&pcb_data.proj, &(*proj)[0][0], sizeof(pcb_data.proj));
 
+   uint32_t descriptor_set_count;
    if (!is_depth_prepass) {
       vkCmdPushConstants(cmd_buf,
                          res->pipelines.layout.base,
@@ -445,18 +438,28 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
                          0, sizeof(pcb_data), &pcb_data);
 
       // Bind descriptor sets for the camera view matrix and the scene static
-      // object UBO data
+      // object UBO data.
+      //
+      // FIXME: In the gbuffer pass, we don't do shadow mapping so we don't
+      // need the shadow map sampler set, however, that would need us to create
+      // all new pipeline layouts for deferred, so instead we use the same
+      // layout with the same descriptor sets, only that our deferred shaders
+      // will just not include or use set 3 with the shadow sampler.
       VkDescriptorSet descriptor_sets[] = {
          res->pipelines.descr.camera_view_set,
          res->pipelines.descr.obj_set,
          res->pipelines.descr.light_set,
+         res->pipelines.descr.shadow_map_sampler_set,
       };
+
+      descriptor_set_count =
+         sizeof(descriptor_sets) / sizeof(descriptor_sets[0]);
 
       vkCmdBindDescriptorSets(cmd_buf,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               res->pipelines.layout.base,
                               0,                      // First decriptor set
-                              3,                      // Descriptor set count
+                              descriptor_set_count,   // Descriptor set count
                               descriptor_sets,        // Descriptor sets
                               0,                      // Dynamic offset count
                               NULL);                  // Dynamic offsets
@@ -471,11 +474,14 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
          res->pipelines.descr.obj_set,
       };
 
+      descriptor_set_count =
+         sizeof(descriptor_sets) / sizeof(descriptor_sets[0]);
+
       vkCmdBindDescriptorSets(cmd_buf,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               res->pipelines.layout.depth_prepass,
                               0,                      // First decriptor set
-                              2,                      // Descriptor set count
+                              descriptor_set_count,   // Descriptor set count
                               descriptor_sets,        // Descriptor sets
                               0,                      // Dynamic offset count
                               NULL);                  // Dynamic offsets
@@ -518,6 +524,7 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
             set_info->count, set_info->start_index,
             pipeline_layout,
             pipeline_opacity_layout,
+            descriptor_set_count,
             tex_set,
             is_depth_prepass);
          continue;
@@ -876,8 +883,8 @@ init_pipeline_descriptors(SceneResources *res,
       res->pipelines.descr.camera_view_layout,
       res->pipelines.descr.obj_layout,
       res->pipelines.descr.light_layout,
-      res->pipelines.descr.obj_tex_layout,
       res->pipelines.descr.shadow_map_sampler_layout,
+      res->pipelines.descr.obj_tex_layout,
    };
 
    VkPipelineLayoutCreateInfo pipeline_layout_info;
@@ -885,7 +892,7 @@ init_pipeline_descriptors(SceneResources *res,
    pipeline_layout_info.pNext = NULL;
    pipeline_layout_info.pushConstantRangeCount = 1;
    pipeline_layout_info.pPushConstantRanges = pcb_ranges;
-   pipeline_layout_info.setLayoutCount = deferred ? 4 : 5;
+   pipeline_layout_info.setLayoutCount = 5;
    pipeline_layout_info.pSetLayouts = layouts;
    pipeline_layout_info.flags = 0;
 
@@ -895,7 +902,7 @@ init_pipeline_descriptors(SceneResources *res,
                                    &res->pipelines.layout.base));
 
    /* Opacity pipeline (for meshes with opacity textures) */
-   layouts[3] = res->pipelines.descr.obj_tex_opacity_layout;
+   layouts[4] = res->pipelines.descr.obj_tex_opacity_layout;
    VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
                                    &pipeline_layout_info,
                                    NULL,
