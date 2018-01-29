@@ -69,6 +69,8 @@ typedef struct {
          VkPipelineLayout depth_prepass_opacity;
          VkPipelineLayout base;
          VkPipelineLayout opacity;
+         VkPipelineLayout gbuffer_base;
+         VkPipelineLayout gbuffer_opacity;
          VkPipelineLayout gbuffer_merge;
       } layout;
 
@@ -433,23 +435,16 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
    uint32_t descriptor_set_count;
    if (!is_depth_prepass) {
       vkCmdPushConstants(cmd_buf,
-                         res->pipelines.layout.base,
+                         res->pipelines.layout.gbuffer_base,
                          VK_SHADER_STAGE_VERTEX_BIT,
                          0, sizeof(pcb_data), &pcb_data);
 
       // Bind descriptor sets for the camera view matrix and the scene static
       // object UBO data.
-      //
-      // FIXME: In the gbuffer pass, we don't do shadow mapping so we don't
-      // need the shadow map sampler set, however, that would need us to create
-      // all new pipeline layouts for deferred, so instead we use the same
-      // layout with the same descriptor sets, only that our deferred shaders
-      // will just not include or use set 3 with the shadow sampler.
       VkDescriptorSet descriptor_sets[] = {
          res->pipelines.descr.camera_view_set,
          res->pipelines.descr.obj_set,
          res->pipelines.descr.light_set,
-         res->pipelines.descr.shadow_map_sampler_set,
       };
 
       descriptor_set_count =
@@ -457,7 +452,7 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
 
       vkCmdBindDescriptorSets(cmd_buf,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              res->pipelines.layout.base,
+                              res->pipelines.layout.gbuffer_base,
                               0,                      // First decriptor set
                               descriptor_set_count,   // Descriptor set count
                               descriptor_sets,        // Descriptor sets
@@ -502,9 +497,9 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
       if (!strcmp(set_id, "sponza")) {
          if (!is_depth_prepass) {
             pipeline = res->pipelines.sponza;
-            pipeline_layout = res->pipelines.layout.base;
+            pipeline_layout = res->pipelines.layout.gbuffer_base;
             pipeline_opacity = res->pipelines.sponza_opacity;
-            pipeline_opacity_layout = res->pipelines.layout.opacity;
+            pipeline_opacity_layout = res->pipelines.layout.gbuffer_opacity;
             tex_set = res->pipelines.descr.obj_tex_set;
          } else {
             pipeline = res->pipelines.depth_prepass;
@@ -878,35 +873,66 @@ init_pipeline_descriptors(SceneResources *res,
       vkdf_create_sampler_descriptor_set_layout(res->ctx, 0, 1,
                                                 VK_SHADER_STAGE_FRAGMENT_BIT);
 
-   /* Base pipeline layout (for opaque meshes) */
-   VkDescriptorSetLayout layouts[] = {
-      res->pipelines.descr.camera_view_layout,
-      res->pipelines.descr.obj_layout,
-      res->pipelines.descr.light_layout,
-      res->pipelines.descr.shadow_map_sampler_layout,
-      res->pipelines.descr.obj_tex_layout,
-   };
+   if (!deferred) {
+      /* Base pipeline layout (for forward opaque meshes) */
+      VkDescriptorSetLayout layouts[] = {
+         res->pipelines.descr.camera_view_layout,
+         res->pipelines.descr.obj_layout,
+         res->pipelines.descr.light_layout,
+         res->pipelines.descr.shadow_map_sampler_layout,
+         res->pipelines.descr.obj_tex_layout,
+      };
 
-   VkPipelineLayoutCreateInfo pipeline_layout_info;
-   pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-   pipeline_layout_info.pNext = NULL;
-   pipeline_layout_info.pushConstantRangeCount = 1;
-   pipeline_layout_info.pPushConstantRanges = pcb_ranges;
-   pipeline_layout_info.setLayoutCount = 5;
-   pipeline_layout_info.pSetLayouts = layouts;
-   pipeline_layout_info.flags = 0;
+      VkPipelineLayoutCreateInfo pipeline_layout_info;
+      pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+      pipeline_layout_info.pNext = NULL;
+      pipeline_layout_info.pushConstantRangeCount = 1;
+      pipeline_layout_info.pPushConstantRanges = pcb_ranges;
+      pipeline_layout_info.setLayoutCount = 5;
+      pipeline_layout_info.pSetLayouts = layouts;
+      pipeline_layout_info.flags = 0;
 
-   VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
-                                   &pipeline_layout_info,
-                                   NULL,
-                                   &res->pipelines.layout.base));
+      VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
+                                      &pipeline_layout_info,
+                                      NULL,
+                                      &res->pipelines.layout.base));
 
-   /* Opacity pipeline (for meshes with opacity textures) */
-   layouts[4] = res->pipelines.descr.obj_tex_opacity_layout;
-   VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
-                                   &pipeline_layout_info,
-                                   NULL,
-                                   &res->pipelines.layout.opacity));
+      /* Opacity pipeline (for forward meshes with opacity textures) */
+      layouts[4] = res->pipelines.descr.obj_tex_opacity_layout;
+      VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
+                                      &pipeline_layout_info,
+                                      NULL,
+                                      &res->pipelines.layout.opacity));
+   } else {
+      /* Base pipeline layout (for deferred opaque meshes) */
+      VkDescriptorSetLayout layouts[] = {
+         res->pipelines.descr.camera_view_layout,
+         res->pipelines.descr.obj_layout,
+         res->pipelines.descr.light_layout,
+         res->pipelines.descr.obj_tex_layout,
+      };
+
+      VkPipelineLayoutCreateInfo pipeline_layout_info;
+      pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+      pipeline_layout_info.pNext = NULL;
+      pipeline_layout_info.pushConstantRangeCount = 1;
+      pipeline_layout_info.pPushConstantRanges = pcb_ranges;
+      pipeline_layout_info.setLayoutCount = 4;
+      pipeline_layout_info.pSetLayouts = layouts;
+      pipeline_layout_info.flags = 0;
+
+      VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
+                                      &pipeline_layout_info,
+                                      NULL,
+                                      &res->pipelines.layout.gbuffer_base));
+
+      /* Opacity pipeline (for forward meshes with opacity textures) */
+      layouts[3] = res->pipelines.descr.obj_tex_opacity_layout;
+      VK_CHECK(vkCreatePipelineLayout(res->ctx->device,
+                                      &pipeline_layout_info,
+                                      NULL,
+                                      &res->pipelines.layout.gbuffer_opacity));
+   }
 
    /* Descriptor sets */
 
@@ -1025,6 +1051,7 @@ init_pipeline_descriptors(SceneResources *res,
          res->pipelines.descr.gbuffer_tex_layout
       };
 
+      VkPipelineLayoutCreateInfo pipeline_layout_info;
       pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
       pipeline_layout_info.pNext = NULL;
       pipeline_layout_info.pushConstantRangeCount = 0;
@@ -1045,6 +1072,7 @@ init_pipeline_descriptors(SceneResources *res,
          res->pipelines.descr.obj_layout,
       };
 
+      VkPipelineLayoutCreateInfo pipeline_layout_info;
       pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
       pipeline_layout_info.pNext = NULL;
       pipeline_layout_info.pushConstantRangeCount = 1;
@@ -1199,7 +1227,7 @@ create_deferred_pipelines(SceneResources *res,
                               num_vi_attribs, vi_attribs,
                               renderpass,
                               res->scene->rt.gbuffer_size,
-                              res->pipelines.layout.base,
+                              res->pipelines.layout.gbuffer_base,
                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                               VK_CULL_MODE_BACK_BIT,
                               res->shaders.obj_gbuffer.vs,
@@ -1211,7 +1239,7 @@ create_deferred_pipelines(SceneResources *res,
                               num_vi_attribs, vi_attribs,
                               renderpass,
                               res->scene->rt.gbuffer_size,
-                              res->pipelines.layout.opacity,
+                              res->pipelines.layout.gbuffer_opacity,
                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                               VK_CULL_MODE_BACK_BIT,
                               res->shaders.obj_gbuffer.vs,
@@ -1709,15 +1737,22 @@ destroy_pipelines(SceneResources *res)
 {
    /* Pipelines */
    vkDestroyPipeline(res->ctx->device, res->pipelines.sponza, NULL);
-   vkDestroyPipelineLayout(res->ctx->device, res->pipelines.layout.base, NULL);
-
    vkDestroyPipeline(res->ctx->device, res->pipelines.sponza_opacity, NULL);
-   vkDestroyPipelineLayout(res->ctx->device, res->pipelines.layout.opacity, NULL);
 
    if (ENABLE_DEFERRED_RENDERING) {
+      vkDestroyPipelineLayout(res->ctx->device,
+                              res->pipelines.layout.gbuffer_base, NULL);
+      vkDestroyPipelineLayout(res->ctx->device,
+                              res->pipelines.layout.gbuffer_opacity, NULL);
+
       vkDestroyPipeline(res->ctx->device, res->pipelines.gbuffer_merge, NULL);
       vkDestroyPipelineLayout(res->ctx->device,
                               res->pipelines.layout.gbuffer_merge, NULL);
+   } else {
+      vkDestroyPipelineLayout(res->ctx->device,
+                              res->pipelines.layout.base, NULL);
+      vkDestroyPipelineLayout(res->ctx->device,
+                              res->pipelines.layout.opacity, NULL);
    }
 
    if (ENABLE_DEPTH_PREPASS) {
