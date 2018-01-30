@@ -36,12 +36,14 @@ layout(set = 4, binding = 3) uniform sampler2D tex_opacity;
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 1) flat in uint in_material_idx;
-layout(location = 2) in vec3 in_tangent_normal;
-layout(location = 3) in vec4 in_tangent_pos;
-layout(location = 4) in vec3 in_tangent_view_dir;
-layout(location = 5) in vec4 in_tangent_light_pos;
+layout(location = 2) in vec3 in_eye_normal;
+layout(location = 3) in vec4 in_eye_pos;
+layout(location = 4) in vec3 in_eye_view_dir;
+layout(location = 5) in vec4 in_eye_light_pos;
 layout(location = 6) in vec4 in_light_space_pos;
-layout(location = 7) in vec3 in_debug;
+layout(location = 7) in vec3 in_eye_tangent;
+layout(location = 8) in vec3 in_eye_bitangent;
+layout(location = 9) in vec3 in_debug;
 
 layout(location = 0) out vec4 out_color;
 

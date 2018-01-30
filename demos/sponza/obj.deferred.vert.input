@@ -51,10 +51,12 @@ layout(location = 5) in uint in_material_idx;
 
 layout(location = 0) out vec2 out_uv;
 layout(location = 1) flat out uint out_material_idx;
-layout(location = 2) out vec3 out_tangent_normal;
-layout(location = 3) out vec4 out_tangent_pos;
-layout(location = 4) out vec4 out_tangent_light_pos;
+layout(location = 2) out vec3 out_eye_normal;
+layout(location = 3) out vec4 out_eye_pos;
+layout(location = 4) out vec4 out_eye_light_pos;
 layout(location = 5) out vec4 out_light_space_pos;
+layout(location = 6) out vec3 out_eye_tangent;
+layout(location = 7) out vec3 out_eye_bitangent;
 
 void main()
 {
@@ -74,32 +76,17 @@ void main()
    vec4 world_pos = Model * model_pos;
 
    // Compute camera/eye space position
-   vec4 eye_pos = CD.View * world_pos;
-   gl_Position = PCB.Projection * eye_pos;
+   out_eye_pos = CD.View * world_pos;
+   gl_Position = PCB.Projection * out_eye_pos;
 
-   // Compute eye space normal
+   // Compute eye space normal, tangent, bitangent
    mat3 Normal = transpose(inverse(mat3(CD.View * Model)));
-   vec3 eye_normal_norm = normalize(Normal * in_normal);
+   out_eye_normal = normalize(Normal * in_normal);
+   out_eye_tangent = normalize(Normal * in_tangent);
+   out_eye_bitangent = normalize(Normal * in_bitangent);
 
-   // Compute camera/eye space to tangent space matrix
-   //
-   // The idea is to have all our lighting variables in tangent space,
-   // which is the space of the normals encoded in normal maps. This way
-   // when we unpack the normal from the normal map in the fragment shader
-   // we don't have to convert them to world space doing a per-fragment
-   // matrix multiply. Instead, we turn everything we need to tangent space
-   // in the vertex shader, which is less expensive.
-   mat3 TBN = transpose(mat3(normalize(Normal * in_tangent),
-                             normalize(Normal * in_bitangent),
-                             eye_normal_norm));
-
-    // Compute the vector from this vertex to the camera (in camera space)
-   vec3 eye_view_dir = normalize(-eye_pos.xyz);
-
-   // Compute lighting outputs (in tangent space)
-   out_tangent_normal = normalize(TBN * eye_normal_norm);
-   out_tangent_pos = vec4(TBN * eye_pos.xyz, 1);
-   out_tangent_light_pos = vec4(TBN * vec3(CD.View * L.sun.pos), L.sun.pos.w);
+   // Compute lighting outputs (in eye space)
+   out_eye_light_pos = vec4(vec3(CD.View * L.sun.pos), L.sun.pos.w);
 
    // Light space position
    out_light_space_pos = SMD.shadow_map_data.light_viewproj * world_pos;

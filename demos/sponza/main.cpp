@@ -666,12 +666,12 @@ init_scene(SceneResources *res)
       vkdf_scene_enable_depth_prepass(res->scene);
 
    if (ENABLE_DEFERRED_RENDERING) {
-      /* 0: Tangent position        : rgba16f
-       * 1: Tangent normal          : rgba16f
-       * 2: Tangent light position  : rgba16f
-       * 3: Light space position    : rgba32f
-       * 4: Diffuse color           : rgba8
-       * 5: Specular color          : rgba8
+      /* 0: Eye position          : rgba16f
+       * 1: Eye normal            : rgba16f
+       * 2: Eye light position    : rgba16f
+       * 3: Light space position  : rgba32f
+       * 4: Diffuse color         : rgba8
+       * 5: Specular color        : rgba8
        *
        * We encode material shininess in the alpha component of the normal,
        * we don't use specular's alpha because rgba_unorm isn't good for

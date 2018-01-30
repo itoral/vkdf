@@ -18,32 +18,37 @@ layout(set = 3, binding = 2) uniform sampler2D tex_specular;
 
 layout(location = 0) in vec2 in_uv;
 layout(location = 1) flat in uint in_material_idx;
-layout(location = 2) in vec3 in_tangent_normal;
-layout(location = 3) in vec4 in_tangent_pos;
-layout(location = 4) in vec4 in_tangent_light_pos;
+layout(location = 2) in vec3 in_eye_normal;
+layout(location = 3) in vec4 in_eye_pos;
+layout(location = 4) in vec4 in_eye_light_pos;
 layout(location = 5) in vec4 in_light_space_pos;
+layout(location = 6) in vec3 in_eye_tangent;
+layout(location = 7) in vec3 in_eye_bitangent;
 
-layout(location = 0) out vec4 out_tangent_pos;
-layout(location = 1) out vec4 out_tangent_normal;
-layout(location = 2) out vec4 out_tangent_light_pos;
+layout(location = 0) out vec4 out_eye_pos;
+layout(location = 1) out vec4 out_eye_normal;
+layout(location = 2) out vec4 out_eye_light_pos;
 layout(location = 3) out vec4 out_light_space_pos;
 layout(location = 4) out vec4 out_diffuse;
 layout(location = 5) out vec4 out_specular;
 
 void main()
 {
-   // Tangent position, viewdir, lightpos, light-space pos
-   out_tangent_pos = in_tangent_pos;
-   out_tangent_light_pos = in_tangent_light_pos;
+   // Eye-space position, viewdir, lightpos, light-space pos
+   out_eye_pos = in_eye_pos;
+   out_eye_light_pos = in_eye_light_pos;
    out_light_space_pos = in_light_space_pos;
 
    Material mat = Mat.materials[in_material_idx];
 
-   // Tangent normal
-   if (mat.normal_tex_count > 0)
-      out_tangent_normal.xyz = normalize(texture(tex_normal, in_uv).rgb * 2.0 - 1.0);
-   else
-      out_tangent_normal.xyz = in_tangent_normal;
+   // Eye-space normal
+   if (mat.normal_tex_count > 0) {
+      mat3 TBN = mat3(in_eye_tangent, in_eye_bitangent, in_eye_normal);
+      vec3 tangent_normal = texture(tex_normal, in_uv).rgb * 2.0 - 1.0;
+      out_eye_normal = vec4(normalize(TBN * tangent_normal), 0);
+   } else {
+      out_eye_normal = vec4(in_eye_normal, 0);
+   }
 
    // Diffuse
    if (mat.diffuse_tex_count > 0)
@@ -56,5 +61,5 @@ void main()
    out_specular = mat.specular;
 
    // Shininess
-   out_tangent_normal.w = mat.shininess;
+   out_eye_normal.w = mat.shininess;
 }
