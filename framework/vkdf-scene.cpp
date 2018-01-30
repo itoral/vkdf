@@ -491,40 +491,26 @@ vkdf_scene_free(VkdfScene *s)
    // FIXME: have a list of buffers in the scene so that here we can just go
    // through the list and destory all of them without having to add another
    // deleter every time we start using a new buffer.
-   if (s->ubo.obj.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->ubo.obj.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->ubo.obj.buf.mem, NULL);
-   }
+   if (s->ubo.obj.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->ubo.obj.buf);
 
-   if (s->dynamic.ubo.obj.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->dynamic.ubo.obj.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->dynamic.ubo.obj.buf.mem, NULL);
-   }
+   if (s->dynamic.ubo.obj.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->dynamic.ubo.obj.buf);
 
-   if (s->ubo.material.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->ubo.material.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->ubo.material.buf.mem, NULL);
-   }
+   if (s->ubo.material.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->ubo.material.buf);
 
-   if (s->dynamic.ubo.material.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->dynamic.ubo.material.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->dynamic.ubo.material.buf.mem, NULL);
-   }
+   if (s->dynamic.ubo.material.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->dynamic.ubo.material.buf);
 
-   if (s->ubo.light.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->ubo.light.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->ubo.light.buf.mem, NULL);
-   }
+   if (s->ubo.light.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->ubo.light.buf);
 
-   if (s->ubo.shadow_map.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->ubo.shadow_map.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->ubo.shadow_map.buf.mem, NULL);
-   }
+   if (s->ubo.shadow_map.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->ubo.shadow_map.buf);
 
-   if (s->dynamic.ubo.shadow_map.buf.buf) {
-      vkDestroyBuffer(s->ctx->device, s->dynamic.ubo.shadow_map.buf.buf, NULL);
-      vkFreeMemory(s->ctx->device, s->dynamic.ubo.shadow_map.buf.mem, NULL);
-   }
+   if (s->dynamic.ubo.shadow_map.buf.buf)
+      vkdf_destroy_buffer(s->ctx, &s->dynamic.ubo.shadow_map.buf);
 
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
 
