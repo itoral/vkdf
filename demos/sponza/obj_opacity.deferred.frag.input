@@ -47,18 +47,21 @@ void main()
 
       // Tangent normal
       if (mat.normal_tex_count > 0)
-         out_tangent_normal = vec4(normalize(texture(tex_normal, in_uv).rgb * 2.0 - 1.0), 0);
+         out_tangent_normal.xyz = normalize(texture(tex_normal, in_uv).rgb * 2.0 - 1.0);
       else
-         out_tangent_normal = vec4(in_tangent_normal, 0);
+         out_tangent_normal.xyz = in_tangent_normal;
 
       // Diffuse
       if (mat.diffuse_tex_count > 0)
          mat.diffuse = texture(tex_diffuse, in_uv);
       out_diffuse = mat.diffuse;
 
-      // Specular + Shininess
+      // Specular
       if (mat.specular_tex_count > 0)
          mat.specular = texture(tex_specular, in_uv);
-      out_specular = vec4(mat.specular.xyz, mat.shininess);
+      out_specular = mat.specular;
+
+      // Shininess
+      out_tangent_normal.w = mat.shininess;
    }
 }

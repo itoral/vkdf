@@ -42,16 +42,16 @@ void main()
    if (light.pos == vec4(0.0, 0.0, 0.0, 0.0)) {
       out_color = vec4(0.2, 0.4, 0.8, 1.0);
    } else {
-      Material mat;
-      mat.diffuse = texture(tex_diffuse, in_uv);
-      mat.ambient = mat.diffuse;
-      mat.specular = texture(tex_specular, in_uv);
-      mat.shininess = mat.specular.w;
-
       vec4 tangent_position = texture(tex_tangent_position, in_uv);
       vec4 tangent_normal = texture(tex_tangent_normal, in_uv);
       vec4 tangent_view_dir = -tangent_position;
       vec4 light_space_position = texture(tex_light_space_position, in_uv);
+
+      Material mat;
+      mat.diffuse = texture(tex_diffuse, in_uv);
+      mat.ambient = mat.diffuse;
+      mat.specular = texture(tex_specular, in_uv);
+      mat.shininess = tangent_normal.w;
 
       LightColor color =
          compute_lighting(light,

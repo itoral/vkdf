@@ -670,6 +670,10 @@ init_scene(SceneResources *res)
        * 3: Light space position    : rgba32f
        * 4: Diffuse color           : rgba8
        * 5: Specular color          : rgba8
+       *
+       * We encode material shininess in the alpha component of the normal,
+       * we don't use specular's alpha because rgba_unorm isn't good for
+       * it.
        */
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
