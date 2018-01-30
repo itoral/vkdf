@@ -37,4 +37,14 @@ vkdf_ssao_create_ssao_sampler(VkdfContext *ctx, VkFilter filter)
                               0.0f);
 }
 
+inline VkSampler
+vkdf_ssao_create_gbuffer_sampler(VkdfContext *ctx)
+{
+   return vkdf_create_sampler(ctx,
+                              VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                              VK_FILTER_NEAREST,
+                              VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                              0.0f);
+}
+
 #endif
