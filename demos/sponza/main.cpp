@@ -22,6 +22,10 @@ const bool     ENABLE_DEFERRED_RENDERING = true;
 /* Anisotropic filtering */
 const float    MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
 
+/* Shadow mapping */
+const uint32_t SHADOW_MAP_SIZE           = 4096;
+const uint32_t SHADOW_MAP_PCF_SIZE       = 2;    // Min=1 (disabled)
+
 /* Screen Space Ambient Occlusion */
 const bool     ENABLE_SSAO               = true;
 const uint32_t SSAO_NUM_SAMPLES          = 24;
@@ -683,7 +687,11 @@ init_scene(SceneResources *res)
    vkdf_light_enable_shadows(light, true);
 
    VkdfSceneShadowSpec shadow_spec;
-   vkdf_scene_shadow_spec_set(&shadow_spec, 4096, 5.0f, 110.0f, 1.0f, 2.0f, 2);
+   vkdf_scene_shadow_spec_set(&shadow_spec,
+                              SHADOW_MAP_SIZE,
+                              5.0f, 110.0f,  // Near, Far
+                              1.0f, 2.0f,    // Const, Slope bias
+                              SHADOW_MAP_PCF_SIZE);
 
    vkdf_scene_add_light(res->scene, light, &shadow_spec);
 
