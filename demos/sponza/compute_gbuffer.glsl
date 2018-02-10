@@ -26,5 +26,5 @@
       mat.specular = texture(tex_specular, in_uv);
    out_specular = mat.specular;
 
-   // Shininess
-   out_eye_normal.w = mat.shininess;
+   // Shininess (encoded in UNORM format)
+   out_specular.w = mat.shininess / 255.0;

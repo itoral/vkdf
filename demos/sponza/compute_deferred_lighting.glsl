@@ -24,7 +24,7 @@
       mat.diffuse = texture(tex_diffuse, in_uv);
       mat.ambient = mat.diffuse * ambient_occlusion;
       mat.specular = texture(tex_specular, in_uv);
-      mat.shininess = eye_normal.w;
+      mat.shininess = mat.specular.w * 255.0; /* decode from UNORM */
 
       // Compute lighting
       LightColor color =

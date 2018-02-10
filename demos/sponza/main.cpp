@@ -725,9 +725,8 @@ init_scene(SceneResources *res)
        * 3: Diffuse color         : rgba8
        * 4: Specular color        : rgba8
        *
-       * We encode material shininess in the alpha component of the normal,
-       * we don't use specular's alpha because rgba_unorm isn't good for
-       * it. We don't store eye-space position, instead we reconstruct
+       * We encode material shininess in the alpha component of specular.
+       * We don't store eye-space position, instead we reconstruct
        * it in the shaders that need it from the depth buffer.
        */
       vkdf_scene_enable_deferred_rendering(res->scene,
