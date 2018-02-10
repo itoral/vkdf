@@ -6,8 +6,16 @@
    if (light.pos == vec4(0.0, 0.0, 0.0, 0.0)) {
       out_color = vec4(0.2, 0.4, 0.8, 1.0);
    } else {
+      // Reconstruct eye-space position from depth buffer
+      float eye_position_z = compute_eye_z_from_depth(in_uv);
+      float eye_position_x = in_view_ray.x * eye_position_z;
+      float eye_position_y = in_view_ray.y * eye_position_z;
+      vec4 eye_position = vec4(eye_position_x,
+                               eye_position_y,
+                               eye_position_z,
+                               1.0);
+
       // Retrieve lighting information from Gbuffer
-      vec4 eye_position = texture(tex_eye_position, in_uv);
       vec4 eye_normal = texture(tex_eye_normal, in_uv);
       vec4 eye_view_dir = -eye_position;
       vec4 light_space_position = texture(tex_light_space_position, in_uv);

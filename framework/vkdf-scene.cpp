@@ -6,13 +6,14 @@
 
 #define SSAO_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao.deferred.vert.spv")
 #define SSAO_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao.deferred.frag.spv")
+#define SSAO_BLUR_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao-blur.deferred.vert.spv")
 #define SSAO_BLUR_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao-blur.deferred.frag.spv")
 
 /**
  * Input texture bindings for deferred SSAO base pass
  */
 enum {
-   SSAO_POSITION_TEX_BINDING = 0,
+   SSAO_DEPTH_TEX_BINDING    = 0,
    SSAO_NORMAL_TEX_BINDING   = 1,
    SSAO_NOISE_TEX_BINDING    = 2,
 };
@@ -109,8 +110,10 @@ create_render_target(VkdfScene *s,
                         1,
                         VK_IMAGE_TYPE_2D,
                         VK_FORMAT_D32_SFLOAT,
-                        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                           VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
+                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                           VK_IMAGE_USAGE_SAMPLED_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         VK_IMAGE_ASPECT_DEPTH_BIT,
                         VK_IMAGE_VIEW_TYPE_2D);
@@ -482,6 +485,8 @@ destroy_ssao_resources(VkdfScene *s)
                                    s->ssao.blur.pipeline.ssao_tex_set_layout,
                                    NULL);
 
+      vkDestroyShaderModule(s->ctx->device,
+                            s->ssao.blur.pipeline.shader.vs, NULL);
       vkDestroyShaderModule(s->ctx->device,
                             s->ssao.blur.pipeline.shader.fs, NULL);
 
@@ -3184,6 +3189,8 @@ struct SsaoPCB {
    float radius;
    float bias;
    float intensity;
+   float aspect_ratio;
+   float tan_half_fov;
 };
 
 static VkCommandBuffer
@@ -3224,10 +3231,13 @@ record_ssao_cmd_buf(VkdfScene *s)
    pcb.radius = s->ssao.radius;
    pcb.bias = s->ssao.bias;
    pcb.intensity = s->ssao.intensity;
+   pcb.aspect_ratio = s->camera->proj.aspect_ratio;
+   pcb.tan_half_fov = tanf(glm::radians(s->camera->proj.fov / 2.0f));
 
    vkCmdPushConstants(cmd_buf,
                       s->ssao.base.pipeline.layout,
-                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      VK_SHADER_STAGE_VERTEX_BIT |
+                        VK_SHADER_STAGE_FRAGMENT_BIT,
                       0, sizeof(struct SsaoPCB), &pcb);
 
    VkDescriptorSet descriptor_sets[] = {
@@ -3335,7 +3345,8 @@ prepare_ssao_rendering(VkdfScene *s)
 
    /* Base SSAO pipeline */
    VkPushConstantRange pcb_range;
-   pcb_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   pcb_range.stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
    pcb_range.offset = 0;
    pcb_range.size = sizeof(struct SsaoPCB);
 
@@ -3412,18 +3423,18 @@ prepare_ssao_rendering(VkdfScene *s)
                             s->sampler.pool,
                             s->ssao.base.pipeline.textures_set_layout);
 
-   // FIXME: this assumes that gbuffer[0,1] are position and normal textures
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssao.base.pipeline.textures_set,
+                                      s->ssao.base.gbuffer_sampler,
+                                      s->rt.depth.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      SSAO_DEPTH_TEX_BINDING, 1);
+
+   // FIXME: this assumes that gbuffer[0] is the normal texture
    vkdf_descriptor_set_sampler_update(s->ctx,
                                       s->ssao.base.pipeline.textures_set,
                                       s->ssao.base.gbuffer_sampler,
                                       s->rt.gbuffer[0].view,
-                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                      SSAO_POSITION_TEX_BINDING, 1);
-
-   vkdf_descriptor_set_sampler_update(s->ctx,
-                                      s->ssao.base.pipeline.textures_set,
-                                      s->ssao.base.gbuffer_sampler,
-                                      s->rt.gbuffer[1].view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       SSAO_NORMAL_TEX_BINDING, 1);
 
@@ -3500,6 +3511,9 @@ prepare_ssao_rendering(VkdfScene *s)
       VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &info, NULL,
                                       &s->ssao.blur.pipeline.layout));
 
+      s->ssao.blur.pipeline.shader.vs =
+         vkdf_create_shader_module(s->ctx, SSAO_BLUR_VS_SHADER_PATH);
+
       s->ssao.blur.pipeline.shader.fs =
          vkdf_create_shader_module(s->ctx, SSAO_BLUR_FS_SHADER_PATH);
 
@@ -3517,7 +3531,7 @@ prepare_ssao_rendering(VkdfScene *s)
                                   VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                   VK_CULL_MODE_BACK_BIT,
                                   1,
-                                  s->ssao.base.pipeline.shader.vs,
+                                  s->ssao.blur.pipeline.shader.vs,
                                   s->ssao.blur.pipeline.shader.fs);
 
 

@@ -46,8 +46,14 @@ enum {
    OPACITY_TEX_BINDING  = 3,
 };
 
-struct PCBData {
+struct PCBDataProj {
    uint8_t proj[sizeof(glm::mat4)];
+};
+
+struct PCBDataPosRecons {
+   uint8_t proj[sizeof(glm::mat4)];
+   float aspect_ratio;
+   float tan_half_fov;
 };
 
 typedef struct {
@@ -346,7 +352,7 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
    SceneResources *res = (SceneResources *) data;
 
    // Push constants: camera projection matrix
-   struct PCBData pcb_data;
+   struct PCBDataProj pcb_data;
    glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->scene->camera);
    memcpy(&pcb_data.proj, &(*proj)[0][0], sizeof(pcb_data.proj));
 
@@ -457,7 +463,7 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
    SceneResources *res = (SceneResources *) data;
 
    // Push constants: camera projection matrix
-   struct PCBData pcb_data;
+   struct PCBDataProj pcb_data;
    glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->scene->camera);
    memcpy(&pcb_data.proj, &(*proj)[0][0], sizeof(pcb_data.proj));
 
@@ -566,6 +572,20 @@ record_gbuffer_merge_commands(VkdfContext *ctx,
    assert(ENABLE_DEFERRED_RENDERING);
 
    SceneResources *res = (SceneResources *) data;
+
+   // Push constants (position reconstruction)
+   VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
+
+   struct PCBDataPosRecons pcb;
+   glm::mat4 *proj = vkdf_camera_get_projection_ptr(cam);
+   memcpy(&pcb.proj, &(*proj)[0][0], sizeof(pcb.proj));
+   pcb.aspect_ratio = cam->proj.aspect_ratio;
+   pcb.tan_half_fov = tanf(glm::radians(cam->proj.fov / 2.0f));
+
+   vkCmdPushConstants(cmd_buf,
+                      res->pipelines.layout.gbuffer_merge,
+                      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(pcb), &pcb);
 
    // Bind descriptor sets
    VkDescriptorSet descriptor_sets[] = {
@@ -699,21 +719,20 @@ init_scene(SceneResources *res)
       vkdf_scene_enable_depth_prepass(res->scene);
 
    if (ENABLE_DEFERRED_RENDERING) {
-      /* 0: Eye position          : rgba16f
-       * 1: Eye normal            : rgba16f
-       * 2: Eye light position    : rgba16f
-       * 3: Light space position  : rgba32f
-       * 4: Diffuse color         : rgba8
-       * 5: Specular color        : rgba8
+      /* 0: Eye normal            : rgba16f
+       * 1: Eye light position    : rgba16f
+       * 2: Light space position  : rgba32f
+       * 3: Diffuse color         : rgba8
+       * 4: Specular color        : rgba8
        *
        * We encode material shininess in the alpha component of the normal,
        * we don't use specular's alpha because rgba_unorm isn't good for
-       * it.
+       * it. We don't store eye-space position, instead we reconstruct
+       * it in the shaders that need it from the depth buffer.
        */
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
-                                           6,
-                                           VK_FORMAT_R16G16B16A16_SFLOAT,
+                                           5,
                                            VK_FORMAT_R16G16B16A16_SFLOAT,
                                            VK_FORMAT_R16G16B16A16_SFLOAT,
                                            VK_FORMAT_R32G32B32A32_SFLOAT,
@@ -859,11 +878,11 @@ init_pipeline_descriptors(SceneResources *res,
    if (res->pipelines.layout.base)
       return;
 
-   /* Push constant range */
+   /* Default push constant range with Projection matrix for VS */
    VkPushConstantRange pcb_range;
    pcb_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
    pcb_range.offset = 0;
-   pcb_range.size = sizeof(PCBData);
+   pcb_range.size = sizeof(PCBDataProj);
 
    VkPushConstantRange pcb_ranges[] = {
       pcb_range,
@@ -1051,13 +1070,22 @@ init_pipeline_descriptors(SceneResources *res,
                                       0, 1);
 
    if (deferred) {
-      /* Gbuffer textures */
-      uint32_t gbuffer_size =
-         res->scene->rt.gbuffer_size + (res->scene->ssao.enabled ? 1 : 0);
+      /* Push constant buffer for position reconstruction */
+      VkPushConstantRange pcb_recons_range;
+      pcb_recons_range.stageFlags =
+         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+      pcb_recons_range.offset = 0;
+      pcb_recons_range.size = sizeof(PCBDataPosRecons);
+
+      /* textures: depth + gbuffer + ssao */
+      const uint32_t gbuffer_size = res->scene->rt.gbuffer_size;
+      uint32_t num_bindings = 1 + gbuffer_size;
+      if (res->scene->ssao.enabled)
+         num_bindings++;
 
       res->pipelines.descr.gbuffer_tex_layout =
          vkdf_create_sampler_descriptor_set_layout(res->ctx, 0,
-                                                   gbuffer_size,
+                                                   num_bindings,
                                                    VK_SHADER_STAGE_FRAGMENT_BIT);
 
       res->pipelines.descr.gbuffer_tex_set =
@@ -1072,17 +1100,27 @@ init_pipeline_descriptors(SceneResources *res,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST,
                              0.0f);
 
-      uint32_t tex_idx = 0;
-      for (; tex_idx < res->scene->rt.gbuffer_size; tex_idx++) {
-         VkdfImage *image = vkdf_scene_get_gbuffer_image(res->scene, tex_idx);
+      /* Binding 0: depth buffer */
+      uint32_t binding_idx = 0;
+      vkdf_descriptor_set_sampler_update(res->ctx,
+                                         res->pipelines.descr.gbuffer_tex_set,
+                                         res->gbuffer_sampler,
+                                         res->scene->rt.depth.view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                         binding_idx++, 1);
+
+      /* Binding 1..N-1: GBuffer textures */
+      for (uint32_t idx = 0; idx < gbuffer_size; idx++) {
+         VkdfImage *image = vkdf_scene_get_gbuffer_image(res->scene, idx);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.gbuffer_tex_set,
                                             res->gbuffer_sampler,
                                             image->view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                            tex_idx, 1);
+                                            binding_idx++, 1);
       }
 
+      /* Binding N: SSAO texture */
       if (res->scene->ssao.enabled) {
          VkdfImage *ssao_image = vkdf_scene_get_ssao_image(res->scene);
          res->ssao_sampler =
@@ -1092,8 +1130,10 @@ init_pipeline_descriptors(SceneResources *res,
                                             res->ssao_sampler,
                                             ssao_image->view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                            tex_idx, 1);
+                                            binding_idx++, 1);
       }
+
+      assert(num_bindings == binding_idx);
 
       /* Gbuffer merge pipeline layout */
       VkDescriptorSetLayout gbuffer_merge_layouts[] = {
@@ -1105,8 +1145,8 @@ init_pipeline_descriptors(SceneResources *res,
       VkPipelineLayoutCreateInfo pipeline_layout_info;
       pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
       pipeline_layout_info.pNext = NULL;
-      pipeline_layout_info.pushConstantRangeCount = 0;
-      pipeline_layout_info.pPushConstantRanges = NULL;
+      pipeline_layout_info.pushConstantRangeCount = 1;
+      pipeline_layout_info.pPushConstantRanges = &pcb_recons_range;
       pipeline_layout_info.setLayoutCount = 3;
       pipeline_layout_info.pSetLayouts = gbuffer_merge_layouts;
       pipeline_layout_info.flags = 0;

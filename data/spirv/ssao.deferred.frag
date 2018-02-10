@@ -9,6 +9,8 @@ layout(push_constant) uniform pcb {
    float radius;
    float bias;
    float intensity;
+   float aspect_ratio;
+   float tan_half_fov;
 } PCB;
 
 const int MAX_SAMPLES = 64;
@@ -16,18 +18,40 @@ layout(std140, set = 0, binding = 0) uniform SamplesUBO {
    vec3 samples[MAX_SAMPLES];
 } S;
 
-layout(set = 1, binding = 0) uniform sampler2D tex_position;
+layout(set = 1, binding = 0) uniform sampler2D tex_depth;
 layout(set = 1, binding = 1) uniform sampler2D tex_normal;
 layout(set = 1, binding = 2) uniform sampler2D tex_noise;
 
 layout(location = 0) in vec2 in_uv;
+layout(location = 1) in vec2 in_view_ray;
 
 layout(location = 0) out float out_ssao;
 
+/**
+ * Computes eye-space Z for the pixel's depth taken from the depth buffer
+ * at the given texture-space coordinates.
+ *
+ * Notice that the formula here is Vulkan-specific due to the differences
+ * between OpenGL and Vulkan coordinate systems.
+ */
+float
+compute_eye_z_from_depth(vec2 coord)
+{
+   float depth = texture(tex_depth, coord).x;
+   return -PCB.Proj[3][2] / (PCB.Proj[2][2] + depth);
+}
+
 void main()
 {
-   /* Retrieve Position and Normal of the current pixel */
-   vec3 position = texture(tex_position, in_uv).xyz;
+   /* Retrieve eye-space position of the current fragment reconstructing
+    * it from the depth buffer.
+    */
+   float position_z = compute_eye_z_from_depth(in_uv);
+   float position_x = in_view_ray.x * position_z;
+   float position_y = in_view_ray.y * position_z;
+   vec3 position = vec3(position_x, position_y, position_z);
+
+   /* Retrieve eye-space normal of the current fragment from the GBuffer */
    vec3 normal = texture(tex_normal, in_uv).xyz;
 
    /* Compute a rotated TBN transform based on the noise vector */
@@ -51,7 +75,7 @@ void main()
        * Position texture to obtain the scene depth at that XY coordinate
        */
       vec2 sample_i_uv = sample_i_ndc * 0.5 + 0.5;
-      float ref_depth = texture(tex_position, sample_i_uv.xy).z;
+      float ref_depth = compute_eye_z_from_depth(sample_i_uv.xy);
 
       /* If the depth for that XY position in the scene is larger than
        * the sample's, then the sample is occluded by scene's geometry and

@@ -21,18 +21,16 @@ layout(set = 3, binding = 3) uniform sampler2D tex_opacity;
 layout(location = 0) in vec2 in_uv;
 layout(location = 1) flat in uint in_material_idx;
 layout(location = 2) in vec3 in_eye_normal;
-layout(location = 3) in vec4 in_eye_pos;
-layout(location = 4) in vec4 in_eye_light_pos;
-layout(location = 5) in vec4 in_light_space_pos;
-layout(location = 6) in vec3 in_eye_tangent;
-layout(location = 7) in vec3 in_eye_bitangent;
+layout(location = 3) in vec4 in_eye_light_pos;
+layout(location = 4) in vec4 in_light_space_pos;
+layout(location = 5) in vec3 in_eye_tangent;
+layout(location = 6) in vec3 in_eye_bitangent;
 
-layout(location = 0) out vec4 out_eye_pos;
-layout(location = 1) out vec4 out_eye_normal;
-layout(location = 2) out vec4 out_eye_light_pos;
-layout(location = 3) out vec4 out_light_space_pos;
-layout(location = 4) out vec4 out_diffuse;
-layout(location = 5) out vec4 out_specular;
+layout(location = 0) out vec4 out_eye_normal;
+layout(location = 1) out vec4 out_eye_light_pos;
+layout(location = 2) out vec4 out_light_space_pos;
+layout(location = 3) out vec4 out_diffuse;
+layout(location = 4) out vec4 out_specular;
 
 void main()
 {
@@ -40,8 +38,10 @@ void main()
    if (opacity < 0.01) {
       discard;
    } else {
-      // Eye-space position, viewdir, lightpos, light-space pos
-      out_eye_pos = in_eye_pos;
+      // Eye-space viewdir, lightpos, light-space pos
+      //
+      // We skip eye-space position to save bandwidth. Shaders that need
+      // this will have to reconstruct it from depth.
       out_eye_light_pos = in_eye_light_pos;
       out_light_space_pos = in_light_space_pos;
 

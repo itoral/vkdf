@@ -223,7 +223,7 @@ struct _VkdfScene {
             VkDescriptorSetLayout ssao_tex_set_layout;
             VkDescriptorSet ssao_tex_set;
             struct {
-               // VS shader is shared with the base pass
+               VkShaderModule vs;
                VkShaderModule fs;
             } shader;
          } pipeline;

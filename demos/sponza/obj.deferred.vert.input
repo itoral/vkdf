@@ -52,11 +52,10 @@ layout(location = 5) in uint in_material_idx;
 layout(location = 0) out vec2 out_uv;
 layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec3 out_eye_normal;
-layout(location = 3) out vec4 out_eye_pos;
-layout(location = 4) out vec4 out_eye_light_pos;
-layout(location = 5) out vec4 out_light_space_pos;
-layout(location = 6) out vec3 out_eye_tangent;
-layout(location = 7) out vec3 out_eye_bitangent;
+layout(location = 3) out vec4 out_eye_light_pos;
+layout(location = 4) out vec4 out_light_space_pos;
+layout(location = 5) out vec3 out_eye_tangent;
+layout(location = 6) out vec3 out_eye_bitangent;
 
 void main()
 {
@@ -76,8 +75,8 @@ void main()
    vec4 world_pos = Model * model_pos;
 
    // Compute camera/eye space position
-   out_eye_pos = CD.View * world_pos;
-   gl_Position = PCB.Projection * out_eye_pos;
+   vec4 eye_pos = CD.View * world_pos;
+   gl_Position = PCB.Projection * eye_pos;
 
    // Compute eye space normal, tangent, bitangent
    mat3 Normal = transpose(inverse(mat3(CD.View * Model)));

@@ -2,6 +2,7 @@ BUILT_SOURCES = \
     shadow-map.vert.spv \
     ssao.deferred.vert.spv \
     ssao.deferred.frag.spv \
+    ssao-blur.deferred.vert.spv \
     ssao-blur.deferred.frag.spv
 
 
@@ -16,6 +17,9 @@ ssao.deferred.vert.spv: ssao.deferred.vert
 
 ssao.deferred.frag.spv: ssao.deferred.frag
 	$(top_srcdir)/$(GLSLANG) -V ssao.deferred.frag -o ssao.deferred.frag.spv
+
+ssao-blur.deferred.vert.spv: ssao-blur.deferred.vert
+	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.vert -o ssao-blur.deferred.vert.spv
 
 ssao-blur.deferred.frag.spv: ssao-blur.deferred.frag
 	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.frag -o ssao-blur.deferred.frag.spv
