@@ -4,6 +4,8 @@
 
 INCLUDE(../../data/glsl/lighting.glsl)
 
+INCLUDE(../../data/glsl/util.glsl)
+
 layout(push_constant) uniform pcb {
    mat4 Proj;
    float aspect_ratio;
@@ -39,13 +41,6 @@ layout(set = 2, binding = 5) uniform sampler2D tex_specular;
 layout(set = 2, binding = 6) uniform sampler2D tex_ssao;
 
 layout(location = 0) out vec4 out_color;
-
-float
-compute_eye_z_from_depth(vec2 coord)
-{
-   float depth = texture(tex_depth, coord).x;
-   return -PCB.Proj[3][2] / (PCB.Proj[2][2] + depth);
-}
 
 void main()
 {

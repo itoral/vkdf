@@ -2,6 +2,8 @@
 
 #extension GL_ARB_separate_shader_objects : enable
 
+INCLUDE(../glsl/util.glsl)
+
 layout(push_constant) uniform pcb {
    mat4 Proj;
    vec2 noise_scale;
@@ -27,26 +29,12 @@ layout(location = 1) in vec2 in_view_ray;
 
 layout(location = 0) out float out_ssao;
 
-/**
- * Computes eye-space Z for the pixel's depth taken from the depth buffer
- * at the given texture-space coordinates.
- *
- * Notice that the formula here is Vulkan-specific due to the differences
- * between OpenGL and Vulkan coordinate systems.
- */
-float
-compute_eye_z_from_depth(vec2 coord)
-{
-   float depth = texture(tex_depth, coord).x;
-   return -PCB.Proj[3][2] / (PCB.Proj[2][2] + depth);
-}
-
 void main()
 {
    /* Retrieve eye-space position of the current fragment reconstructing
     * it from the depth buffer.
     */
-   float position_z = compute_eye_z_from_depth(in_uv);
+   float position_z = compute_eye_z_from_depth(tex_depth, in_uv, PCB.Proj);
    float position_x = in_view_ray.x * position_z;
    float position_y = in_view_ray.y * position_z;
    vec3 position = vec3(position_x, position_y, position_z);
@@ -75,7 +63,8 @@ void main()
        * Position texture to obtain the scene depth at that XY coordinate
        */
       vec2 sample_i_uv = sample_i_ndc * 0.5 + 0.5;
-      float ref_depth = compute_eye_z_from_depth(sample_i_uv.xy);
+      float ref_depth =
+         compute_eye_z_from_depth(tex_depth, sample_i_uv.xy, PCB.Proj);
 
       /* If the depth for that XY position in the scene is larger than
        * the sample's, then the sample is occluded by scene's geometry and
