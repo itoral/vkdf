@@ -725,9 +725,14 @@ init_scene(SceneResources *res)
        * 3: Diffuse color         : rgba8
        * 4: Specular color        : rgba8
        *
-       * We encode material shininess in the alpha component of specular.
        * We don't store eye-space position, instead we reconstruct
        * it in the shaders that need it from the depth buffer.
+       *
+       * We need 16bit precision for normals (instead of using SNORM)),
+       * otherwise the quality of normal mapping and specular reflections is
+       * significanly affected.
+       *
+       * We encode material shininess in the alpha component of specular.
        */
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
