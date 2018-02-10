@@ -271,12 +271,14 @@ record_update_resources_command(VkdfContext *ctx,
                      0, sizeof(glm::mat4), &view[0][0]);
 
    // Update light's eye-space view dir
-   glm::vec3 dir = vec3(view * res->light->origin);
-   vkdf_vec3_normalize(&dir);
-   glm::vec4 light_eye_dir = vec4(dir, res->light->origin.w);
-   vkCmdUpdateBuffer(cmd_buf,
-                     res->ubos.light_eye_dir.buf.buf,
-                     0, sizeof(glm::vec4), &light_eye_dir);
+   if (ENABLE_DEFERRED_RENDERING) {
+      glm::vec3 dir = vec3(view * res->light->origin);
+      vkdf_vec3_normalize(&dir);
+      glm::vec4 light_eye_dir = vec4(dir, res->light->origin.w);
+      vkCmdUpdateBuffer(cmd_buf,
+                        res->ubos.light_eye_dir.buf.buf,
+                        0, sizeof(glm::vec4), &light_eye_dir);
+   }
 
    return true;
 }
