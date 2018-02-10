@@ -19,12 +19,17 @@ const bool     ENABLE_CLIPPING           = true;
 const bool     ENABLE_DEPTH_PREPASS      = true;
 const bool     ENABLE_DEFERRED_RENDERING = true;
 
+/* Deferred rendering options */
+const uint32_t GBUFFER_LIGHT_SPACE_POS_BITS = 32; // 16 or 32
+
 /* Anisotropic filtering */
 const float    MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
 
 /* Shadow mapping */
 const uint32_t SHADOW_MAP_SIZE           = 4096;
-const uint32_t SHADOW_MAP_PCF_SIZE       = 2;    // Min=1 (disabled)
+const uint32_t SHADOW_MAP_PCF_SIZE       = 2;     // Min=1 (disabled)
+const uint32_t SHADOW_MAP_CONST_BIAS     = 1.0f;
+const uint32_t SHADOW_MAP_SLOPE_BIAS     = 2.0f;
 
 /* Screen Space Ambient Occlusion */
 const bool     ENABLE_SSAO               = true;
@@ -706,11 +711,17 @@ init_scene(SceneResources *res)
 
    vkdf_light_enable_shadows(light, true);
 
+   /* NOTE: in deferred rendering, the number of bits used to store the
+    * light space position is very important for quality. If we only use
+    * 16-bits, we can see some very noticeable artifacts in some places.
+    * We can work around this to some extent by increasing shadow map bias
+    * parameters, at the expense of introducing some peter panning.
+    */
    VkdfSceneShadowSpec shadow_spec;
    vkdf_scene_shadow_spec_set(&shadow_spec,
                               SHADOW_MAP_SIZE,
                               5.0f, 110.0f,  // Near, Far
-                              1.0f, 2.0f,    // Const, Slope bias
+                              SHADOW_MAP_CONST_BIAS, SHADOW_MAP_SLOPE_BIAS,
                               SHADOW_MAP_PCF_SIZE);
 
    vkdf_scene_add_light(res->scene, light, &shadow_spec);
@@ -721,7 +732,7 @@ init_scene(SceneResources *res)
    if (ENABLE_DEFERRED_RENDERING) {
       /* 0: Eye normal            : rgba16f
        * 1: Eye light position    : rgba16f
-       * 2: Light space position  : rgba32f
+       * 2: Light space position  : rgba32f / rgab16f (configurable)
        * 3: Diffuse color         : rgba8
        * 4: Specular color        : rgba8
        *
@@ -732,14 +743,23 @@ init_scene(SceneResources *res)
        * otherwise the quality of normal mapping and specular reflections is
        * significanly affected.
        *
+       * Precision of light space position affects shadow mapping quality.
+       * Using 16-bit mostly works, but it produces some quite visible
+       * artifacts in a few places (such as the flowers)
+       *
        * We encode material shininess in the alpha component of specular.
        */
+      assert(GBUFFER_LIGHT_SPACE_POS_BITS == 32 ||
+             GBUFFER_LIGHT_SPACE_POS_BITS == 16);
+      VkFormat light_space_pos_format =
+         GBUFFER_LIGHT_SPACE_POS_BITS == 32 ? VK_FORMAT_R32G32B32A32_SFLOAT :
+                                              VK_FORMAT_R16G16B16A16_SFLOAT;
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
                                            5,
                                            VK_FORMAT_R16G16B16A16_SFLOAT,
                                            VK_FORMAT_R16G16B16A16_SFLOAT,
-                                           VK_FORMAT_R32G32B32A32_SFLOAT,
+                                           light_space_pos_format,
                                            VK_FORMAT_R8G8B8A8_UNORM,
                                            VK_FORMAT_R8G8B8A8_UNORM);
    }
