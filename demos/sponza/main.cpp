@@ -2032,7 +2032,7 @@ main()
    VkdfContext ctx;
    SceneResources resources;
 
-   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, WIN_FULLSCREEN, false, true);
+   vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, WIN_FULLSCREEN, false, false);
    init_resources(&ctx, &resources);
 
    vkdf_scene_event_loop_run(resources.scene);
