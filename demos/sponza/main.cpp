@@ -160,6 +160,7 @@ typedef struct {
    bool sponza_mesh_visible[400];
 
    VkSampler sponza_sampler;
+   VkSampler sponza_opacity_sampler;
    VkSampler gbuffer_sampler;
    VkSampler ssao_sampler;
 
@@ -804,12 +805,49 @@ init_scene(SceneResources *res)
 static void
 create_sponza_texture_descriptor_sets(SceneResources *res)
 {
+   /* We use linear filtering and mipmapping for most textures */
    res->sponza_sampler =
          vkdf_create_sampler(res->ctx,
                              VK_SAMPLER_ADDRESS_MODE_REPEAT,
                              VK_FILTER_LINEAR,
                              VK_SAMPLER_MIPMAP_MODE_LINEAR,
                              MAX_ANISOTROPY);
+
+   /* Opacity textures are tricky. We use discard() in the shaders to discard
+    * non-opaque pixels (opacity < 1), but linear filtering can turn opaque
+    * texels into non-opaque, leading to incorrect results where we don't
+    * render all the pixels we should. Mipmapping accumulates this effect
+    * further, so that only a few pixels in the mipmap stay with opacity=1,
+    * which leads to pixels magically vanishing with distance as we switch
+    * to smaller mipmaps.
+    *
+    * Unfortunately, using nearest filtering leads to very pixelated edges
+    * that don't look good at all, specially at short distances, and also to
+    * some missing pixels (can happen in opaque areas for very thin geometry
+    * such as some vine stems).
+    *
+    * To get the best results, we make the shaders sample only from LOD 0,
+    * to avoid artifacts when switching between mipmaps, and we use linear
+    * filtering (within that single LOD) to avoid pixelated edges and missing
+    * pixels in "thin" opaque areas. Linear filtering on LOD 0 means that some
+    * "edge" pixels will still have opacity slightly < 1 due to some non-opaque
+    * pixels ending up contributing to the resulting samples, so we correct that
+    * by not dropping pixels unless their opacity goes below a certain
+    * threshold. This means that some edges can look a bit odd up close
+    * but at least the linear filtering will smooth this out producing a much
+    * better result overall.
+    *
+    * FIXME: we can fix this by using blending instead of discard, but
+    * that would require that we render meshes with opacity last and that would
+    * not even be sufficient for deferred, which can't do transparency/blending
+    * directly.
+    */
+   res->sponza_opacity_sampler =
+         vkdf_create_sampler(res->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_REPEAT,
+                             VK_FILTER_LINEAR,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0);
 
    VkdfModel *model = res->sponza_model;
    assert(model->tex_materials.size() == model->materials.size());
@@ -903,7 +941,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          assert(tm->opacity.view);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
-                                            res->sponza_sampler,
+                                            res->sponza_opacity_sampler,
                                             tm->opacity.view,
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             OPACITY_TEX_BINDING, 1);
@@ -911,7 +949,7 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
          if (ENABLE_DEPTH_PREPASS) {
             vkdf_descriptor_set_sampler_update(res->ctx,
                                                res->pipelines.descr.depth_prepass_tex_set[i],
-                                               res->sponza_sampler,
+                                               res->sponza_opacity_sampler,
                                                tm->opacity.view,
                                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                                0, 1);
@@ -2069,6 +2107,7 @@ destroy_samplers(SceneResources *res)
 {
    vkDestroySampler(res->ctx->device, res->debug.sampler, NULL);
    vkDestroySampler(res->ctx->device, res->sponza_sampler, NULL);
+   vkDestroySampler(res->ctx->device, res->sponza_opacity_sampler, NULL);
    vkDestroySampler(res->ctx->device, res->gbuffer_sampler, NULL);
    vkDestroySampler(res->ctx->device, res->ssao_sampler, NULL);
 }

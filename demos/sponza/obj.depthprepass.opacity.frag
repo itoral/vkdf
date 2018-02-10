@@ -8,9 +8,11 @@ layout(location = 0) in vec2 in_uv;
 
 void main()
 {
-   // Take opacity component from texture
-   float opacity = texture(tex_opacity, in_uv).r;
-   if (opacity < 0.01) {
+   /* Always sample opacity from LOD 0: mipmaps can have non 1.0 values for
+    * visible pixels as a result of filtering.
+    */
+   float opacity = textureLod(tex_opacity, in_uv, 0).r;
+   if (opacity < 0.8) {
       discard;
    }
 }

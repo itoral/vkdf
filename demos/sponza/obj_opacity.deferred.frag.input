@@ -31,8 +31,11 @@ layout(location = 3) out vec4 out_specular;
 
 void main()
 {
-   float opacity = texture(tex_opacity, in_uv).r;
-   if (opacity < 0.01) {
+   /* Always sample opacity from LOD 0: mipmaps can have non 1.0 values for
+    * visible pixels as a result of filtering.
+    */
+   float opacity = textureLod(tex_opacity, in_uv, 0).r;
+   if (opacity < 0.8) {
       discard;
    } else {
       INCLUDE(compute_gbuffer.glsl)
