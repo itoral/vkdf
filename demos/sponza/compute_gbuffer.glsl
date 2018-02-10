@@ -1,12 +1,9 @@
-   // Eye-space viewdir, lightpos, light-space pos
+   // light-space pos
    //
    // We skip eye-space position to save bandwidth. Shaders that need
    // this will have to reconstruct it from depth.
    //
-   // We use a SNORM format to store eye position because we know this
-   // is a directional light, so it is really a direction vector. We
-   // could not do this for other light types.
-   out_eye_light_pos = vec4(normalize(in_eye_light_pos.xyz), 0);
+   // We also skip light direction since this is constant for all fragments
    out_light_space_pos = in_light_space_pos;
 
    Material mat = Mat.materials[in_material_idx];

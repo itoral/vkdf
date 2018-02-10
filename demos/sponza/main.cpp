@@ -122,6 +122,10 @@ typedef struct {
          VkdfBuffer buf;
          VkDeviceSize size;
       } camera_view;
+      struct {
+         VkdfBuffer buf;
+         VkDeviceSize size;
+      } light_eye_dir;
    } ubos;
 
    struct {
@@ -158,6 +162,8 @@ typedef struct {
    VkSampler sponza_sampler;
    VkSampler gbuffer_sampler;
    VkSampler ssao_sampler;
+
+   VkdfLight *light;
 
    struct {
       VkdfImage image;
@@ -221,6 +227,16 @@ init_ubos(SceneResources *res)
                                           res->ubos.camera_view.size,
                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   // Light's direction in eye space (deferred only)
+   if (ENABLE_DEFERRED_RENDERING) {
+      res->ubos.light_eye_dir.size = sizeof(glm::vec4);
+      res->ubos.light_eye_dir.buf =
+         create_ubo(res->ctx,
+                    res->ubos.light_eye_dir.size,
+                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+   }
 }
 
 void
@@ -252,8 +268,15 @@ record_update_resources_command(VkdfContext *ctx,
    glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
    vkCmdUpdateBuffer(cmd_buf,
                      res->ubos.camera_view.buf.buf,
-                     0, sizeof(glm::mat4),
-                     &view[0][0]);
+                     0, sizeof(glm::mat4), &view[0][0]);
+
+   // Update light's eye-space view dir
+   glm::vec3 dir = vec3(view * res->light->origin);
+   vkdf_vec3_normalize(&dir);
+   glm::vec4 light_eye_dir = vec4(dir, res->light->origin.w);
+   vkCmdUpdateBuffer(cmd_buf,
+                     res->ubos.light_eye_dir.buf.buf,
+                     0, sizeof(glm::vec4), &light_eye_dir);
 
    return true;
 }
@@ -706,10 +729,10 @@ init_scene(SceneResources *res)
    glm::vec4 ambient = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
    glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
-   VkdfLight *light =
+   res->light =
       vkdf_light_new_directional(direction, diffuse, ambient, specular);
 
-   vkdf_light_enable_shadows(light, true);
+   vkdf_light_enable_shadows(res->light, true);
 
    /* NOTE: in deferred rendering, the number of bits used to store the
     * light space position is very important for quality. If we only use
@@ -724,28 +747,22 @@ init_scene(SceneResources *res)
                               SHADOW_MAP_CONST_BIAS, SHADOW_MAP_SLOPE_BIAS,
                               SHADOW_MAP_PCF_SIZE);
 
-   vkdf_scene_add_light(res->scene, light, &shadow_spec);
+   vkdf_scene_add_light(res->scene, res->light, &shadow_spec);
 
    if (ENABLE_DEPTH_PREPASS)
       vkdf_scene_enable_depth_prepass(res->scene);
 
    if (ENABLE_DEFERRED_RENDERING) {
       /* 0: Eye normal            : rgba16f
-       * 1: Eye light position    : rgba8
-       * 2: Light space position  : rgba32f / rgab16f (configurable)
-       * 3: Diffuse color         : rgba8
-       * 4: Specular color        : rgba8
+       * 1: Light space position  : rgba32f / rgab16f (configurable)
+       * 2: Diffuse color         : rgba8
+       * 3: Specular color        : rgba8
        *
        * We don't store eye-space position, instead we reconstruct
        * it in the shaders that need it from the depth buffer.
        *
-       * Since we are using a directional light, the eye light position
-       * is really the light direction. This being a direction vector we
-       * only need a SNORM format to store it. To do this we need to ensure
-       * we normalize it before we store. Because it is a directional
-       * light, we don't need to care about the 4th component (the light type),
-       * because it is 0, so neither normalization nor the SNORM format
-       * are a problem.
+       * Since we are using a directional light and its direction is constant
+       * for all fragments we don't have to store it either.
        *
        * We need 16bit precision for normals (instead of using SNORM)),
        * otherwise the quality of normal mapping and specular reflections is
@@ -764,9 +781,8 @@ init_scene(SceneResources *res)
                                               VK_FORMAT_R16G16B16A16_SFLOAT;
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
-                                           5,
+                                           4,
                                            VK_FORMAT_R16G16B16A16_SFLOAT,
-                                           VK_FORMAT_R8G8B8A8_SNORM,
                                            light_space_pos_format,
                                            VK_FORMAT_R8G8B8A8_UNORM,
                                            VK_FORMAT_R8G8B8A8_UNORM);
@@ -950,7 +966,7 @@ init_pipeline_descriptors(SceneResources *res,
    }
 
    res->pipelines.descr.light_layout =
-      vkdf_create_ubo_descriptor_set_layout(res->ctx, 0, 2,
+      vkdf_create_ubo_descriptor_set_layout(res->ctx, 0, deferred ? 3 : 2,
                                             VK_SHADER_STAGE_VERTEX_BIT |
                                                VK_SHADER_STAGE_FRAGMENT_BIT,
                                             false);
@@ -1108,6 +1124,14 @@ init_pipeline_descriptors(SceneResources *res,
          VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
       pcb_recons_range.offset = 0;
       pcb_recons_range.size = sizeof(PCBDataPosRecons);
+
+      /* Light eye-space direction */
+      ubo_offset = 0;
+      ubo_size = res->ubos.light_eye_dir.size;
+      vkdf_descriptor_set_buffer_update(res->ctx,
+                                        res->pipelines.descr.light_set,
+                                        res->ubos.light_eye_dir.buf.buf,
+                                        2, 1, &ubo_offset, &ubo_size, false, true);
 
       /* textures: depth + gbuffer + ssao */
       const uint32_t gbuffer_size = res->scene->rt.gbuffer_size;
@@ -2010,6 +2034,11 @@ destroy_ubos(SceneResources *res)
 {
    vkDestroyBuffer(res->ctx->device, res->ubos.camera_view.buf.buf, NULL);
    vkFreeMemory(res->ctx->device, res->ubos.camera_view.buf.mem, NULL);
+
+   if (ENABLE_DEFERRED_RENDERING) {
+      vkDestroyBuffer(res->ctx->device, res->ubos.light_eye_dir.buf.buf, NULL);
+      vkFreeMemory(res->ctx->device, res->ubos.light_eye_dir.buf.mem, NULL);
+   }
 }
 
 static void

@@ -1,5 +1,5 @@
    Light light = L.sun;
-   light.pos = texture(tex_eye_light_position, in_uv);
+   light.pos = LD.eye_dir;
 
    // This pixel was never rendered in the gbuffer pass so use the clear
    // color

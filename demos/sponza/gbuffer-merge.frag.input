@@ -30,14 +30,17 @@ layout(std140, set = 0, binding = 1) uniform ubo_shadow_map_data {
    ShadowMapData shadow_map_data;
 } SMD;
 
+layout(std140, set = 0, binding = 2) uniform ubo_light_eye_dir {
+   vec4 eye_dir;
+} LD;
+
 layout(set = 1, binding = 0) uniform sampler2DShadow shadow_map;
 
 layout(set = 2, binding = 0) uniform sampler2D tex_depth;
 layout(set = 2, binding = 1) uniform sampler2D tex_eye_normal;
-layout(set = 2, binding = 2) uniform sampler2D tex_eye_light_position;
-layout(set = 2, binding = 3) uniform sampler2D tex_light_space_position;
-layout(set = 2, binding = 4) uniform sampler2D tex_diffuse;
-layout(set = 2, binding = 5) uniform sampler2D tex_specular;
+layout(set = 2, binding = 2) uniform sampler2D tex_light_space_position;
+layout(set = 2, binding = 3) uniform sampler2D tex_diffuse;
+layout(set = 2, binding = 4) uniform sampler2D tex_specular;
 
 layout(location = 0) out vec4 out_color;
 

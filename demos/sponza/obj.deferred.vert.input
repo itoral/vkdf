@@ -52,10 +52,9 @@ layout(location = 5) in uint in_material_idx;
 layout(location = 0) out vec2 out_uv;
 layout(location = 1) flat out uint out_material_idx;
 layout(location = 2) out vec3 out_eye_normal;
-layout(location = 3) out vec4 out_eye_light_pos;
-layout(location = 4) out vec4 out_light_space_pos;
-layout(location = 5) out vec3 out_eye_tangent;
-layout(location = 6) out vec3 out_eye_bitangent;
+layout(location = 3) out vec4 out_light_space_pos;
+layout(location = 4) out vec3 out_eye_tangent;
+layout(location = 5) out vec3 out_eye_bitangent;
 
 void main()
 {
@@ -83,9 +82,6 @@ void main()
    out_eye_normal = normalize(Normal * in_normal);
    out_eye_tangent = normalize(Normal * in_tangent);
    out_eye_bitangent = normalize(Normal * in_bitangent);
-
-   // Compute lighting outputs (in eye space)
-   out_eye_light_pos = vec4(vec3(CD.View * L.sun.pos), L.sun.pos.w);
 
    // Light space position
    out_light_space_pos = SMD.shadow_map_data.light_viewproj * world_pos;
