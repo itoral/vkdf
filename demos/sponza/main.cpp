@@ -731,13 +731,21 @@ init_scene(SceneResources *res)
 
    if (ENABLE_DEFERRED_RENDERING) {
       /* 0: Eye normal            : rgba16f
-       * 1: Eye light position    : rgba16f
+       * 1: Eye light position    : rgba8
        * 2: Light space position  : rgba32f / rgab16f (configurable)
        * 3: Diffuse color         : rgba8
        * 4: Specular color        : rgba8
        *
        * We don't store eye-space position, instead we reconstruct
        * it in the shaders that need it from the depth buffer.
+       *
+       * Since we are using a directional light, the eye light position
+       * is really the light direction. This being a direction vector we
+       * only need a SNORM format to store it. To do this we need to ensure
+       * we normalize it before we store. Because it is a directional
+       * light, we don't need to care about the 4th component (the light type),
+       * because it is 0, so neither normalization nor the SNORM format
+       * are a problem.
        *
        * We need 16bit precision for normals (instead of using SNORM)),
        * otherwise the quality of normal mapping and specular reflections is
@@ -758,7 +766,7 @@ init_scene(SceneResources *res)
                                            record_gbuffer_merge_commands,
                                            5,
                                            VK_FORMAT_R16G16B16A16_SFLOAT,
-                                           VK_FORMAT_R16G16B16A16_SFLOAT,
+                                           VK_FORMAT_R8G8B8A8_SNORM,
                                            light_space_pos_format,
                                            VK_FORMAT_R8G8B8A8_UNORM,
                                            VK_FORMAT_R8G8B8A8_UNORM);
