@@ -15,11 +15,8 @@ struct Light
    mat4 view_matrix_inv;
    float intensity;
    bool casts_shadows;
-   bool dirty;
-   bool dirty_shadows;
-   bool dirty_view_matrix;
-   bool dirty_view_matrix_inv;
-   uint pad0, pad1;
+   uint dirty;
+   uint pad0;
 };
 
 struct Material

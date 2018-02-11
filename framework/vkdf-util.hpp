@@ -99,4 +99,22 @@ vkdf_depth_stencil_clear_set(VkClearValue *value, float d, float s)
    value->depthStencil.stencil = s;
 }
 
+inline void
+bitfield_set(uint32_t *bitfield, uint32_t bits)
+{
+   *bitfield |= bits;
+}
+
+inline void
+bitfield_unset(uint32_t *bitfield, uint32_t bits)
+{
+   *bitfield &= ~bits;
+}
+
+inline uint32_t
+bitfield_get(uint32_t bitfield, uint32_t bits)
+{
+   return bitfield & bits;
+}
+
 #endif
