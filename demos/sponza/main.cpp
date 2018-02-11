@@ -742,7 +742,7 @@ init_scene(SceneResources *res)
 
    glm::vec4 direction = glm::vec4(1.0f, -4.5f, -1.25f, 0.0f);
    glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-   glm::vec4 ambient = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
+   glm::vec4 ambient = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
    glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
    res->light =
