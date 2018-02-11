@@ -34,7 +34,7 @@
                        eye_normal,
                        in_eye_view_dir,
                        mat,
-                       true,
+                       light.casts_shadows,
                        in_light_space_pos,
                        shadow_map,
                        SMD.shadow_map_data.shadow_map_size,

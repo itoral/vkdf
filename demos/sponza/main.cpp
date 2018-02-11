@@ -35,6 +35,7 @@ const uint32_t GBUFFER_OPTIMIZE_FOR_QUALITY  = true;
 const float    MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
 
 /* Shadow mapping */
+const bool     ENABLE_SHADOWS            = true;
 const uint32_t SHADOW_MAP_SIZE           = 4096;
 const uint32_t SHADOW_MAP_PCF_SIZE       = 2;     // Min=1 (disabled)
 const uint32_t SHADOW_MAP_CONST_BIAS     = 1.0f;
@@ -760,7 +761,8 @@ init_scene(SceneResources *res)
                               SHADOW_MAP_CONST_BIAS, SHADOW_MAP_SLOPE_BIAS,
                               SHADOW_MAP_PCF_SIZE);
 
-   vkdf_scene_add_light(res->scene, res->light, &shadow_spec);
+   vkdf_scene_add_light(res->scene, res->light,
+                        ENABLE_SHADOWS ? &shadow_spec : NULL);
 
    if (ENABLE_DEPTH_PREPASS)
       vkdf_scene_enable_depth_prepass(res->scene);
@@ -1134,16 +1136,23 @@ init_pipeline_descriptors(SceneResources *res,
                             res->descriptor_pool.sampler_pool,
                             res->pipelines.descr.shadow_map_sampler_layout);
 
-   VkSampler shadow_map_sampler =
-      vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
-
-   VkdfImage *shadow_map_image =
-      vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+   VkSampler sm_sampler;
+   VkdfImage *sm_image;
+   if (ENABLE_SHADOWS) {
+      sm_sampler = vkdf_scene_light_get_shadow_map_sampler(res->scene, 0);
+      sm_image = vkdf_scene_light_get_shadow_map_image(res->scene, 0);
+   } else {
+      /* We still need to provide a dummy descriptor set, even if it won't be
+       * accessed by the shader.
+       */
+      sm_sampler = res->sponza_sampler;
+      sm_image = &res->scene->rt.depth;
+   }
 
    vkdf_descriptor_set_sampler_update(res->ctx,
                                       res->pipelines.descr.shadow_map_sampler_set,
-                                      shadow_map_sampler,
-                                      shadow_map_image->view,
+                                      sm_sampler,
+                                      sm_image->view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       0, 1);
 

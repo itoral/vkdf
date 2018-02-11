@@ -32,7 +32,7 @@
                           eye_normal.xyz,
                           eye_view_dir.xyz,
                           mat,
-                          true,
+                          light.casts_shadows,
                           light_space_position,
                           shadow_map,
                           SMD.shadow_map_data.shadow_map_size,
