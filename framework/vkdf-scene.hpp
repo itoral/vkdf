@@ -1,7 +1,36 @@
 #ifndef __VKDF_SCENE_H__
 #define __VKDF_SCENE_H__
 
-#define SCENE_MAX_GBUFFER_SIZE 8
+const uint32_t GBUFFER_MAX_SIZE = 8;
+
+/* Fixed GBuffer slot indices
+ *
+ * We don't reserve a slot for eye-space positions. Applications can create
+ * a slot for that if they need it, but we assume that they can use position
+ * reconstruction from depth (we actually requite this for SSAO).
+ */
+enum {
+   GBUFFER_EYE_NORMAL_IDX      = 0,
+   GBUFFER_DIFFUSE_IDX         = 1,
+   GBUFFER_SPECULAR_IDX        = 2,
+
+   GBUFFER_LAST_FIXED_IDX
+};
+
+/* Fixed GBuffer slot formats
+ *
+ * We use a 16-bit format for eye-space normals instead of am 8-bit snorm format
+ * because otherwise bump mapping and specular reflections get a significant
+ * quality hit.
+ *
+ * We encode material shininess in the alpha component of specular attachment,
+ * so we need it to be RGBA.
+ */
+const VkFormat GBUFFER_FIXED_FORMATS[GBUFFER_LAST_FIXED_IDX] = {
+   VK_FORMAT_R16G16B16A16_SFLOAT,
+   VK_FORMAT_R8G8B8A8_UNORM,
+   VK_FORMAT_R8G8B8A8_UNORM
+};
 
 static const uint32_t SCENE_CMD_BUF_LIST_SIZE = 2;
 static const bool SCENE_FREE_SECONDARIES = false;
@@ -122,13 +151,13 @@ struct _VkdfScene {
       VkdfImage depth;
 
       uint32_t gbuffer_size;
-      VkdfImage gbuffer[SCENE_MAX_GBUFFER_SIZE];
+      VkdfImage gbuffer[GBUFFER_MAX_SIZE];
    } rt;
 
    // Render passes
    struct {
       VkClearValue clear_values[2];
-      VkClearValue gbuffer_clear_values[SCENE_MAX_GBUFFER_SIZE + 1];
+      VkClearValue gbuffer_clear_values[GBUFFER_MAX_SIZE + 1];
       bool do_color_clear;
       bool do_deferred;
       bool do_depth_prepass;
@@ -622,11 +651,13 @@ vkdf_scene_set_scene_callbacks(VkdfScene *s,
 void
 vkdf_scene_optimize_clip_boxes(VkdfScene *s);
 
+/* The variable parameter list must be have 'num_extra_attachments'
+ * parameters, each one of type VkFormat.
+ */
 void
 vkdf_scene_enable_deferred_rendering(VkdfScene *s,
                                      VkdfSceneGbufferMergeCommandsCB merge_cb,
-                                     uint32_t gbuffer_size,
-                                     VkFormat format0,
+                                     uint32_t num_user_attachments,
                                      ...);
 
 inline void

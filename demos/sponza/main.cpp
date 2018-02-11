@@ -19,8 +19,17 @@ const bool     ENABLE_CLIPPING           = true;
 const bool     ENABLE_DEPTH_PREPASS      = true;
 const bool     ENABLE_DEFERRED_RENDERING = true;
 
-/* Deferred rendering options */
-const uint32_t GBUFFER_LIGHT_SPACE_POS_BITS = 32; // 16 or 32
+/* Deferred rendering options
+ *
+ * GBUFFER_OPTIMIZE_FOR_QUALITY uses a 32-bit GBuffer attachment to store
+ * fragment positions in light-space which are involved in shadow mapping
+ * calculations. These calculations are very sensitive to precision, so
+ * using a 32-bit format trades performance for quality. If this is set to
+ * False. we use a 16-bit precision format which leads to visible artifacts
+ * that can be reduced to some extent by increasing shadow mapping bias
+ * parameters at the expense of introducing peter panning.
+ */
+const uint32_t GBUFFER_OPTIMIZE_FOR_QUALITY  = true;
 
 /* Anisotropic filtering */
 const float    MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
@@ -756,39 +765,19 @@ init_scene(SceneResources *res)
       vkdf_scene_enable_depth_prepass(res->scene);
 
    if (ENABLE_DEFERRED_RENDERING) {
-      /* 0: Eye normal            : rgba16f
-       * 1: Light space position  : rgba32f / rgab16f (configurable)
-       * 2: Diffuse color         : rgba8
-       * 3: Specular color        : rgba8
+      /* We use an extra slot to store light-space fragment positions, which
+       * we need to compute shadow mapping.
        *
-       * We don't store eye-space position, instead we reconstruct
-       * it in the shaders that need it from the depth buffer.
-       *
-       * Since we are using a directional light and its direction is constant
-       * for all fragments we don't have to store it either.
-       *
-       * We need 16bit precision for normals (instead of using SNORM)),
-       * otherwise the quality of normal mapping and specular reflections is
-       * significanly affected.
-       *
-       * Precision of light space position affects shadow mapping quality.
-       * Using 16-bit mostly works, but it produces some quite visible
-       * artifacts in a few places (such as the flowers)
-       *
-       * We encode material shininess in the alpha component of specular.
+       * We don't store eye-space positions, instead we reconstruct them in the
+       * lighting pass (gbuffer merge pass) from the depth buffer for optimal
+       * performance.
        */
-      assert(GBUFFER_LIGHT_SPACE_POS_BITS == 32 ||
-             GBUFFER_LIGHT_SPACE_POS_BITS == 16);
       VkFormat light_space_pos_format =
-         GBUFFER_LIGHT_SPACE_POS_BITS == 32 ? VK_FORMAT_R32G32B32A32_SFLOAT :
-                                              VK_FORMAT_R16G16B16A16_SFLOAT;
+         GBUFFER_OPTIMIZE_FOR_QUALITY ? VK_FORMAT_R32G32B32A32_SFLOAT :
+                                        VK_FORMAT_R16G16B16A16_SFLOAT;
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
-                                           4,
-                                           VK_FORMAT_R16G16B16A16_SFLOAT,
-                                           light_space_pos_format,
-                                           VK_FORMAT_R8G8B8A8_UNORM,
-                                           VK_FORMAT_R8G8B8A8_UNORM);
+                                           1, light_space_pos_format);
    }
 
    if (ENABLE_SSAO) {

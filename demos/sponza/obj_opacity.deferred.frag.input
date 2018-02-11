@@ -25,9 +25,9 @@ layout(location = 4) in vec3 in_eye_tangent;
 layout(location = 5) in vec3 in_eye_bitangent;
 
 layout(location = 0) out vec4 out_eye_normal;
-layout(location = 1) out vec4 out_light_space_pos;
-layout(location = 2) out vec4 out_diffuse;
-layout(location = 3) out vec4 out_specular;
+layout(location = 1) out vec4 out_diffuse;
+layout(location = 2) out vec4 out_specular;
+layout(location = 3) out vec4 out_light_space_pos;
 
 void main()
 {

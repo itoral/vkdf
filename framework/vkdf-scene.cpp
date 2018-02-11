@@ -133,49 +133,65 @@ create_render_target(VkdfScene *s,
                         VK_IMAGE_VIEW_TYPE_2D);
 }
 
+static void
+create_gbuffer_image(VkdfScene *s, uint32_t idx, VkFormat format)
+{
+   VkFormatFeatureFlagBits features = (VkFormatFeatureFlagBits)
+      (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
+       VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+
+   VkImageUsageFlagBits usage = (VkImageUsageFlagBits)
+      (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+
+   s->rt.gbuffer[idx] =
+      vkdf_create_image(s->ctx,
+                        s->rt.width,
+                        s->rt.height,
+                        1,
+                        VK_IMAGE_TYPE_2D,
+                        format,
+                        features,
+                        usage,
+                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                        VK_IMAGE_ASPECT_COLOR_BIT,
+                        VK_IMAGE_VIEW_TYPE_2D);
+}
+
 void
 vkdf_scene_enable_deferred_rendering(VkdfScene *s,
                                      VkdfSceneGbufferMergeCommandsCB merge_cb,
-                                     uint32_t gbuffer_size,
-                                     VkFormat format0,
+                                     uint32_t num_user_attachments,
                                      ...)
 {
    s->rp.do_deferred = true;
 
    s->callbacks.gbuffer_merge = merge_cb;
 
-   assert(gbuffer_size > 0 && gbuffer_size <= SCENE_MAX_GBUFFER_SIZE);
+   /* Compute GBuffer size as fixed slots plus user enabled slots */
+   s->rt.gbuffer_size = GBUFFER_LAST_FIXED_IDX + num_user_attachments;
+   assert(s->rt.gbuffer_size <= GBUFFER_MAX_SIZE);
 
    uint32_t max_attachments =
       s->ctx->phy_device_props.limits.maxFragmentOutputAttachments;
-   if (gbuffer_size > max_attachments)
+   if (s->rt.gbuffer_size > max_attachments)
       vkdf_fatal("Gbuffer has too many attachments");
 
-   s->rt.gbuffer_size = gbuffer_size;
+   /* Create GBuffer images for fixed slots */
+   for (uint32_t i = 0; i < GBUFFER_LAST_FIXED_IDX; i++)
+      create_gbuffer_image(s, i, GBUFFER_FIXED_FORMATS[i]);
 
-   // Create gbuffer images
-   va_list ap;
-   va_start(ap, format0);
+   /* Create GBuffer images for user slots */
+   if (num_user_attachments > 0) {
+      va_list ap;
+      va_start(ap, num_user_attachments);
 
-   for (uint32_t i = 0; i < gbuffer_size; i++) {
-      VkFormat format_i = i == 0 ? format0 : (VkFormat) va_arg(ap, uint32_t);
-      s->rt.gbuffer[i] =
-         vkdf_create_image(s->ctx,
-                           s->rt.width,
-                           s->rt.height,
-                           1,
-                           VK_IMAGE_TYPE_2D,
-                           format_i,
-                           VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
-                              VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
-                           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                              VK_IMAGE_USAGE_SAMPLED_BIT,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                           VK_IMAGE_ASPECT_COLOR_BIT,
-                           VK_IMAGE_VIEW_TYPE_2D);
+      for (uint32_t i = 0; i < num_user_attachments; i++) {
+         VkFormat format_i = (VkFormat) va_arg(ap, uint32_t);
+         create_gbuffer_image(s, GBUFFER_LAST_FIXED_IDX + i, format_i);
+      }
+
+      va_end(ap);
    }
-
-   va_end(ap);
 }
 
 void
@@ -3009,7 +3025,7 @@ static VkRenderPass
 create_gbuffer_render_pass(VkdfScene *s, bool for_dynamic)
 {
    // Attachments: Depth + Gbuffer
-   VkAttachmentDescription atts[1 + SCENE_MAX_GBUFFER_SIZE];
+   VkAttachmentDescription atts[1 + GBUFFER_MAX_SIZE];
 
    uint32_t idx = 0;
    int32_t depth_idx;
@@ -3058,7 +3074,7 @@ create_gbuffer_render_pass(VkdfScene *s, bool for_dynamic)
    depth_ref.attachment = depth_idx;
    depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-   VkAttachmentReference gbuffer_ref[SCENE_MAX_GBUFFER_SIZE];
+   VkAttachmentReference gbuffer_ref[GBUFFER_MAX_SIZE];
    for (uint32_t i = 0; i < s->rt.gbuffer_size; i++) {
       gbuffer_ref[i].attachment = gbuffer_idx + i;
       gbuffer_ref[i].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -3430,11 +3446,10 @@ prepare_ssao_rendering(VkdfScene *s)
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       SSAO_DEPTH_TEX_BINDING, 1);
 
-   // FIXME: this assumes that gbuffer[0] is the normal texture
    vkdf_descriptor_set_sampler_update(s->ctx,
                                       s->ssao.base.pipeline.textures_set,
                                       s->ssao.base.gbuffer_sampler,
-                                      s->rt.gbuffer[0].view,
+                                      s->rt.gbuffer[GBUFFER_EYE_NORMAL_IDX].view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       SSAO_NORMAL_TEX_BINDING, 1);
 
