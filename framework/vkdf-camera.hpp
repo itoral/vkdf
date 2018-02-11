@@ -74,6 +74,9 @@ vkdf_camera_step(VkdfCamera *cam, float d, int stepX, int stepY, int stepZ);
 void
 vkdf_camera_strafe(VkdfCamera *cam, float d);
 
+glm::vec3
+vkdf_camera_get_viewdir(VkdfCamera *cam);
+
 void
 vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z);
 
