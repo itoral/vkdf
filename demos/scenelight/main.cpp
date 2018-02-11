@@ -855,7 +855,9 @@ init_lights(SceneResources *res)
    vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 0.0f));
 
    VkdfSceneShadowSpec shadow_spec;
-   vkdf_scene_shadow_spec_set(&shadow_spec, 1024, 0.1f, 100.0f, 4.0f, 1.5f, 2);
+   vkdf_scene_shadow_spec_set(&shadow_spec,
+                              1024, 0.1f, 100.0f, 4.0f, 1.5f,
+                              0.0f, glm::vec3(0.0f), 2);
 
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 
@@ -875,7 +877,8 @@ init_lights(SceneResources *res)
 
    vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 10.0f));
 
-   vkdf_scene_shadow_spec_set(&shadow_spec, 1024, 0.1f, 100.0f, 4.0f, 1.5f, 2);
+   vkdf_scene_shadow_spec_set(&shadow_spec, 1024, 0.1f, 100.0f, 4.0f, 1.5f,
+                              0.0f, glm::vec3(0.0f), 2);
 
    vkdf_scene_add_light(res->scene, res->lights[idx], &shadow_spec);
 }

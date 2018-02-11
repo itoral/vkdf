@@ -39,8 +39,26 @@ typedef struct {
    uint32_t shadow_map_size;
    float shadow_map_near;
    float shadow_map_far;
+
    float depth_bias_const_factor;
    float depth_bias_slope_factor;
+
+   /* For directional lights:
+    *
+    * An offset to move the position of the shadow map along the viewing
+    * direction of the camera. An offset of 0 means that the shadow box is at
+    * the center of the bounding box of the camera's viewing frustum. This
+    * allows applications to better control how far in front or behind the
+    * camera we want our shadow box to be.
+    *
+    * The size of the shadow box can also be scaled in any direction. Scales
+    * larger than 1.0 will generate shadows at further distances at the expense
+    * of lowering the quality. Scales lower than 1.0 have the opposite effect.
+    */
+   struct {
+      float offset;
+      glm::vec3 scale;
+   } directional;
 
    // PFC kernel_size: valid values start at 1 (no PFC, 1 sample) to
    // N (2*(N-1)+1)^2 samples).
@@ -51,6 +69,7 @@ typedef struct {
    VkdfLight *light;
    struct {
       VkdfSceneShadowSpec spec;
+      VkdfBox box; /* Only for directional lights */
       glm::mat4 proj;
       glm::mat4 viewproj;
       VkdfImage shadow_map;
@@ -606,6 +625,11 @@ vkdf_scene_light_get_shadow_map_image(VkdfScene *s, uint32_t index)
    return &s->lights[index]->shadow.shadow_map;
 }
 
+void
+vkdf_scene_light_update_shadow_spec(VkdfScene *s,
+                                    uint32_t index,
+                                    VkdfSceneShadowSpec *spec);
+
 inline uint32_t
 vkdf_scene_get_static_object_count(VkdfScene *scene)
 {
@@ -709,6 +733,8 @@ vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
                            float far_plane,
                            float depth_bias_const_factor,
                            float depth_bias_slope_factor,
+                           float directional_offset,
+                           glm::vec3 directional_scale,
                            uint32_t pcf_kernel_size)
 {
    spec->shadow_map_size = shadow_map_size;
@@ -716,6 +742,8 @@ vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
    spec->shadow_map_far = far_plane;
    spec->depth_bias_const_factor = depth_bias_const_factor;
    spec->depth_bias_slope_factor = depth_bias_slope_factor;
+   spec->directional.offset = directional_offset;
+   spec->directional.scale = directional_scale;
    spec->pcf_kernel_size = pcf_kernel_size;
 }
 

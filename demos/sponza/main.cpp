@@ -178,6 +178,7 @@ typedef struct {
    VkSampler ssao_sampler;
 
    VkdfLight *light;
+   VkdfSceneShadowSpec shadow_spec;
 
    struct {
       VkdfImage image;
@@ -748,21 +749,24 @@ init_scene(SceneResources *res)
    res->light =
       vkdf_light_new_directional(direction, diffuse, ambient, specular);
 
-   /* NOTE: in deferred rendering, the number of bits used to store the
-    * light space position is very important for quality. If we only use
-    * 16-bits, we can see some very noticeable artifacts in some places.
-    * We can work around this to some extent by increasing shadow map bias
-    * parameters, at the expense of introducing some peter panning.
+   /* Near and Far planes have been empirically chosen, together with the
+    * directional offset, to provide the tightest shadow map box that registers
+    * shadows that fall into the visible region of the camera. The scale is
+    * increased in Z to account for the relatively high walls, so we avoid
+    * computing shadow boxes that are not high enough to cover the ceiling
+    * of the model.
     */
-   VkdfSceneShadowSpec shadow_spec;
-   vkdf_scene_shadow_spec_set(&shadow_spec,
+   vkdf_scene_shadow_spec_set(&res->shadow_spec,
                               SHADOW_MAP_SIZE,
-                              0.1f, 90.0f,  // Near, Far
-                              SHADOW_MAP_CONST_BIAS, SHADOW_MAP_SLOPE_BIAS,
+                              0.1f, 60.0f,                 // Near, Far
+                              SHADOW_MAP_CONST_BIAS,
+                              SHADOW_MAP_SLOPE_BIAS,
+                              -10.0f,                      // Directional offset
+                              glm::vec3(1.0f, 1.0f, 2.0f), // Directional scale
                               SHADOW_MAP_PCF_SIZE);
 
    vkdf_scene_add_light(res->scene, res->light,
-                        ENABLE_SHADOWS ? &shadow_spec : NULL);
+                        ENABLE_SHADOWS ? &res->shadow_spec : NULL);
 
    if (ENABLE_DEPTH_PREPASS)
       vkdf_scene_enable_depth_prepass(res->scene);

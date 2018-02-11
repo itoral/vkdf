@@ -406,9 +406,8 @@ destroy_set(gpointer key, gpointer value, gpointer data)
 }
 
 static void
-destroy_light(VkdfScene *s, VkdfSceneLight *slight)
+destroy_light_shadow_map(VkdfScene *s, VkdfSceneLight *slight)
 {
-   vkdf_light_free(slight->light);
    if (slight->shadow.shadow_map.image)
       vkdf_destroy_image(s->ctx, &slight->shadow.shadow_map);
    if (slight->shadow.visible)
@@ -417,6 +416,13 @@ destroy_light(VkdfScene *s, VkdfSceneLight *slight)
       vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
    if (slight->shadow.sampler)
       vkDestroySampler(s->ctx->device, slight->shadow.sampler, NULL);
+}
+
+static void
+destroy_light(VkdfScene *s, VkdfSceneLight *slight)
+{
+   vkdf_light_free(slight->light);
+   destroy_light_shadow_map(s, slight);
    g_free(slight);
 }
 
@@ -862,17 +868,28 @@ compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
    assert(vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL);
    VkdfSceneShadowSpec *spec = &sl->shadow.spec;
 
+   /* Compute camera's frustum */
    VkdfFrustum f;
-   vkdf_frustum_compute(&f, false, true,
+   vkdf_frustum_compute(&f, false, false,
                         cam->pos, cam->rot,
                         spec->shadow_map_near, spec->shadow_map_far,
                         cam->proj.fov, cam->proj.aspect_ratio);
 
-   const VkdfBox *box = vkdf_frustum_get_box(&f);
-   float w = 2.0f * box->w;
-   float h = 2.0f * box->h;
-   float d = 2.0f * box->d;
+   /* Translate frustum to light-space to compute shadow box dimensions */
+   glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
+   for (uint32_t i = 0; i < 8; i++) {
+      f.vertices[i] = view * vec4(f.vertices[i], 1.0f);
+   }
+   vkdf_frustum_compute_box(&f);
 
+   const VkdfBox *box = vkdf_frustum_get_box(&f);
+   float w = 2.0f * box->w * spec->directional.scale.x;
+   float h = 2.0f * box->h * spec->directional.scale.y;
+   float d = 2.0f * box->d * spec->directional.scale.z;
+
+   /* Use the light-space dimensions to compute the orthogonal
+    * projection matrix
+    */
    glm::mat4 proj(1.0f);
    proj[0][0] =  2.0f / w;
    proj[1][1] =  2.0f / h;
@@ -880,6 +897,8 @@ compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
    proj[3][3] =  1.0f;
 
    sl->shadow.proj = clip * proj;
+
+   sl->shadow.box = *box;
 }
 
 static void
@@ -921,12 +940,86 @@ compute_light_view_projection(VkdfScene *s, VkdfSceneLight *sl)
 {
    glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
 
-   // The view matrix for directional lights considers a camera located at the
-   // origin so we need to apply a translation
-   if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL)
-      view = glm::translate(view, -vkdf_camera_get_position(s->camera));
+   // The view matrix for directional lights needs to be translated to the
+   // center of its shadow box in world-space.
+   if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL) {
+      glm::mat4 view_inv = glm::inverse(view);
+      glm::vec3 offset = vec3(view_inv * vec4(sl->shadow.box.center, 1.0f));
+      glm::vec3 dir = vkdf_camera_get_viewdir(s->camera);
+      offset += dir * sl->shadow.spec.directional.offset;
+      view = glm::translate(view, -offset);
+   }
 
    sl->shadow.viewproj = sl->shadow.proj * view;
+}
+
+static void
+scene_light_disable_shadows(VkdfScene *s, VkdfSceneLight *sl)
+{
+   destroy_light_shadow_map(s, sl);
+   vkdf_light_enable_shadows(sl->light, false);
+   vkdf_light_set_dirty_shadows(sl->light, false);
+}
+
+static void
+scene_light_enable_shadows(VkdfScene *s,
+                           VkdfSceneLight *sl,
+                           VkdfSceneShadowSpec *spec)
+{
+   assert(spec->pcf_kernel_size >= 1);
+
+   vkdf_light_enable_shadows(sl->light, true);
+
+   sl->shadow.spec = *spec;
+   sl->shadow.shadow_map = create_shadow_map_image(s, spec->shadow_map_size);
+   sl->shadow.sampler =
+      vkdf_create_shadow_sampler(s->ctx,
+                                 VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                                 VK_FILTER_LINEAR,
+                                 VK_SAMPLER_MIPMAP_MODE_NEAREST);
+
+   compute_light_projection(s, sl);
+
+   vkdf_light_set_dirty_shadows(sl->light, true);
+   s->has_shadow_caster_lights = true;
+}
+
+static void
+scene_light_update_shadow_spec(VkdfScene *s,
+                               VkdfSceneLight *sl,
+                               VkdfSceneShadowSpec *spec)
+{
+   assert(vkdf_light_casts_shadows(sl->light));
+
+   /* We don't support changing the shadow map size dynamically */
+   assert(sl->shadow.spec.shadow_map_size == spec->shadow_map_size);
+   sl->shadow.spec = *spec;
+
+   compute_light_projection(s, sl);
+   vkdf_light_set_dirty_shadows(sl->light, true);
+}
+
+void
+vkdf_scene_light_update_shadow_spec(VkdfScene *s,
+                                    uint32_t index,
+                                    VkdfSceneShadowSpec *spec)
+{
+   assert(index < s->lights.size());
+   VkdfSceneLight *sl = s->lights[index];
+   VkdfLight *l = sl->light;
+
+   /* If the light already had shadows enabled then disable (if spec is NULL)
+    * or update. If it didn't have shadows, then enable them.
+    */
+   if (vkdf_light_casts_shadows(l)) {
+      if (spec)
+         scene_light_update_shadow_spec(s, sl, spec);
+      else
+         scene_light_disable_shadows(s, sl);
+   } else {
+      if (spec)
+         scene_light_enable_shadows(s, sl, spec);
+   }
 }
 
 void
@@ -937,28 +1030,13 @@ vkdf_scene_add_light(VkdfScene *s,
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
 
-   vkdf_light_enable_shadows(light, spec != NULL);
-
-   if (spec) {
-      assert(spec->pcf_kernel_size >= 1);
-      slight->shadow.spec = *spec;
-      slight->shadow.shadow_map =
-         create_shadow_map_image(s, spec->shadow_map_size);
-      slight->shadow.sampler =
-         vkdf_create_shadow_sampler(s->ctx,
-                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
-                             VK_FILTER_LINEAR,
-                             VK_SAMPLER_MIPMAP_MODE_NEAREST);
-      compute_light_projection(s, slight);
-      s->has_shadow_caster_lights = true;
-   }
-
-   // Mark light as dirty so it gets into the lights UBO and we generate
-   // the shadow map for it if needed
-   if (vkdf_light_casts_shadows(light))
-      vkdf_light_set_dirty_shadows(light, true);
+   if (spec)
+      scene_light_enable_shadows(s, slight, spec);
    else
-      vkdf_light_set_dirty(light, true);
+      scene_light_disable_shadows(s, slight);
+
+   /* Mark the light dirty so it is included in the lights UBO */
+   vkdf_light_set_dirty(light, true);
 
    slight->dirty_frustum = true;
 
@@ -2852,12 +2930,15 @@ update_dirty_lights(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
       VkdfLight *l = sl->light;
 
-      // Directional ligthts are special because they need new shadow maps
-      // when the camera moves around
+      // Directional ligthts are special because the shadow box that defines
+      // the shadow map changes as the camera moves around.
       if (vkdf_light_casts_shadows(l) &&
           vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL &&
-          vkdf_camera_has_dirty_position(s->camera))
+          (vkdf_camera_has_dirty_position(s->camera) ||
+           vkdf_camera_has_dirty_viewdir(s->camera))) {
+         compute_light_projection(s, sl);
          vkdf_light_set_dirty_shadows(l, true);
+      }
 
       if (vkdf_light_is_dirty(l))
          s->lights_dirty = true;
