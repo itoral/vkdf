@@ -310,7 +310,7 @@ vkdf_light_is_dirty(VkdfLight *l)
 bool inline
 vkdf_light_has_dirty_shadows(VkdfLight *l)
 {
-   return (bool) l->dirty_shadows;
+   return l->casts_shadows && ((bool) l->dirty_shadows);
 }
 
 inline void
