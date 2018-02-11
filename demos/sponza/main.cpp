@@ -40,7 +40,10 @@ const uint32_t SHADOW_MAP_PCF_SIZE       = 2;     // Min=1 (disabled)
 const uint32_t SHADOW_MAP_CONST_BIAS     = 1.0f;
 const uint32_t SHADOW_MAP_SLOPE_BIAS     = 2.0f;
 
-/* Screen Space Ambient Occlusion */
+/* Screen Space Ambient Occlusion (SSAO)
+ *
+ * SSAO requires that deferred rendering is enabled.
+ */
 const bool     ENABLE_SSAO               = true;
 const uint32_t SSAO_NUM_SAMPLES          = 24;
 const float    SSAO_RADIUS               = 0.75f;
