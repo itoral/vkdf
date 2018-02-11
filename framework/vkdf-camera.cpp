@@ -39,8 +39,9 @@ vkdf_camera_set_projection(VkdfCamera *cam,
                                               cam->proj.aspect_ratio,
                                               cam->proj.near_plane,
                                               cam->proj.far_plane);
-   cam->dirty = true;
-   cam->dirty_frustum = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
 }
 
 glm::vec3
@@ -55,10 +56,11 @@ vkdf_camera_set_position(VkdfCamera *cam, float px, float py, float pz)
    cam->pos.x = px;
    cam->pos.y = py;
    cam->pos.z = pz;
-   cam->dirty = true;
-   cam->dirty_position = true;
-   cam->dirty_frustum = true;
-   cam->dirty_view_matrix = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_POS);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
 }
 
 glm::vec3
@@ -73,11 +75,12 @@ vkdf_camera_set_rotation(VkdfCamera *cam, float rx, float ry, float rz)
    cam->rot.x = rx;
    cam->rot.y = ry;
    cam->rot.z = rz;
-   cam->dirty = true;
-   cam->dirty_frustum = true;
-   cam->dirty_viewdir = true;
-   cam->dirty_view_matrix = true;
-   cam->dirty_rot_matrix = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_ROT_MAT);
 }
 
 void
@@ -86,10 +89,11 @@ vkdf_camera_move(VkdfCamera *cam, float dx, float dy, float dz)
    cam->pos.x += dx;
    cam->pos.y += dy;
    cam->pos.z += dz;
-   cam->dirty = true;
-   cam->dirty_position = true;
-   cam->dirty_frustum = true;
-   cam->dirty_view_matrix = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_POS);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
 }
 
 void
@@ -114,19 +118,19 @@ vkdf_camera_rotate(VkdfCamera *cam, float rx, float ry, float rz)
    else if (cam->rot.z <= -360.0f)
       cam->rot.z += 360.0f;
 
-   cam->dirty = true;
-   cam->dirty_frustum = true;
-   cam->dirty_viewdir = true;
-   cam->dirty_view_matrix = true;
-   cam->dirty_rot_matrix = true;
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_ROT_MAT);
 }
 
 glm::vec3
 vkdf_camera_get_viewdir(VkdfCamera *cam)
 {
-   if (cam->dirty_viewdir) {
+   if (bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR)) {
       cam->viewdir = vkdf_compute_viewdir(cam->rot);
-      cam->dirty_viewdir = false;
+      bitfield_unset(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR);
    }
    return cam->viewdir;
 }
@@ -134,10 +138,10 @@ vkdf_camera_get_viewdir(VkdfCamera *cam)
 glm::mat4
 vkdf_camera_get_view_matrix(VkdfCamera *cam)
 {
-   if (cam->dirty_view_matrix) {
+   if (bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT)) {
       cam->view_matrix =
          vkdf_compute_view_matrix_for_rotation(cam->pos, cam->rot);
-      cam->dirty_view_matrix = false;
+      bitfield_unset(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
    }
    return cam->view_matrix;
 }
@@ -145,9 +149,9 @@ vkdf_camera_get_view_matrix(VkdfCamera *cam)
 glm::mat4
 vkdf_camera_get_rotation_matrix(VkdfCamera *cam)
 {
-   if (cam->dirty_rot_matrix) {
+   if (bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_ROT_MAT)) {
       cam->rot_matrix = vkdf_compute_rotation_matrix(cam->rot);
-      cam->dirty_rot_matrix = false;
+      bitfield_unset(&cam->dirty, VKDF_CAMERA_DIRTY_ROT_MAT);
    }
    return cam->rot_matrix;
 }
@@ -171,10 +175,11 @@ vkdf_camera_step(VkdfCamera *cam, float d, int stepX, int stepY, int stepZ)
    cam->pos.x += view.x * d;
    cam->pos.y += view.y * d;
    cam->pos.z += view.z * d;
-   cam->dirty = true;
-   cam->dirty_position = true;
-   cam->dirty_frustum = true;
-   cam->dirty_view_matrix = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_POS);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
 }
 
 /**
@@ -191,10 +196,11 @@ vkdf_camera_strafe(VkdfCamera *cam, float d)
    cam->pos.x += strafe.x * d;
    cam->pos.y += strafe.y * d;
    cam->pos.z += strafe.z * d;
-   cam->dirty = true;
-   cam->dirty_position = true;
-   cam->dirty_frustum = true;
-   cam->dirty_view_matrix = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_POS);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
 }
 
 /**
@@ -204,11 +210,12 @@ void
 vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z)
 {
    cam->rot = vkdf_compute_view_rotation(cam->pos, glm::vec3(x, y, z));
-   cam->dirty = true;
-   cam->dirty_frustum = true;
-   cam->dirty_viewdir = true;
-   cam->dirty_view_matrix = true;
-   cam->dirty_rot_matrix = true;
+
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_VIEW_MAT);
+   bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY_ROT_MAT);
 }
 
 static inline void
@@ -219,13 +226,13 @@ compute_frustum(VkdfCamera *cam)
                         cam->proj.near_plane, cam->proj.far_plane,
                         cam->proj.fov, cam->proj.aspect_ratio);
 
-   cam->dirty_frustum = false;
+   bitfield_unset(&cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM);
 }
 
 const VkdfBox *
 vkdf_camera_get_frustum_box(VkdfCamera *cam)
 {
-   if (cam->dirty_frustum)
+   if (bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM))
       compute_frustum(cam);
 
    return vkdf_frustum_get_box(&cam->frustum);
@@ -234,7 +241,7 @@ vkdf_camera_get_frustum_box(VkdfCamera *cam)
 const glm::vec3 *
 vkdf_camera_get_frustum_vertices(VkdfCamera *cam)
 {
-   if (cam->dirty_frustum)
+   if (bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM))
       compute_frustum(cam);
 
    return vkdf_frustum_get_vertices(&cam->frustum);
@@ -243,7 +250,7 @@ vkdf_camera_get_frustum_vertices(VkdfCamera *cam)
 const VkdfPlane *
 vkdf_camera_get_frustum_planes(VkdfCamera *cam)
 {
-   if (cam->dirty_frustum)
+   if (bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_FRUSTUM))
       compute_frustum(cam);
 
    return vkdf_frustum_get_planes(&cam->frustum);

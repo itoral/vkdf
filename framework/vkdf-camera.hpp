@@ -1,6 +1,15 @@
 #ifndef __VKDF_CAMERA_H__
 #define __VKDF_CAMERA_H__
 
+enum {
+   VKDF_CAMERA_DIRTY             = (1 << 0),
+   VKDF_CAMERA_DIRTY_POS         = (1 << 1),
+   VKDF_CAMERA_DIRTY_VIEW_DIR    = (1 << 2),
+   VKDF_CAMERA_DIRTY_VIEW_MAT    = (1 << 3),
+   VKDF_CAMERA_DIRTY_ROT_MAT     = (1 << 4),
+   VKDF_CAMERA_DIRTY_FRUSTUM     = (1 << 5),
+};
+
 typedef struct {
    struct {
       float fov;
@@ -19,15 +28,7 @@ typedef struct {
 
    VkdfFrustum frustum;
 
-   /* If you add new flags here, check if they need to be cleared in
-    * vkdf_camera_set_dirty()
-    */
-   bool dirty;
-   bool dirty_position;
-   bool dirty_viewdir;
-   bool dirty_view_matrix;
-   bool dirty_rot_matrix;
-   bool dirty_frustum;
+   uint32_t dirty;
 } VkdfCamera;
 
 VkdfCamera *
@@ -83,36 +84,44 @@ vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z);
 inline bool
 vkdf_camera_is_dirty(VkdfCamera *cam)
 {
-   return cam->dirty;
+   return (bool) cam->dirty;
 }
 
 inline bool
 vkdf_camera_has_dirty_position(VkdfCamera *cam)
 {
-   assert(!cam->dirty_position || cam->dirty);
-   return cam->dirty_position;
+   assert(!bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_POS) ||
+          bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY));
+
+   return bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_POS);
 }
 
 inline bool
 vkdf_camera_has_dirty_viewdir(VkdfCamera *cam)
 {
-   assert(!cam->dirty_viewdir || cam->dirty);
-   return cam->dirty_viewdir;
+   assert(!bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR) ||
+          bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY));
+
+   return bitfield_get(cam->dirty, VKDF_CAMERA_DIRTY_VIEW_DIR);
 }
 
 inline void
 vkdf_camera_set_dirty(VkdfCamera *cam, bool dirty)
 {
-   cam->dirty = dirty;
+   if (dirty)
+      bitfield_set(&cam->dirty, VKDF_CAMERA_DIRTY);
+   else
+      bitfield_unset(&cam->dirty, VKDF_CAMERA_DIRTY);
+
    if (!dirty) {
       /* Most of our dirty states relate to cached data, in the sense that when
-       * they are False it means that we can reused cached data. We use them to
+       * they are False it means that we can reuse cached data. We use them to
        * save us from doing redundant expensive computations. When the user
        * signals that the camera is no longer dirty, it means that it is done
        * using it in that frame, but that doesn't invalidate any cached data,
        * so here we only clear flags that are not used for caching purposes.
        */
-      cam->dirty_position = false;
+      bitfield_unset(&cam->dirty, VKDF_CAMERA_DIRTY_POS);
    }
 }
 
