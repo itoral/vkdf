@@ -757,7 +757,7 @@ init_scene(SceneResources *res)
    VkdfSceneShadowSpec shadow_spec;
    vkdf_scene_shadow_spec_set(&shadow_spec,
                               SHADOW_MAP_SIZE,
-                              5.0f, 110.0f,  // Near, Far
+                              0.1f, 90.0f,  // Near, Far
                               SHADOW_MAP_CONST_BIAS, SHADOW_MAP_SLOPE_BIAS,
                               SHADOW_MAP_PCF_SIZE);
 
