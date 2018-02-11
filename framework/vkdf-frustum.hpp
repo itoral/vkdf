@@ -44,6 +44,12 @@ vkdf_frustum_compute(VkdfFrustum *f,
                      float fov,
                      float aspect_ratio);
 
+void
+vkdf_frustum_compute_planes(VkdfFrustum *f);
+
+void
+vkdf_frustum_compute_box(VkdfFrustum *f);
+
 inline const glm::vec3 *
 vkdf_frustum_get_vertices(const VkdfFrustum *f)
 {

@@ -46,8 +46,8 @@ frustum_compute_vertices(VkdfFrustum *f,
    f->vertices[FRUSTUM_NBL] = near_bottom + right_vector * (-near_width);
 }
 
-static void
-frustum_compute_planes(VkdfFrustum *f)
+void
+vkdf_frustum_compute_planes(VkdfFrustum *f)
 {
    glm::vec3 *v = f->vertices;
    VkdfPlane *p = f->planes;
@@ -73,8 +73,8 @@ frustum_compute_planes(VkdfFrustum *f)
    f->has_planes = true;
 }
 
-static void
-frustum_compute_box(VkdfFrustum *f)
+void
+vkdf_frustum_compute_box(VkdfFrustum *f)
 {
    glm::vec3 box_min = f->vertices[0];
    glm::vec3 box_max = f->vertices[0];
@@ -122,8 +122,8 @@ vkdf_frustum_compute(VkdfFrustum *f,
                             near_dist, far_dist, fov, aspect_ratio);
 
    if (compute_planes)
-      frustum_compute_planes(f);
+      vkdf_frustum_compute_planes(f);
 
    if (compute_box)
-      frustum_compute_box(f);
+      vkdf_frustum_compute_box(f);
 }
