@@ -1897,14 +1897,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 
    if (SHOW_DEBUG_TILE) {
       // Select source image for debug output.
-      if (res->scene->ssao.enabled) {
-         VkdfImage *ssao_image = vkdf_scene_get_ssao_image(res->scene);
-         res->debug.image = *ssao_image;
-      } else if (!ENABLE_DEFERRED_RENDERING) {
-         res->debug.image = res->scene->lights[0]->shadow.shadow_map;
-      } else {
-         res->debug.image = res->scene->rt.gbuffer[0];
-      }
+      res->debug.image = res->scene->lights[0]->shadow.shadow_map;
 
       init_debug_tile_resources(res);
    }
