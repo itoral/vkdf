@@ -93,6 +93,13 @@ vkdf_camera_has_dirty_position(VkdfCamera *cam)
    return cam->dirty_position;
 }
 
+inline bool
+vkdf_camera_has_dirty_viewdir(VkdfCamera *cam)
+{
+   assert(!cam->dirty_viewdir || cam->dirty);
+   return cam->dirty_viewdir;
+}
+
 inline void
 vkdf_camera_set_dirty(VkdfCamera *cam, bool dirty)
 {
