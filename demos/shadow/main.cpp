@@ -106,7 +106,7 @@ typedef struct {
    // Light source
    VkdfLight *light;
    glm::mat4 light_projection;
-   glm::mat4 light_view;
+   const glm::mat4 *light_view;
 
    // Light UBOs (Light description and View/Projection matrix)
    VkdfBuffer Light_ubo;
@@ -1903,7 +1903,7 @@ scene_update(VkdfContext *ctx, void *data)
 
       // Light View/Projection
       res->light_view = vkdf_light_get_view_matrix(res->light);
-      glm::mat4 vp = res->light_projection * res->light_view;
+      glm::mat4 vp = res->light_projection * (*res->light_view);
 
       vkdf_buffer_map_and_fill(ctx, res->Light_VP_ubo,
                                0, sizeof(glm::mat4), &vp[0][0]);

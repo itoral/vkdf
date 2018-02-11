@@ -28,25 +28,17 @@ typedef struct {
       float padding[0];            // Keep this struct 16-byte aligned
    } spot;
 
+   glm::mat4 view_matrix;       // View matrix for the light
+   glm::mat4 view_matrix_inv;
+
    float intensity;             // From 0 (no light) to 1 (full intensity)
    uint32_t casts_shadows;
    uint32_t dirty;              // Whether the light has been updated
    uint32_t dirty_shadows;      // Whether a light update affects shadow mapping
-   float padding[0];            // Keep this struct 16-byte aligned
+   uint32_t dirty_view_matrix;  // Whether a ligt update affects the view matrix
+   uint32_t dirty_view_matrix_inv;
+   float padding[2];            // Keep this struct 16-byte aligned
 } VkdfLight;
-
-#define SET_FIELD(light, field, value) \
-{                                      \
-   field = value;                      \
-   light->dirty = (uint32_t) true;     \
-}
-
-#define SET_FIELD_SHADOW(light, field, value)  \
-{                                              \
-   field = value;                              \
-   light->dirty = (uint32_t) true;             \
-   light->dirty_shadows = (uint32_t) true;     \
-}
 
 VkdfLight *
 vkdf_light_new_directional(glm::vec4 dir,
@@ -72,7 +64,10 @@ vkdf_light_new_spotlight(glm::vec4 pos,
 void inline
 vkdf_light_set_type(VkdfLight *l, uint32_t light_type)
 {
-   SET_FIELD_SHADOW(l, l->origin.w, (float) light_type);
+   l->origin.w = (float) light_type;
+   l->dirty = true;
+   l->dirty_shadows = true;
+   l->dirty_view_matrix = true;
 }
 
 uint32_t inline
@@ -85,8 +80,10 @@ void inline
 vkdf_light_set_position(VkdfLight *l, glm::vec3 pos)
 {
    assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
-   glm::vec4 p = vec4(pos, l->origin.w);
-   SET_FIELD_SHADOW(l, l->origin, p);
+   l->origin = vec4(pos, l->origin.w);
+   l->dirty = true;
+   l->dirty_shadows = true;
+   l->dirty_view_matrix = true;
 }
 
 glm::vec4 inline
@@ -100,8 +97,10 @@ void inline
 vkdf_light_set_direction(VkdfLight *l, glm::vec3 dir)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL);
-   glm::vec4 d = vec4(dir, l->origin.w);
-   SET_FIELD_SHADOW(l, l->origin, d);
+   l->origin = vec4(dir, l->origin.w);
+   l->dirty = true;
+   l->dirty_shadows = true;
+   l->dirty_view_matrix = true;
 }
 
 glm::vec4 inline
@@ -118,7 +117,8 @@ vkdf_light_get_direction(VkdfLight *l)
 void inline
 vkdf_light_set_diffuse(VkdfLight *l, glm::vec4 color)
 {
-   SET_FIELD(l, l->diffuse, color);
+   l->diffuse = color;
+   l->dirty = true;
 }
 
 glm::vec4 inline
@@ -130,7 +130,8 @@ vkdf_light_get_diffuse(VkdfLight *l)
 void inline
 vkdf_light_set_ambient(VkdfLight *l, glm::vec4 color)
 {
-   SET_FIELD(l, l->ambient, color);
+   l->ambient = color;
+   l->dirty = true;
 }
 
 glm::vec4 inline
@@ -142,7 +143,8 @@ vkdf_light_get_ambient(VkdfLight *l)
 void inline
 vkdf_light_set_specular(VkdfLight *l, glm::vec4 color)
 {
-   SET_FIELD(l, l->specular, color);
+   l->specular = color;
+   l->dirty = true;
 }
 
 glm::vec4 inline
@@ -154,7 +156,9 @@ vkdf_light_get_specular(VkdfLight *l)
 void inline
 vkdf_light_set_attenuation(VkdfLight *l, glm::vec4 attenuation)
 {
-   SET_FIELD(l, l->attenuation, attenuation);
+   l->attenuation = attenuation;
+   l->dirty = true;
+
 }
 
 glm::vec4 inline
@@ -167,8 +171,11 @@ void inline
 vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   SET_FIELD_SHADOW(l, l->spot.cutoff_angle, angle);
-   SET_FIELD_SHADOW(l, l->spot.cutoff, cosf(l->spot.cutoff_angle));
+   l->spot.cutoff_angle = angle;
+   l->spot.cutoff = cosf(l->spot.cutoff_angle);
+   l->dirty = true;
+   l->dirty_shadows = true;
+   l->dirty_view_matrix = true;
 }
 
 /* The cutoff angle is half of the aperture angle of the spotlight */
@@ -205,10 +212,12 @@ void inline
 vkdf_light_set_rotation(VkdfLight *l, glm::vec3 rot)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   SET_FIELD_SHADOW(l, l->spot.priv.rot, glm::vec4(rot, 0.0f));
-   SET_FIELD_SHADOW(l, l->spot.priv.dir,
-                    glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)),
-                    0.0f));
+   l->spot.priv.rot = glm::vec4(rot, 0.0f);
+   l->spot.priv.dir =
+      glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)), 0.0f);
+   l->dirty = true;
+   l->dirty_shadows = true;
+   l->dirty_view_matrix = true;
 }
 
 glm::vec3 inline
@@ -222,7 +231,8 @@ void inline
 vkdf_light_set_angle_dist_factor(VkdfLight *l, float factor)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   SET_FIELD(l, l->spot.angle_dist_factor, factor);
+   l->spot.angle_dist_factor = factor;
+   l->dirty = true;
 }
 
 float inline
@@ -236,7 +246,8 @@ void inline
 vkdf_light_set_ambient_clamp_factor(VkdfLight *l, float factor)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   SET_FIELD(l, l->spot.ambient_clamp_factor, factor);
+   l->spot.ambient_clamp_factor = factor;
+   l->dirty = true;
 }
 
 float inline
@@ -249,7 +260,9 @@ vkdf_light_get_ambient_clamp_factor(VkdfLight *l)
 void inline
 vkdf_light_enable_shadows(VkdfLight *l, bool enable)
 {
-   SET_FIELD_SHADOW(l, l->casts_shadows, (uint32_t) enable);
+   l->casts_shadows = (uint32_t) enable;
+   l->dirty = true;
+   l->dirty_shadows = true;
 }
 
 bool inline
@@ -265,22 +278,11 @@ vkdf_light_look_at(VkdfLight *l, glm::vec3 target)
    vkdf_light_set_rotation(l, rot);
 }
 
-glm::mat4 inline
-vkdf_light_get_view_matrix(VkdfLight *l)
-{
-   switch (vkdf_light_get_type(l)) {
-   case VKDF_LIGHT_SPOTLIGHT:
-      return vkdf_compute_view_matrix_for_rotation(glm::vec3(l->origin),
-                                                   glm::vec3(l->spot.priv.rot));
-   case VKDF_LIGHT_DIRECTIONAL:
-      // The result needs to be translated to the camera position by the caller
-      return vkdf_compute_view_matrix_for_direction(glm::vec3(l->origin));
-   default:
-      // FIXME: point lights
-      assert(!"not implemented");
-      break;
-   };
-}
+const glm::mat4 *
+vkdf_light_get_view_matrix(VkdfLight *l);
+
+const glm::mat4 *
+vkdf_light_get_view_matrix_inv(VkdfLight *l);
 
 void inline
 vkdf_light_set_dirty(VkdfLight *l, bool dirty)
@@ -316,7 +318,8 @@ vkdf_light_has_dirty_shadows(VkdfLight *l)
 inline void
 vkdf_light_set_intensity(VkdfLight *l, float intensity)
 {
-   SET_FIELD(l, l->intensity, intensity);
+   l->intensity = intensity;
+   l->dirty = true;
 }
 
 inline float
@@ -327,7 +330,5 @@ vkdf_light_get_intensity(VkdfLight *l)
 
 void
 vkdf_light_free(VkdfLight *light);
-
-#undef SET_FIELD
 
 #endif

@@ -13,6 +13,7 @@ init_light(VkdfLight *l,
    l->attenuation = attenuation;
    l->intensity = 1.0f;
    l->dirty = true;
+   l->dirty_view_matrix = true;
 }
 
 VkdfLight *
@@ -62,6 +63,51 @@ vkdf_light_new_spotlight(glm::vec4 pos,
    vkdf_light_set_cutoff_angle(l, cutoff_angle);
    return l;
 }
+
+const glm::mat4 *
+vkdf_light_get_view_matrix(VkdfLight *l)
+{
+   if (!l->dirty_view_matrix)
+      return &l->view_matrix;
+
+   switch (vkdf_light_get_type(l)) {
+   case VKDF_LIGHT_SPOTLIGHT:
+      l->view_matrix =
+         vkdf_compute_view_matrix_for_rotation(glm::vec3(l->origin),
+                                               glm::vec3(l->spot.priv.rot));
+      break;
+   case VKDF_LIGHT_DIRECTIONAL:
+      // The result needs to be translated to the shadow box center by
+      // the caller
+      l->view_matrix =
+         vkdf_compute_view_matrix_for_direction(glm::vec3(l->origin));
+      break;
+   default:
+      // FIXME: point lights
+      assert(!"not implemented");
+      break;
+   };
+
+   l->dirty_view_matrix = false;
+   return &l->view_matrix;
+}
+
+const glm::mat4 *
+vkdf_light_get_view_matrix_inv(VkdfLight *l)
+{
+   if (l->dirty_view_matrix) {
+      vkdf_light_get_view_matrix(l);
+      l->dirty_view_matrix_inv = true;
+   }
+
+   if (l->dirty_view_matrix_inv) {
+      l->view_matrix_inv = glm::inverse(l->view_matrix);
+      l->dirty_view_matrix_inv = false;
+   }
+
+   return &l->view_matrix_inv;
+}
+
 
 void
 vkdf_light_free(VkdfLight *light)

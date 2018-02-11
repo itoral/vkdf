@@ -11,10 +11,15 @@ struct Light
    float spot_cutoff_angle;
    float spot_angle_dist_factor;
    float spot_ambient_clamp_factor;
+   mat4 view_matrix;
+   mat4 view_matrix_inv;
    float intensity;
    bool casts_shadows;
    bool dirty;
    bool dirty_shadows;
+   bool dirty_view_matrix;
+   bool dirty_view_matrix_inv;
+   uint pad0, pad1;
 };
 
 struct Material

@@ -876,9 +876,9 @@ compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
                         cam->proj.fov, cam->proj.aspect_ratio);
 
    /* Translate frustum to light-space to compute shadow box dimensions */
-   glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
+   const glm::mat4 *view = vkdf_light_get_view_matrix(sl->light);
    for (uint32_t i = 0; i < 8; i++) {
-      f.vertices[i] = view * vec4(f.vertices[i], 1.0f);
+      f.vertices[i] = (*view) * vec4(f.vertices[i], 1.0f);
    }
    vkdf_frustum_compute_box(&f);
 
@@ -938,19 +938,22 @@ compute_light_projection(VkdfScene *s, VkdfSceneLight *sl)
 static inline void
 compute_light_view_projection(VkdfScene *s, VkdfSceneLight *sl)
 {
-   glm::mat4 view = vkdf_light_get_view_matrix(sl->light);
-
-   // The view matrix for directional lights needs to be translated to the
-   // center of its shadow box in world-space.
-   if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_DIRECTIONAL) {
-      glm::mat4 view_inv = glm::inverse(view);
-      glm::vec3 offset = vec3(view_inv * vec4(sl->shadow.box.center, 1.0f));
-      glm::vec3 dir = vkdf_camera_get_viewdir(s->camera);
-      offset += dir * sl->shadow.spec.directional.offset;
-      view = glm::translate(view, -offset);
+   const glm::mat4 *view = vkdf_light_get_view_matrix(sl->light);
+   if (vkdf_light_get_type(sl->light) != VKDF_LIGHT_DIRECTIONAL) {
+      sl->shadow.viewproj = sl->shadow.proj * (*view);
+      return;
    }
 
-   sl->shadow.viewproj = sl->shadow.proj * view;
+   /* The view matrix for directional lights needs to be translated to the
+    * center of its shadow box in world-space.
+    */
+   glm::mat4 final_view;
+   const glm::mat4 *view_inv = vkdf_light_get_view_matrix_inv(sl->light);
+   glm::vec3 offset = vec3((*view_inv) * vec4(sl->shadow.box.center, 1.0f));
+   glm::vec3 dir = vkdf_camera_get_viewdir(s->camera);
+   offset += dir * sl->shadow.spec.directional.offset;
+   final_view = glm::translate((*view), -offset);
+   sl->shadow.viewproj = sl->shadow.proj * final_view;
 }
 
 static void
