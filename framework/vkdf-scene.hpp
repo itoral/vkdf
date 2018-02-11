@@ -593,14 +593,16 @@ vkdf_scene_get_shadow_map_ubo_range(VkdfScene *s,
 inline VkSampler
 vkdf_scene_light_get_shadow_map_sampler(VkdfScene *s, uint32_t index)
 {
-   assert(index < s->lights.size());
+   assert(index < s->lights.size() &&
+          vkdf_light_casts_shadows(s->lights[index]->light));
    return s->lights[index]->shadow.sampler;
 }
 
 inline VkdfImage *
 vkdf_scene_light_get_shadow_map_image(VkdfScene *s, uint32_t index)
 {
-   assert(index < s->lights.size());
+   assert(index < s->lights.size() &&
+          vkdf_light_casts_shadows(s->lights[index]->light));
    return &s->lights[index]->shadow.shadow_map;
 }
 
