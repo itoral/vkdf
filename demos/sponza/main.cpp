@@ -747,8 +747,6 @@ init_scene(SceneResources *res)
    res->light =
       vkdf_light_new_directional(direction, diffuse, ambient, specular);
 
-   vkdf_light_enable_shadows(res->light, true);
-
    /* NOTE: in deferred rendering, the number of bits used to store the
     * light space position is very important for quality. If we only use
     * 16-bits, we can see some very noticeable artifacts in some places.

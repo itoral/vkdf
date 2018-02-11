@@ -934,11 +934,12 @@ vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *spec)
 {
-   assert(vkdf_light_casts_shadows(light) == (spec != NULL));
-
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
-   if (light->casts_shadows) {
+
+   vkdf_light_enable_shadows(light, spec != NULL);
+
+   if (spec) {
       assert(spec->pcf_kernel_size >= 1);
       slight->shadow.spec = *spec;
       slight->shadow.shadow_map =
