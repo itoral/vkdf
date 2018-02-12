@@ -390,14 +390,33 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
    if (res != VK_SUCCESS)
       vkdf_fatal("Failed to query surface formats\n");
 
-   // If the format list includes just one entry of VK_FORMAT_UNDEFINED,
-   // the surface has no preferred format. Otherwise, at least one
-   // supported format will be returned.
+   /* If the format list includes just one entry of VK_FORMAT_UNDEFINED,
+    * the surface has no preferred format and we can use any valid VkFormat.
+    * Otherwise, at least one supported format will be returned.
+    *
+    * We select an sRGB format if possible, otherwise we just take whatever
+    * we are given.
+    */
    if (num_formats == 1 && formats[0].format == VK_FORMAT_UNDEFINED) {
-       ctx->surface_format = VK_FORMAT_R8G8B8A8_UNORM;
+       ctx->surface_format = VK_FORMAT_R8G8B8A8_SRGB;
    } else {
       assert(num_formats >= 1);
-      ctx->surface_format = formats[0].format;
+
+      /* Choose sRGB if available */
+      uint32_t idx = 0;
+      for (; idx < num_formats; idx++) {
+         if (formats[idx].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            break;
+         }
+      }
+
+      if (idx == num_formats) {
+         idx = 0;
+         vkdf_error("No sRGB presentation surface available. "
+                    "Using format 0x%x",formats[idx].format);
+      }
+
+      ctx->surface_format = formats[idx].format;
    }
 
    g_free(formats);
