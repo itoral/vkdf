@@ -78,6 +78,7 @@ vkdf_model_compute_box(VkdfModel *model);
 void
 vkdf_model_load_textures(VkdfContext *ctx,
                          VkCommandPool pool,
-                         VkdfModel *model);
+                         VkdfModel *model,
+                         bool color_is_srgb);
 
 #endif

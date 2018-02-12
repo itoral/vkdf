@@ -508,7 +508,8 @@ vkdf_model_compute_box(VkdfModel *model)
 void
 vkdf_model_load_textures(VkdfContext *ctx,
                          VkCommandPool pool,
-                         VkdfModel *model)
+                         VkdfModel *model,
+                         bool color_is_srgb)
 {
    for (uint32_t i = 0; i < model->materials.size(); i++) {
       VkdfMaterial *mat = &model->materials[i];
@@ -517,7 +518,8 @@ vkdf_model_load_textures(VkdfContext *ctx,
       if (mat->diffuse_tex_count > 0) {
          assert(tex->diffuse_path);
          if (!vkdf_load_image_from_file(ctx, pool,
-                                        tex->diffuse_path, &tex->diffuse)) {
+                                        tex->diffuse_path, &tex->diffuse,
+                                        color_is_srgb)) {
             mat->diffuse_tex_count = 0;
          }
       }
@@ -525,7 +527,8 @@ vkdf_model_load_textures(VkdfContext *ctx,
       if (mat->specular_tex_count > 0) {
          assert(tex->specular_path);
          if (!vkdf_load_image_from_file(ctx, pool,
-                                        tex->specular_path, &tex->specular)) {
+                                        tex->specular_path, &tex->specular,
+                                        false)) {
             mat->specular_tex_count = 0;
          }
       }
@@ -533,7 +536,8 @@ vkdf_model_load_textures(VkdfContext *ctx,
       if (mat->normal_tex_count > 0) {
          assert(tex->normal_path);
          if (!vkdf_load_image_from_file(ctx, pool,
-                                        tex->normal_path, &tex->normal)) {
+                                        tex->normal_path, &tex->normal,
+                                        false)) {
             mat->normal_tex_count = 0;
          }
       }
@@ -541,7 +545,8 @@ vkdf_model_load_textures(VkdfContext *ctx,
       if (mat->opacity_tex_count > 0) {
          assert(tex->opacity_path);
          if (!vkdf_load_image_from_file(ctx, pool,
-                                        tex->opacity_path, &tex->opacity)) {
+                                        tex->opacity_path, &tex->opacity,
+                                        false)) {
             mat->opacity_tex_count = 0;
          }
       }

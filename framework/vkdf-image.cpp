@@ -545,17 +545,17 @@ create_image_from_data(VkdfContext *ctx,
 }
 
 static VkFormat
-guess_format_from_bpp(uint32_t bpp)
+guess_format_from_bpp(uint32_t bpp, bool is_srgb)
 {
    switch (bpp) {
       case 32:
-         return VK_FORMAT_R8G8B8A8_UNORM;
+         return is_srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
       case 24:
-         return VK_FORMAT_R8G8B8_UNORM;
+         return is_srgb ? VK_FORMAT_R8G8B8_SRGB : VK_FORMAT_R8G8B8_UNORM;
       case 16:
-         return VK_FORMAT_R8G8_UNORM;
+         return is_srgb ? VK_FORMAT_R8G8_SRGB : VK_FORMAT_R8G8_UNORM;
       case 8:
-         return VK_FORMAT_R8_UNORM;
+         return is_srgb ? VK_FORMAT_R8_SRGB : VK_FORMAT_R8_UNORM;
       default:
          vkdf_error("Unsupported image format (bpp = %u)", bpp);
          return VK_FORMAT_UNDEFINED;
@@ -573,6 +573,7 @@ get_bpp_for_format(VkFormat format)
       case VK_FORMAT_R16G16B16A16_SFLOAT:
          return 64;
       case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SRGB:
          return 32;
 
       /* RGB */
@@ -581,6 +582,7 @@ get_bpp_for_format(VkFormat format)
       case VK_FORMAT_R16G16B16_SFLOAT:
          return 48;
       case VK_FORMAT_R8G8B8_UNORM:
+      case VK_FORMAT_R8G8B8_SRGB:
          return 24;
 
       /* RG */
@@ -589,6 +591,7 @@ get_bpp_for_format(VkFormat format)
       case VK_FORMAT_R16G16_SFLOAT:
          return 32;
       case VK_FORMAT_R8G8_UNORM:
+      case VK_FORMAT_R8G8_SRGB:
          return 16;
 
       /* R */
@@ -597,6 +600,7 @@ get_bpp_for_format(VkFormat format)
       case VK_FORMAT_R16_SFLOAT:
          return 16;
       case VK_FORMAT_R8_UNORM:
+      case VK_FORMAT_R8_SRGB:
          return 8;
 
       default:
@@ -614,6 +618,7 @@ guess_swizzle_from_format(VkFormat format, VkComponentSwizzle *swz)
       case VK_FORMAT_R32G32B32A32_SFLOAT:
       case VK_FORMAT_R16G16B16A16_SFLOAT:
       case VK_FORMAT_R8G8B8A8_UNORM:
+      case VK_FORMAT_R8G8B8A8_SRGB:
          swz[0] = VK_COMPONENT_SWIZZLE_R;
          swz[1] = VK_COMPONENT_SWIZZLE_G;
          swz[2] = VK_COMPONENT_SWIZZLE_B;
@@ -624,6 +629,7 @@ guess_swizzle_from_format(VkFormat format, VkComponentSwizzle *swz)
       case VK_FORMAT_R32G32B32_SFLOAT:
       case VK_FORMAT_R16G16B16_SFLOAT:
       case VK_FORMAT_R8G8B8_UNORM:
+      case VK_FORMAT_R8G8B8_SRGB:
          swz[0] = VK_COMPONENT_SWIZZLE_R;
          swz[1] = VK_COMPONENT_SWIZZLE_G;
          swz[2] = VK_COMPONENT_SWIZZLE_B;
@@ -634,6 +640,7 @@ guess_swizzle_from_format(VkFormat format, VkComponentSwizzle *swz)
       case VK_FORMAT_R32G32_SFLOAT:
       case VK_FORMAT_R16G16_SFLOAT:
       case VK_FORMAT_R8G8_UNORM:
+      case VK_FORMAT_R8G8_SRGB:
          swz[0] = VK_COMPONENT_SWIZZLE_R;
          swz[1] = VK_COMPONENT_SWIZZLE_G;
          swz[2] = VK_COMPONENT_SWIZZLE_ZERO;
@@ -641,9 +648,10 @@ guess_swizzle_from_format(VkFormat format, VkComponentSwizzle *swz)
          break;
 
       /* R */
-      case VK_FORMAT_R32_SFLOAT:
+      case VK_FORMAT_R32_SFLOAT:  /* Assume it represents intensity */
       case VK_FORMAT_R16_SFLOAT:
-      case VK_FORMAT_R8_UNORM: /* Assume it represents intensity */
+      case VK_FORMAT_R8_UNORM:
+      case VK_FORMAT_R8_SRGB:
          swz[0] = VK_COMPONENT_SWIZZLE_R;
          swz[1] = VK_COMPONENT_SWIZZLE_R;
          swz[2] = VK_COMPONENT_SWIZZLE_R;
@@ -664,7 +672,8 @@ bool
 vkdf_load_image_from_file(VkdfContext *ctx,
                           VkCommandPool pool,
                           const char *path,
-                          VkdfImage *image)
+                          VkdfImage *image,
+                          bool is_srgb)
 {
    memset(image, 0, sizeof(VkdfImage));
 
@@ -677,7 +686,7 @@ vkdf_load_image_from_file(VkdfContext *ctx,
 
    // Get pixel size and format
    uint32_t bpp = compute_bpp_from_sdl_surface(surf);
-   VkFormat format = guess_format_from_bpp(bpp);
+   VkFormat format = guess_format_from_bpp(bpp, is_srgb);
    assert(format != VK_FORMAT_UNDEFINED);
 
    uint32_t has_component_masks =

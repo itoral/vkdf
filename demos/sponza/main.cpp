@@ -1600,7 +1600,7 @@ init_meshes(SceneResources *res)
    // Sponza model
    res->sponza_model = vkdf_model_load("./sponza.obj");
    vkdf_model_fill_vertex_buffers(res->ctx, res->sponza_model, true);
-   vkdf_model_load_textures(res->ctx, res->cmd_pool, res->sponza_model);
+   vkdf_model_load_textures(res->ctx, res->cmd_pool, res->sponza_model, true);
 
    if (SHOW_SPONZA_FLAG_MESH == false)
       res->sponza_model->meshes[SPONZA_FLAG_MESH_IDX]->active = false;
