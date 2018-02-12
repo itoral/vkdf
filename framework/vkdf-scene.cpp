@@ -376,7 +376,8 @@ vkdf_scene_new(VkdfContext *ctx,
                                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                   32);
 
-   create_render_target(s, s->ctx->width, s->ctx->height, s->ctx->surface_format);
+   create_render_target(s, s->ctx->width, s->ctx->height,
+                        VK_FORMAT_R8G8B8A8_UNORM);
 
    return s;
 }

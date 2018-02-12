@@ -205,6 +205,35 @@ vkdf_create_image_copy_region(VkImageSubresourceLayers src_subresource_layers,
    return region;
 }
 
+VkImageBlit
+vkdf_create_image_blit_region(VkImageSubresourceLayers src_subresource_layers,
+                              glm::uvec3 src_offset,
+                              glm::uvec3 src_size,
+                              VkImageSubresourceLayers dst_subresource_layers,
+                              glm::uvec3 dst_offset,
+                              glm::uvec3 dst_size)
+{
+   VkImageBlit region = {};
+
+   region.srcSubresource = src_subresource_layers;
+   region.srcOffsets[0].x = src_offset.x;
+   region.srcOffsets[0].y = src_offset.y;
+   region.srcOffsets[0].z = src_offset.z;
+   region.srcOffsets[1].x = src_offset.x + src_size.x;
+   region.srcOffsets[1].y = src_offset.y + src_size.y;
+   region.srcOffsets[1].z = src_offset.z + src_size.z;
+
+   region.dstSubresource = dst_subresource_layers;
+   region.dstOffsets[0].x = dst_offset.x;
+   region.dstOffsets[0].y = dst_offset.y;
+   region.dstOffsets[0].z = dst_offset.z;
+   region.dstOffsets[1].x = dst_offset.x + dst_size.x;
+   region.dstOffsets[1].y = dst_offset.y + dst_size.y;
+   region.dstOffsets[1].z = dst_offset.z + dst_size.z;
+
+   return region;
+}
+
 void
 vkdf_image_set_layout(VkdfContext *ctx,
                       VkCommandBuffer cmd_buf,

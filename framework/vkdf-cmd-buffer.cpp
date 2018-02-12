@@ -211,18 +211,22 @@ present_commands(VkdfContext *ctx,
    VkImageSubresourceLayers subresource_layers =
       vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1);
 
-   VkImageCopy region =
-      vkdf_create_image_copy_region(subresource_layers, 0, 0, 0,
-                                    subresource_layers, 0, 0, 0,
-                                    ctx->width, ctx->height, 1);
+   VkImageBlit region =
+      vkdf_create_image_blit_region(subresource_layers,
+                                    glm::uvec3(0, 0, 0),
+                                    glm::uvec3(ctx->width, ctx->height, 1),
+                                    subresource_layers,
+                                    glm::uvec3(0, 0, 0),
+                                    glm::uvec3(ctx->width, ctx->height, 1));
 
-   vkCmdCopyImage(cmd_bufs[index],
+   vkCmdBlitImage(cmd_bufs[index],
                   image,
                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                   ctx->swap_chain_images[index].image,
                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                   1,
-                  &region);
+                  &region,
+                  VK_FILTER_NEAREST);
 
    // Transition presentation image to presentation layout
    VkImageMemoryBarrier present_barrier =

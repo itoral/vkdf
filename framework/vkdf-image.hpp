@@ -67,6 +67,14 @@ vkdf_create_image_copy_region(VkImageSubresourceLayers src_subresource_layers,
                               uint32_t height,
                               uint32_t depth);
 
+VkImageBlit
+vkdf_create_image_blit_region(VkImageSubresourceLayers src_subresource_layers,
+                              glm::uvec3 src_offset,
+                              glm::uvec3 src_size,
+                              VkImageSubresourceLayers dst_subresource_layers,
+                              glm::uvec3 dst_offset,
+                              glm::uvec3 dst_size);
+
 void
 vkdf_image_set_layout(VkdfContext *ctx,
                       VkCommandBuffer cmd_buf,
