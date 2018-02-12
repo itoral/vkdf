@@ -70,9 +70,18 @@ struct _VkdfContext {
    VkQueue gfx_queue;
    VkQueue pst_queue;
    VkDevice device;
-   uint32_t device_extension_count;
-   const char **device_extensions;
-   VkPhysicalDeviceFeatures device_features;
+
+   /* Extensions and features */
+   uint32_t phy_device_extension_count;             // Available extensions
+   VkExtensionProperties *phy_device_extensions;
+   union {                                          // Enabled extensions
+      bool enabled[2];
+      struct {
+         bool KHR_swapchain;
+         bool KHR_maintenance1;
+      };
+   } device_extensions;
+   VkPhysicalDeviceFeatures device_features;        // Enabled features
 
    // Window and surface
    GLFWwindow *window;

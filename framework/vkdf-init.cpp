@@ -156,6 +156,17 @@ init_physical_device(VkdfContext *ctx)
    vkGetPhysicalDeviceMemoryProperties(ctx->phy_device,
                                        &ctx->phy_device_mem_props);
    vkGetPhysicalDeviceFeatures(ctx->phy_device, &ctx->phy_device_features);
+
+   vkEnumerateDeviceExtensionProperties(ctx->phy_device, NULL,
+                                        &ctx->phy_device_extension_count, NULL);
+
+   if (ctx->phy_device_extension_count > 0) {
+      ctx->phy_device_extensions = g_new(VkExtensionProperties,
+                                         ctx->phy_device_extension_count);
+      vkEnumerateDeviceExtensionProperties(ctx->phy_device, NULL,
+                                           &ctx->phy_device_extension_count,
+                                           ctx->phy_device_extensions);
+   }
 }
 
 static void
@@ -219,6 +230,78 @@ init_queues(VkdfContext *ctx)
    ctx->pst_queue_index = (uint32_t) pst_queue_index;
 }
 
+static bool
+check_extension_supported(VkdfContext *ctx, const char *ext)
+{
+   uint32_t len = strlen(ext);
+   uint32_t idx = 0;
+   for (; idx < ctx->phy_device_extension_count; idx++) {
+      if (!strncmp(ext, ctx->phy_device_extensions[idx].extensionName, len)) {
+         break;
+      }
+   }
+
+   return idx < ctx->phy_device_extension_count;
+}
+
+struct _extension_spec {
+   const char *name;
+   bool required;
+};
+
+static void
+choose_device_extensions(VkdfContext *ctx,
+                         const char ***enabled_extensions,
+                         uint32_t *enabled_extension_count)
+{
+   /* List of extensions to check.
+    *
+    * NOTE: *must* be in the same order as the fields in the
+    *       'device_extensions' union.
+    */
+   static struct _extension_spec extensions[] = {
+      { "VK_KHR_swapchain",            true},
+      { "VK_KHR_maintenance1",         true},
+   };
+
+   const uint32_t num_extensions = sizeof(extensions) / sizeof(extensions[0]);
+
+   /* Sanity check: we must have the same number of extensions here than we
+    * have in the device_extensions union.
+    */
+   assert(num_extensions ==
+          sizeof(ctx->device_extensions) / sizeof(ctx->device_extensions.enabled[0]));
+
+   /* Build the list of extensions to enable */
+   memset(&ctx->device_extensions, 0, sizeof(ctx->device_extensions));
+
+   *enabled_extensions = g_new0(const char *, num_extensions);
+   *enabled_extension_count = 0;
+
+   for (uint32_t i = 0; i < num_extensions; i++) {
+      const char *ext = extensions[i].name;
+      if (!check_extension_supported(ctx, ext)) {
+         if (extensions[i].required)
+            vkdf_fatal("Required extension '%s' not available.\n", ext);
+         else
+            vkdf_info("Optional extension '%s' not available.\n", ext);
+      } else {
+         ctx->device_extensions.enabled[i] = true;
+         (*enabled_extensions)[(*enabled_extension_count)++] = ext;
+      }
+   }
+}
+
+static void
+choose_device_features(VkdfContext *ctx)
+{
+   memset(&ctx->device_features, 0, sizeof(ctx->device_features));
+
+   /* Anisotropic filtering */
+   ctx->device_features.samplerAnisotropy =
+      ctx->phy_device_features.samplerAnisotropy;
+}
+
 static void
 init_logical_device(VkdfContext *ctx)
 {
@@ -231,23 +314,21 @@ init_logical_device(VkdfContext *ctx)
    queue_info.queueCount = 1;
    queue_info.pQueuePriorities = queue_priorities;
 
-   ctx->device_extension_count = 1;
-   ctx->device_extensions = g_new0(const char *, ctx->device_extension_count);
-   ctx->device_extensions[0] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+   /* Choose extensions and features to enable */
+   const char **extension_names;
+   uint32_t extension_count;
+   choose_device_extensions(ctx, &extension_names, &extension_count);
+   choose_device_features(ctx);
 
-   /* We enable some features only if they are supported  */
-   memset(&ctx->device_features, 0, sizeof(ctx->device_features));
-   ctx->device_features.samplerAnisotropy =
-      ctx->phy_device_features.samplerAnisotropy;
-
+   /* Create logical device */
    VkDeviceCreateInfo device_info;
    device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
    device_info.pNext = NULL;
    device_info.flags = 0;   
    device_info.queueCreateInfoCount = 1;
    device_info.pQueueCreateInfos = &queue_info;
-   device_info.enabledExtensionCount = ctx->device_extension_count;
-   device_info.ppEnabledExtensionNames = ctx->device_extensions;
+   device_info.enabledExtensionCount = extension_count;
+   device_info.ppEnabledExtensionNames = extension_names;
    device_info.enabledLayerCount = 0;
    device_info.ppEnabledLayerNames = NULL;
    device_info.pEnabledFeatures = &ctx->device_features;
@@ -262,6 +343,8 @@ init_logical_device(VkdfContext *ctx)
    // FIXME: handle separate queue for presentation
    assert(ctx->gfx_queue_index == ctx->pst_queue_index);
    ctx->pst_queue = ctx->gfx_queue;
+
+   g_free(extension_names);
 }
 
 static void
@@ -540,11 +623,17 @@ destroy_instance(VkdfContext *ctx)
    vkDestroyInstance(ctx->inst, NULL);
 }
 
+static void
+destroy_device(VkdfContext *ctx)
+{
+   vkDestroyDevice(ctx->device, NULL);
+}
+
 void
 vkdf_cleanup(VkdfContext *ctx)
 {
    destroy_swap_chain(ctx);
-   vkDestroyDevice(ctx->device, NULL);
+   destroy_device(ctx);
    vkDestroySurfaceKHR(ctx->inst, ctx->surface, NULL);
    destroy_instance(ctx);
    glfwDestroyWindow(ctx->window);
