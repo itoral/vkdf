@@ -500,8 +500,10 @@ _init_swap_chain(VkdfContext *ctx)
       }
    }
 
-   // Use triple-buffering or double-buffering if available
-   uint32_t swap_chain_size = caps.minImageCount;
+   // Use triple-buffering if available
+   uint32_t swap_chain_size = caps.minImageCount + 1;
+   if (caps.maxImageCount > 0 && swap_chain_size > caps.maxImageCount)
+      swap_chain_size = caps.maxImageCount;
 
    // Presentation transform
    VkSurfaceTransformFlagBitsKHR present_transform;
