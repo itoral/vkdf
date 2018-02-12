@@ -489,15 +489,15 @@ _init_swap_chain(VkdfContext *ctx)
       ctx->height = swap_chain_ext.height;
    }
 
-   // Choose presentation mode, go with FIFO if present
+   // Choose presentation mode: we prefer MAILBOX if present, otherwise
+   // we go with FIFO, which must be supported.
    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-   uint32_t pm_index;
-   for (pm_index = 0; pm_index < present_mode_count; pm_index++) {
-      if (present_modes[pm_index] == VK_PRESENT_MODE_FIFO_KHR)
+   for (uint32_t i = 0; i < present_mode_count; i++) {
+      if (present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+         present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
          break;
+      }
    }
-   if (pm_index >= present_mode_count)
-      present_mode = present_modes[0];
 
    // Use triple-buffering or double-buffering if available
    uint32_t swap_chain_size = caps.minImageCount;
