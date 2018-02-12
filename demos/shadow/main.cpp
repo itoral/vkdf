@@ -219,7 +219,7 @@ create_render_pass(VkdfContext *ctx, SceneResources *res)
    VkAttachmentDescription attachments[2];
 
    // Single color attachment
-   attachments[0].format = ctx->surface_format;
+   attachments[0].format = ctx->surface_format.format;
    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -338,7 +338,7 @@ create_ui_tile_render_pass(VkdfContext *ctx, SceneResources *res)
    VkAttachmentDescription attachments[2];
 
    // Single color attachment
-   attachments[0].format = ctx->surface_format;
+   attachments[0].format = ctx->surface_format.format;
    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -955,7 +955,7 @@ create_color_image(VkdfContext *ctx, uint32_t width, uint32_t height)
                             ctx->height,
                             1,
                             VK_IMAGE_TYPE_2D,
-                            ctx->surface_format,
+                            ctx->surface_format.format,
                             VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                VK_IMAGE_USAGE_TRANSFER_SRC_BIT,

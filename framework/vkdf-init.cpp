@@ -398,7 +398,8 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
     * we are given.
     */
    if (num_formats == 1 && formats[0].format == VK_FORMAT_UNDEFINED) {
-       ctx->surface_format = VK_FORMAT_R8G8B8A8_SRGB;
+       ctx->surface_format.format = VK_FORMAT_R8G8B8A8_SRGB;
+       ctx->surface_format.colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
    } else {
       assert(num_formats >= 1);
 
@@ -416,7 +417,7 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
                     "Using format 0x%x",formats[idx].format);
       }
 
-      ctx->surface_format = formats[idx].format;
+      ctx->surface_format = formats[idx];
    }
 
    g_free(formats);
@@ -515,7 +516,7 @@ _init_swap_chain(VkdfContext *ctx)
    swap_chain_info.pNext = NULL;
    swap_chain_info.surface = ctx->surface;
    swap_chain_info.minImageCount = swap_chain_size;
-   swap_chain_info.imageFormat = ctx->surface_format;
+   swap_chain_info.imageFormat = ctx->surface_format.format;
    swap_chain_info.imageExtent.width = swap_chain_ext.width;
    swap_chain_info.imageExtent.height = swap_chain_ext.height;
    swap_chain_info.preTransform = present_transform;
@@ -524,7 +525,7 @@ _init_swap_chain(VkdfContext *ctx)
    swap_chain_info.presentMode = present_mode;
    swap_chain_info.oldSwapchain = NULL;
    swap_chain_info.clipped = true;
-   swap_chain_info.imageColorSpace = VK_COLORSPACE_SRGB_NONLINEAR_KHR;
+   swap_chain_info.imageColorSpace = ctx->surface_format.colorSpace;
    swap_chain_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                 VK_IMAGE_USAGE_TRANSFER_DST_BIT;
    swap_chain_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -575,7 +576,7 @@ _init_swap_chain(VkdfContext *ctx)
       image_view.flags = 0;
       image_view.image = ctx->swap_chain_images[i].image;
       image_view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-      image_view.format = ctx->surface_format;
+      image_view.format = ctx->surface_format.format;
       image_view.components.r = VK_COMPONENT_SWIZZLE_R;
       image_view.components.g = VK_COMPONENT_SWIZZLE_G;
       image_view.components.b = VK_COMPONENT_SWIZZLE_B;

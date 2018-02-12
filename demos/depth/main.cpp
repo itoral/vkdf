@@ -93,7 +93,7 @@ create_render_pass(VkdfContext *ctx, DemoResources *res)
    VkAttachmentDescription attachments[2];
 
    // Color attachment
-   attachments[0].format = ctx->surface_format;
+   attachments[0].format = ctx->surface_format.format;
    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;

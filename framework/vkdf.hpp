@@ -87,7 +87,7 @@ struct _VkdfContext {
    GLFWwindow *window;
    VkSurfaceKHR surface;
    VkSurfaceCapabilitiesKHR surface_caps;
-   VkFormat surface_format;
+   VkSurfaceFormatKHR surface_format;
    uint32_t width;
    uint32_t height;
 
