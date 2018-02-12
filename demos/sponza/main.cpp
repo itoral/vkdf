@@ -743,11 +743,13 @@ init_scene(SceneResources *res)
 
    glm::vec4 direction = glm::vec4(1.0f, -4.5f, -1.25f, 0.0f);
    glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-   glm::vec4 ambient = glm::vec4(0.2f, 0.2f, 0.2f, 1.0f);
+   glm::vec4 ambient = glm::vec4(0.15f, 0.15f, 0.15f, 1.0f);
    glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 
    res->light =
       vkdf_light_new_directional(direction, diffuse, ambient, specular);
+
+   res->light->intensity = 1.5f;
 
    /* Near and Far planes have been empirically chosen, together with the
     * directional offset, to provide the tightest shadow map box that registers
