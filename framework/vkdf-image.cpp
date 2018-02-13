@@ -715,6 +715,19 @@ vkdf_load_image_from_file(VkdfContext *ctx,
 
    // Get pixel size and format
    uint32_t bpp = compute_bpp_from_sdl_surface(surf);
+
+   // If this image is not at least RGB, it is unlikely that it represents
+   // color data. It is probably a specular intensity texture, in which
+   // case it should not be sRGB encoded.
+   //
+   // FIXME: At least with Intel/Mesa if we attempt to blit to sRGB images
+   // (which we do for mipmaps) with less than 3 components we get GPU hangs.
+   // Notice that the time of this writing, the Intel/Mesa driver doesn't
+   // really support blitting to RGB either (only RGBA), but so far we seem
+   // to be able to do away with it just fine.
+   if (bpp < 24)
+      is_srgb = false;
+
    VkFormat format = guess_format_from_bpp(bpp, is_srgb);
    assert(format != VK_FORMAT_UNDEFINED);
 

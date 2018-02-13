@@ -528,7 +528,7 @@ vkdf_model_load_textures(VkdfContext *ctx,
          assert(tex->specular_path);
          if (!vkdf_load_image_from_file(ctx, pool,
                                         tex->specular_path, &tex->specular,
-                                        false)) {
+                                        color_is_srgb)) {
             mat->specular_tex_count = 0;
          }
       }
