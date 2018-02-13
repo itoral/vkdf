@@ -436,29 +436,94 @@ destroy_swap_chain(VkdfContext *ctx)
    vkDestroySwapchainKHR(ctx->device, ctx->swap_chain, NULL);
 }
 
+static bool
+present_mode_from_string(const char *str, VkPresentModeKHR *mode)
+{
+   if (!strcmp(str, "fifo")) {
+      *mode = VK_PRESENT_MODE_FIFO_KHR;
+      return true;
+   }
+
+   if (!strcmp(str, "fifo_relaxed")) {
+      *mode = VK_PRESENT_MODE_FIFO_RELAXED_KHR;
+      return true;
+   }
+
+   if (!strcmp(str, "mailbox")) {
+      *mode = VK_PRESENT_MODE_MAILBOX_KHR;
+      return true;
+   }
+
+   if (!strcmp(str, "immediate")) {
+      *mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+      return true;
+   }
+
+   return false;
+}
+
+static void
+override_present_mode_from_env(VkdfContext *ctx, VkPresentModeKHR *mode)
+{
+    VkResult res;
+
+   // Get presentation mode from environment variable
+   char *env_str = getenv("VKDF_PRESENT_MODE");
+   if (!env_str)
+      return;
+
+   VkPresentModeKHR env_mode;
+   if (!present_mode_from_string(env_str, &env_mode)) {
+      vkdf_error("Ignoring Unknown presentation mode '%s'.\n", env_str);
+      return;
+   }
+
+   // Override presentation mode if requested mode is supported
+   uint32_t mode_count;
+   res = vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->phy_device,
+                                                   ctx->surface,
+                                                   &mode_count, NULL);
+   if (res != VK_SUCCESS) {
+      vkdf_error("Failed to query available presentation modes.\n");
+      return;
+   }
+
+   VkPresentModeKHR *modes = g_new(VkPresentModeKHR, mode_count);
+   res = vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->phy_device,
+                                                   ctx->surface,
+                                                   &mode_count, modes);
+   if (res != VK_SUCCESS) {
+      g_free(modes);
+      vkdf_fatal("Failed to query surface surface presentation modes.\n");
+      return;
+   }
+
+   for (uint32_t i = 0; i < mode_count; i++) {
+      if (modes[i] == env_mode) {
+         *mode = env_mode;
+         break;
+      }
+   }
+
+   if (*mode == env_mode) {
+      vkdf_info("Overriding presentation mode from environment variable "
+                "to '%s'.\n", env_str);
+   } else {
+      vkdf_error("Can't override presentation mode: '%s' is not supported.\n",
+                 env_str);
+   }
+
+   g_free(modes);
+}
+
+
 void
 _init_swap_chain(VkdfContext *ctx)
 {
+   VkResult res;
+
    if (ctx->swap_chain_length > 0)
       destroy_swap_chain(ctx);
-
-   // Query available presentation modes
-   uint32_t present_mode_count;
-   VkResult res;
-   res = vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->phy_device,
-                                                   ctx->surface,
-                                                   &present_mode_count, NULL);
-   if (res != VK_SUCCESS)
-      vkdf_fatal("Failed to query surface surface presentation modes");
-
-   VkPresentModeKHR *present_modes =
-      g_new(VkPresentModeKHR, present_mode_count);
-
-   res = vkGetPhysicalDeviceSurfacePresentModesKHR(
-       ctx->phy_device, ctx->surface, &present_mode_count, present_modes);
-
-   if (res != VK_SUCCESS)
-      vkdf_fatal("Failed to query surface surface presentation modes");
 
    // Query surface capabilities
    res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phy_device,
@@ -490,15 +555,10 @@ _init_swap_chain(VkdfContext *ctx)
       ctx->height = swap_chain_ext.height;
    }
 
-   // Choose presentation mode: we prefer MAILBOX if present, otherwise
-   // we go with FIFO, which must be supported.
-   VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-   for (uint32_t i = 0; i < present_mode_count; i++) {
-      if (present_modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
-         present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
-         break;
-      }
-   }
+   // Choose presentation mode, we go with FIFO by default but let applications
+   // chose a different method via environment variable.
+    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
+   override_present_mode_from_env(ctx, &present_mode);
 
    // Use triple-buffering if available
    uint32_t swap_chain_size = caps.minImageCount + 1;
