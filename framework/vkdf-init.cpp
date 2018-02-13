@@ -347,6 +347,38 @@ init_logical_device(VkdfContext *ctx)
    g_free(extension_names);
 }
 
+static bool
+wait_for_window_resize(GLFWwindow *window, int32_t width, int32_t height)
+{
+   int32_t last_fb_width, last_fb_height;
+
+   bool still_resizing = true;
+   int32_t tries = 0;
+   do {
+      int32_t fb_width, fb_height;
+      glfwGetFramebufferSize(window, &fb_width, &fb_height);
+
+      if (width == fb_width && height == fb_height) {
+         still_resizing = false;
+      } else if (last_fb_width == fb_width && last_fb_height == fb_height) {
+         /* Window size has not changed */
+         tries++;
+         if (tries == 3) {
+            still_resizing = false;
+         } else {
+            /* Wait for 100 ms and query again */
+            struct timespec wait_time = { 0, 100000000l };
+            nanosleep(&wait_time, NULL);
+         }
+      } else {
+         /* Window size has changed, start over */
+         tries = 0;
+         last_fb_width = fb_width;
+         last_fb_height = fb_height;
+      }
+   } while (still_resizing);
+}
+
 static void
 init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
                     bool fullscreen, bool resizable)
@@ -371,6 +403,19 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
                            resizable ? 1 : height,
                            resizable ? GLFW_DONT_CARE : width,
                            resizable ? GLFW_DONT_CARE : height);
+
+   /* Specially in fullscreen mode, the size of the window may change a few
+    * times before it gets to its final size. This means that it can take
+    * some time until the window surface we create below reaches its final
+    * size. If we ignore this, by the time we init our swapchin we may
+    * find that the reported surface size is smaller and initialize a
+    * swapchain with smaller images than we should. Also, since we store that
+    * size in the VkdfContext instance and we typically use this to define
+    * our viewport/scissor rectangles it means that we end up rendering to
+    * a smaller area. When this happens, we also get very noticeable screen
+    * tearing even in vsync presentation modes like FIFO or MAILBOX.
+    */
+   wait_for_window_resize(ctx->window, width, height);
 
    VkResult res =
       glfwCreateWindowSurface(ctx->inst, ctx->window, NULL, &ctx->surface);
