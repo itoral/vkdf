@@ -201,7 +201,8 @@ vkdf_scene_enable_ssao(VkdfScene *s,
                        float radius,
                        float bias,
                        float intensity,
-                       uint32_t blur_size)
+                       uint32_t blur_size,
+                       float blur_threshold)
 {
    /* Store the SSAO config and bail. SSAO depends on having depth info
     * available so we postpone creating resources for it until we can
@@ -229,6 +230,9 @@ vkdf_scene_enable_ssao(VkdfScene *s,
 
    assert(blur_size >= 0.0f);
    s->ssao.blur_size = blur_size;
+
+   assert(blur_threshold >= 0.0f);
+   s->ssao.blur_threshold = blur_threshold;
 
    assert(downsampling >= 1.0f);
    s->ssao.width = s->rt.width / downsampling;
@@ -3295,6 +3299,11 @@ struct SsaoPCB {
    float tan_half_fov;
 };
 
+struct SsaoBlurPCB {
+   int blur_size;
+   float threshold;
+};
+
 static VkCommandBuffer
 record_ssao_cmd_buf(VkdfScene *s)
 {
@@ -3380,10 +3389,14 @@ record_ssao_cmd_buf(VkdfScene *s)
                      VK_PIPELINE_BIND_POINT_GRAPHICS,
                      s->ssao.blur.pipeline.pipeline);
 
+   struct SsaoBlurPCB pcb_blur;
+   pcb_blur.blur_size = s->ssao.blur_size;
+   pcb_blur.threshold = s->ssao.blur_threshold;
+
    vkCmdPushConstants(cmd_buf,
                       s->ssao.blur.pipeline.layout,
                       VK_SHADER_STAGE_FRAGMENT_BIT,
-                      0, sizeof(uint32_t), &s->ssao.blur_size);
+                      0, sizeof(SsaoBlurPCB), &pcb_blur);
 
    VkDescriptorSet blur_descriptor_sets[] = {
       s->ssao.blur.pipeline.ssao_tex_set,
@@ -3591,7 +3604,7 @@ prepare_ssao_rendering(VkdfScene *s)
       VkPushConstantRange pcb_blur_range;
       pcb_blur_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
       pcb_blur_range.offset = 0;
-      pcb_blur_range.size = sizeof(uint32_t);
+      pcb_blur_range.size = sizeof(SsaoBlurPCB);
 
       VkPushConstantRange pcb_blur_ranges[] = {
          pcb_blur_range,

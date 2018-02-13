@@ -239,6 +239,7 @@ struct _VkdfScene {
       float bias;
       float intensity;
       int32_t blur_size;
+      float blur_threshold;
 
       /* SSAO renderpasses */
       struct {
@@ -699,7 +700,8 @@ vkdf_scene_enable_ssao(VkdfScene *s,
                        float radius,
                        float bias,
                        float intensity,
-                       uint32_t blur_size);
+                       uint32_t blur_size,
+                       float blur_threshold);
 
 inline VkRenderPass
 vkdf_scene_get_gbuffer_merge_render_pass(VkdfScene *s)
