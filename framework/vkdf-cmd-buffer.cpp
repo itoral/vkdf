@@ -170,6 +170,9 @@ vkdf_command_buffer_execute_sync(VkdfContext *ctx,
 static void
 present_commands(VkdfContext *ctx,
                  VkImage image,
+                 uint32_t width,
+                 uint32_t height,
+                 VkFilter filter,
                  VkCommandBuffer *cmd_bufs,
                  uint32_t index)
 {
@@ -214,7 +217,7 @@ present_commands(VkdfContext *ctx,
    VkImageBlit region =
       vkdf_create_image_blit_region(subresource_layers,
                                     glm::uvec3(0, 0, 0),
-                                    glm::uvec3(ctx->width, ctx->height, 1),
+                                    glm::uvec3(width, height, 1),
                                     subresource_layers,
                                     glm::uvec3(0, 0, 0),
                                     glm::uvec3(ctx->width, ctx->height, 1));
@@ -226,7 +229,7 @@ present_commands(VkdfContext *ctx,
                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                   1,
                   &region,
-                  VK_FILTER_NEAREST);
+                  filter);
 
    // Transition presentation image to presentation layout
    VkImageMemoryBarrier present_barrier =
@@ -252,7 +255,10 @@ present_commands(VkdfContext *ctx,
 VkCommandBuffer *
 vkdf_command_buffer_create_for_present(VkdfContext *ctx,
                                        VkCommandPool cmd_pool,
-                                       VkImage image)
+                                       VkImage image,
+                                       uint32_t width,
+                                       uint32_t height,
+                                       VkFilter filter)
 {
    VkCommandBuffer *cmd_bufs = g_new(VkCommandBuffer, ctx->swap_chain_length);
    vkdf_create_command_buffer(ctx,
@@ -264,7 +270,7 @@ vkdf_command_buffer_create_for_present(VkdfContext *ctx,
    for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
       vkdf_command_buffer_begin(cmd_bufs[i],
                                 VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-      present_commands(ctx, image, cmd_bufs, i);
+      present_commands(ctx, image, width, height, filter, cmd_bufs, i);
       vkdf_command_buffer_end(cmd_bufs[i]);
    }
 

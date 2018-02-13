@@ -55,6 +55,8 @@ const float    SSAO_BLUR_THRESHOLD       = 0.5f;  // Min > 0.0, Max <= 1.0
 const float    SSAO_DOWNSAMPLING         = 1.0f;  // Min=1.0 (no downsampling)
 const VkFilter SSAO_FILTER               = VK_FILTER_NEAREST;
 
+/* Antialiasing (super sampling) */
+const float SUPER_SAMPLING_FACTOR        = 1.0f;  // Min=1.0 (disabled)
 
 // =============================== Declarations ===============================
 
@@ -714,10 +716,19 @@ init_scene(SceneResources *res)
    glm::vec3 scene_size = glm::vec3(200.0f, 200.0f, 200.0f);
    glm::vec3 tile_size = glm::vec3(200.0f, 200.0f, 200.0f);
    uint32_t cache_size = 0;
+
+   uint32_t fb_width = (uint32_t) (WIN_WIDTH * SUPER_SAMPLING_FACTOR);
+   uint32_t fb_height = (uint32_t) (WIN_HEIGHT * SUPER_SAMPLING_FACTOR);
+
    res->scene = vkdf_scene_new(ctx,
+                               fb_width, fb_height,
                                res->camera,
                                scene_origin, scene_size, tile_size, 1,
                                cache_size, 1);
+
+   VkFilter present_filter =
+      SUPER_SAMPLING_FACTOR > 1.0f ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+   vkdf_scene_set_framebuffer_present_filter(res->scene, present_filter);
 
    vkdf_scene_set_scene_callbacks(res->scene,
                                   scene_update,

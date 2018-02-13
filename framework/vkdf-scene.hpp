@@ -162,7 +162,7 @@ struct _VkdfScene {
 
    bool deferred;
 
-   // Render target
+   // Render target framebuffer
    struct {
       uint32_t width;
       uint32_t height;
@@ -171,6 +171,8 @@ struct _VkdfScene {
 
       uint32_t gbuffer_size;
       VkdfImage gbuffer[GBUFFER_MAX_SIZE];
+
+      VkFilter present_filter;
    } rt;
 
    // Render passes
@@ -464,6 +466,8 @@ struct _VkdfScene {
 
 VkdfScene *
 vkdf_scene_new(VkdfContext *ctx,
+               uint32_t fb_width,
+               uint32_t fb_height,
                VkdfCamera *camera,
                glm::vec3 scene_origin,
                glm::vec3 scene_size,
@@ -747,6 +751,13 @@ vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
    spec->directional.offset = directional_offset;
    spec->directional.scale = directional_scale;
    spec->pcf_kernel_size = pcf_kernel_size;
+}
+
+inline void
+vkdf_scene_set_framebuffer_present_filter(VkdfScene *s, VkFilter filter)
+{
+   assert(filter == VK_FILTER_NEAREST || filter == VK_FILTER_LINEAR);
+   s->rt.present_filter = filter;
 }
 
 #endif

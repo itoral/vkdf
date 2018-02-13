@@ -131,6 +131,8 @@ create_render_target(VkdfScene *s,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         VK_IMAGE_ASPECT_COLOR_BIT,
                         VK_IMAGE_VIEW_TYPE_2D);
+
+   s->rt.present_filter = VK_FILTER_NEAREST;
 }
 
 static void
@@ -241,6 +243,8 @@ vkdf_scene_enable_ssao(VkdfScene *s,
 
 VkdfScene *
 vkdf_scene_new(VkdfContext *ctx,
+               uint32_t fb_width,
+               uint32_t fb_height,
                VkdfCamera *camera,
                glm::vec3 scene_origin,
                glm::vec3 scene_size,
@@ -380,7 +384,7 @@ vkdf_scene_new(VkdfContext *ctx,
                                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                   32);
 
-   create_render_target(s, s->ctx->width, s->ctx->height,
+   create_render_target(s, fb_width, fb_height,
                         VK_FORMAT_R8G8B8A8_UNORM);
 
    return s;
@@ -3767,7 +3771,9 @@ prepare_scene_present_command_buffers(VkdfScene *s)
    s->cmd_buf.present =
       vkdf_command_buffer_create_for_present(s->ctx,
                                              s->cmd_buf.pool[0],
-                                             s->rt.color.image);
+                                             s->rt.color.image,
+                                             s->rt.width, s->rt.height,
+                                             s->rt.present_filter);
 }
 
 static void

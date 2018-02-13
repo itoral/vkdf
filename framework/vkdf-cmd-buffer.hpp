@@ -61,6 +61,9 @@ vkdf_command_buffer_execute_sync(VkdfContext *ctx,
 VkCommandBuffer *
 vkdf_command_buffer_create_for_present(VkdfContext *ctx,
                                        VkCommandPool cmd_pool,
-                                       VkImage image);
+                                       VkImage image,
+                                       uint32_t width,
+                                       uint32_t height,
+                                       VkFilter filter);
 
 #endif

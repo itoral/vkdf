@@ -237,6 +237,7 @@ init_scene(SceneResources *res)
    // Final
    glm::vec3 tile_size = glm::vec3(250.0f, 250.0f, 250.0f);
    res->scene = vkdf_scene_new(ctx,
+                               WIN_WIDTH, WIN_HEIGHT,
                                res->camera,
                                scene_origin, scene_size, tile_size, 2,
                                cache_size, 4);
@@ -244,6 +245,7 @@ init_scene(SceneResources *res)
    // Naive CPU clipping
    glm::vec3 tile_size = glm::vec3(25.0f, 25.0f, 25.0f);
    res->scene = vkdf_scene_new(ctx,
+                               WIN_WIDTH, WIN_HEIGHT,
                                res->camera,
                                scene_origin, scene_size, tile_size, 1,
                                cache_size, 1);
@@ -251,6 +253,7 @@ init_scene(SceneResources *res)
    // GPU clipping only
    glm::vec3 tile_size = glm::vec3(1000.0f, 1000.0f, 1000.0f);
    res->scene = vkdf_scene_new(ctx,
+                               WIN_WIDTH, WIN_HEIGHT,
                                res->camera,
                                scene_origin, scene_size, tile_size, 1,
                                cache_size, 1);

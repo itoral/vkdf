@@ -374,6 +374,7 @@ init_scene(SceneResources *res)
    glm::vec3 tile_size = glm::vec3(25.0f, 25.0f, 25.0f);
    uint32_t cache_size = 32;
    res->scene = vkdf_scene_new(ctx,
+                               WIN_WIDTH, WIN_HEIGHT,
                                res->camera,
                                scene_origin, scene_size, tile_size, 2,
                                cache_size, 1);
