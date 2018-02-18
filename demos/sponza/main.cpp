@@ -58,6 +58,12 @@ const VkFilter SSAO_FILTER               = VK_FILTER_NEAREST;
 /* Antialiasing (super sampling) */
 const float SUPER_SAMPLING_FACTOR        = 1.0f;  // Min=1.0 (disabled)
 
+/* Antialiasing (FXAA) */
+const bool  ENABLE_FXAA                  = true;
+const float FXAA_LUMA_MIN                = 0.1f;    // Min > 0.0, Max=1.0
+const float FXAA_LUMA_RANGE_MIN          = 0.1312f; // Min > 0.0, Max=1.0
+const float FXAA_SUBPX_AA                = 0.5f;    // Min=0.0 (disabled)
+
 // =============================== Declarations ===============================
 
 enum {
@@ -810,6 +816,13 @@ init_scene(SceneResources *res)
                              SSAO_INTENSITY,
                              SSAO_BLUR_SIZE,
                              SSAO_BLUR_THRESHOLD);
+   }
+
+   if (ENABLE_FXAA) {
+      vkdf_scene_enable_fxaa(res->scene,
+                             FXAA_LUMA_MIN,
+                             FXAA_LUMA_RANGE_MIN,
+                             FXAA_SUBPX_AA);
    }
 }
 
