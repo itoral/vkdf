@@ -3373,6 +3373,8 @@ struct SsaoPCB {
 struct SsaoBlurPCB {
    int blur_size;
    float threshold;
+   float near_plane;
+   float far_plane;
 };
 
 static VkCommandBuffer
@@ -3463,6 +3465,8 @@ record_ssao_cmd_buf(VkdfScene *s)
    struct SsaoBlurPCB pcb_blur;
    pcb_blur.blur_size = s->ssao.blur_size;
    pcb_blur.threshold = s->ssao.blur_threshold;
+   pcb_blur.near_plane = s->camera->proj.near_plane;
+   pcb_blur.far_plane = s->camera->proj.far_plane;
 
    vkCmdPushConstants(cmd_buf,
                       s->ssao.blur.pipeline.layout,
@@ -3682,7 +3686,7 @@ prepare_ssao_rendering(VkdfScene *s)
       };
 
       s->ssao.blur.pipeline.ssao_tex_set_layout =
-         vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
+         vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 2,
                                                    VK_SHADER_STAGE_FRAGMENT_BIT);
 
       info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -3735,6 +3739,13 @@ prepare_ssao_rendering(VkdfScene *s)
                                          s->ssao.base.image.view,
                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                          0, 1);
+
+      vkdf_descriptor_set_sampler_update(s->ctx,
+                                         s->ssao.blur.pipeline.ssao_tex_set,
+                                         s->ssao.blur.input_sampler,
+                                         s->rt.depth.view,
+                                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                         1, 1);
    }
 
    /* Command buffer */

@@ -4,6 +4,7 @@ BUILT_SOURCES = \
     ssao.deferred.frag \
     ssao.deferred.frag.spv \
     ssao-blur.deferred.vert.spv \
+    ssao-blur.deferred.frag \
     ssao-blur.deferred.frag.spv \
     fxaa.vert.spv \
     fxaa.frag.spv
@@ -29,6 +30,9 @@ ssao.deferred.frag.spv: ssao.deferred.frag
 
 ssao-blur.deferred.vert.spv: ssao-blur.deferred.vert
 	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.vert -o ssao-blur.deferred.vert.spv
+
+ssao-blur.deferred.frag: ssao-blur.deferred.frag.input
+	python $(top_srcdir)/scripts/fixup-glsl.py ssao-blur.deferred.frag.input ssao-blur.deferred.frag
 
 ssao-blur.deferred.frag.spv: ssao-blur.deferred.frag
 	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.frag -o ssao-blur.deferred.frag.spv

@@ -51,7 +51,7 @@ const float    SSAO_RADIUS               = 0.75f;
 const float    SSAO_BIAS                 = 0.05f;
 const float    SSAO_INTENSITY            = 3.0f;
 const uint32_t SSAO_BLUR_SIZE            = 2;     // Min=0 (no blur)
-const float    SSAO_BLUR_THRESHOLD       = 0.5f;  // Min > 0.0, Max <= 1.0
+const float    SSAO_BLUR_THRESHOLD       = 0.05f; // Min > 0.0
 const float    SSAO_DOWNSAMPLING         = 1.0f;  // Min=1.0 (no downsampling)
 const VkFilter SSAO_FILTER               = VK_FILTER_NEAREST;
 

@@ -13,3 +13,15 @@ compute_eye_z_from_depth(sampler2D tex_depth, vec2 coord, mat4 Proj)
    return -Proj[3][2] / (Proj[2][2] + depth);
 }
 
+/**
+ * Computes eye-space Z for a pixel's depth taken from the depth buffer
+ * given the camera's near and far plane distances.
+ *
+ * Notice that the formula here is Vulkan-specific due to the differences
+ * between OpenGL and Vulkan coordinate systems.
+ */
+float compute_eye_z_from_depth(float depth, float near, float far)
+{
+   return far * near  / (depth * (far - near) - far);
+}
+
