@@ -4,7 +4,9 @@ BUILT_SOURCES = \
     ssao.deferred.frag \
     ssao.deferred.frag.spv \
     ssao-blur.deferred.vert.spv \
-    ssao-blur.deferred.frag.spv
+    ssao-blur.deferred.frag.spv \
+    fxaa.vert.spv \
+    fxaa.frag.spv
 
 
 CLEANFILES = \
@@ -30,6 +32,15 @@ ssao-blur.deferred.vert.spv: ssao-blur.deferred.vert
 
 ssao-blur.deferred.frag.spv: ssao-blur.deferred.frag
 	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.frag -o ssao-blur.deferred.frag.spv
+
+
+# FXAA
+fxaa.vert.spv: fxaa.vert
+	$(top_srcdir)/$(GLSLANG) -V fxaa.vert -o fxaa.vert.spv
+
+fxaa.frag.spv: fxaa.frag
+	$(top_srcdir)/$(GLSLANG) -V fxaa.frag -o fxaa.frag.spv
+
 
 MAINTAINERCLEANFILES = \
 	*.in \

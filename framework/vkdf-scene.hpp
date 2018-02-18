@@ -293,6 +293,36 @@ struct _VkdfScene {
       VkCommandBuffer cmd_buf;
    } ssao;
 
+   /* FXAA renderpass */
+   struct {
+      bool enabled;
+
+      VkdfImage image;
+
+      float luma_min;
+      float luma_range_min;
+      float subpx_aa;
+
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } rp;
+
+      VkSampler source_sampler;
+
+      struct {
+         VkPipeline pipeline;
+         VkPipelineLayout layout;
+         VkDescriptorSetLayout source_set_layout;
+         VkDescriptorSet source_set;
+         struct {
+            VkShaderModule vs;
+            VkShaderModule fs;
+         } shader;
+      } pipeline;
+
+      VkCommandBuffer cmd_buf;
+   } fxaa;
 
    // Tiling
    struct {
@@ -368,6 +398,7 @@ struct _VkdfScene {
       VkSemaphore ssao_sem;
       VkSemaphore gbuffer_merge_sem;
       VkSemaphore postprocess_sem;
+      VkSemaphore fxaa_sem;
       VkFence present_fence;
       bool present_fence_active;
    } sync;
@@ -757,6 +788,16 @@ vkdf_scene_set_framebuffer_present_filter(VkdfScene *s, VkFilter filter)
 {
    assert(filter == VK_FILTER_NEAREST || filter == VK_FILTER_LINEAR);
    s->rt.present_filter = filter;
+}
+
+inline void
+vkdf_scene_enable_fxaa(VkdfScene *s,
+                       float luma_min, float luma_range_min, float subpx_aa)
+{
+   s->fxaa.enabled = true;
+   s->fxaa.luma_min = luma_min;
+   s->fxaa.luma_range_min = luma_range_min;
+   s->fxaa.subpx_aa = subpx_aa;
 }
 
 #endif

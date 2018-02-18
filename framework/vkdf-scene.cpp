@@ -9,6 +9,9 @@
 #define SSAO_BLUR_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao-blur.deferred.vert.spv")
 #define SSAO_BLUR_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao-blur.deferred.frag.spv")
 
+#define FXAA_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/fxaa.vert.spv")
+#define FXAA_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/fxaa.frag.spv")
+
 /**
  * Input texture bindings for deferred SSAO base pass
  */
@@ -400,6 +403,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.ssao_sem = vkdf_create_semaphore(s->ctx);;
    s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.fxaa_sem = vkdf_create_semaphore(s->ctx);
    s->sync.present_fence = vkdf_create_fence(s->ctx);
 
    s->ubo.static_pool =
@@ -561,6 +565,34 @@ destroy_ssao_resources(VkdfScene *s)
    }
 }
 
+static void
+destroy_fxaa_resources(VkdfScene *s)
+{
+   assert(s->fxaa.enabled);
+
+   /* Pipeline layouts and descriptor sets  */
+   vkDestroyPipeline(s->ctx->device, s->fxaa.pipeline.pipeline, NULL);
+   vkDestroyPipelineLayout(s->ctx->device, s->fxaa.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->fxaa.pipeline.source_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->fxaa.pipeline.source_set_layout, NULL);
+
+   /* Source image sampler */
+   vkDestroySampler(s->ctx->device, s->fxaa.source_sampler, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->fxaa.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->fxaa.pipeline.shader.fs, NULL);
+
+
+   /* Render target */
+   vkDestroyRenderPass(s->ctx->device, s->fxaa.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->fxaa.rp.framebuffer, NULL);
+   vkdf_destroy_image(s->ctx, &s->fxaa.image);
+}
+
 void
 vkdf_scene_free(VkdfScene *s)
 {
@@ -640,6 +672,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.gbuffer_merge_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.ssao_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.fxaa_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.present_fence, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++) {
@@ -679,6 +712,9 @@ vkdf_scene_free(VkdfScene *s)
 
    if (s->ssao.enabled)
       destroy_ssao_resources(s);
+
+   if (s->fxaa.enabled)
+      destroy_fxaa_resources(s);
 
    // FIXME: have a list of buffers in the scene so that here we can just go
    // through the list and destory all of them without having to add another
@@ -3778,6 +3814,178 @@ prepare_scene_ssao(VkdfScene *s)
    prepare_ssao_rendering(s);
 }
 
+struct FxaaPCB {
+   float luma_min;
+   float luma_range_min;
+   float subpx_aa;
+};
+
+static VkCommandBuffer
+record_fxaa_cmd_buf(VkdfScene *s)
+{
+   VkCommandBuffer cmd_buf;
+
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &cmd_buf);
+
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->fxaa.rp.renderpass,
+                                s->fxaa.rp.framebuffer,
+                                0, 0, s->rt.width, s->rt.height,
+                                0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->fxaa.pipeline.pipeline);
+
+
+   struct FxaaPCB pcb;
+   pcb.luma_min = s->fxaa.luma_min;
+   pcb.luma_range_min = s->fxaa.luma_range_min;
+   pcb.subpx_aa = s->fxaa.subpx_aa;
+
+   vkCmdPushConstants(cmd_buf,
+                      s->fxaa.pipeline.layout,
+                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(struct FxaaPCB), &pcb);
+
+   VkDescriptorSet descriptor_sets[] = {
+      s->fxaa.pipeline.source_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->fxaa.pipeline.layout,
+                           0, 1, descriptor_sets,  // First, count, sets
+                           0, NULL);               // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   vkdf_command_buffer_end(cmd_buf);
+
+   return cmd_buf;
+}
+
+static void
+prepare_fxaa(VkdfScene *s)
+{
+   assert(s->fxaa.enabled);
+
+   /* Output image */
+   s->fxaa.image = create_color_framebuffer_image(s);
+
+   /* Render pass */
+   s->fxaa.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->fxaa.image.format,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+
+   /* Framebuffer */
+   s->fxaa.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->fxaa.rp.renderpass,
+                              s->fxaa.image.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+   /* Pipeline */
+   VkPushConstantRange pcb_range;
+   pcb_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   pcb_range.offset = 0;
+   pcb_range.size = sizeof(struct FxaaPCB);
+
+   VkPushConstantRange pcb_ranges[] = {
+      pcb_range,
+   };
+
+   s->fxaa.pipeline.source_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   VkDescriptorSetLayout layouts[] = {
+      s->fxaa.pipeline.source_set_layout,
+   };
+
+   VkPipelineLayoutCreateInfo info;
+   info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   info.pNext = NULL;
+   info.pushConstantRangeCount = 1;
+   info.pPushConstantRanges = pcb_ranges;
+   info.setLayoutCount = 1;
+   info.pSetLayouts = layouts;
+   info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &info, NULL,
+                                   &s->fxaa.pipeline.layout));
+
+   s->fxaa.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, FXAA_VS_SHADER_PATH);
+
+   s->fxaa.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, FXAA_FS_SHADER_PATH);
+
+   s->fxaa.pipeline.pipeline =
+      vkdf_create_gfx_pipeline(s->ctx,
+                               NULL,
+                               0,
+                               NULL,
+                               0,
+                               NULL,
+                               false,
+                               VK_COMPARE_OP_ALWAYS,
+                               s->fxaa.rp.renderpass,
+                               s->fxaa.pipeline.layout,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                               VK_CULL_MODE_BACK_BIT,
+                               1,
+                               s->fxaa.pipeline.shader.vs,
+                               s->fxaa.pipeline.shader.fs);
+
+   /* Descriptor sets */
+   s->fxaa.source_sampler =
+         vkdf_create_sampler(s->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_LINEAR,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0f);
+
+   s->fxaa.pipeline.source_set =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->fxaa.pipeline.source_set_layout);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->fxaa.pipeline.source_set,
+                                      s->fxaa.source_sampler,
+                                      s->rt.output.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   /* Command buffer */
+   s->fxaa.cmd_buf = record_fxaa_cmd_buf(s);
+}
+
 static void
 prepare_scene_render_passes(VkdfScene *s)
 {
@@ -3793,6 +4001,10 @@ prepare_scene_render_passes(VkdfScene *s)
       prepare_forward_render_passes(s);
    } else {
       prepare_deferred_render_passes(s);
+   }
+
+   if (s->fxaa.enabled) {
+      prepare_fxaa(s);
    }
 }
 
@@ -4371,25 +4583,41 @@ scene_draw(VkdfScene *s)
    }
 
    // Execute postprocess callback
+   VkdfImage output = s->rt.output;
    if (s->callbacks.postprocess) {
       assert(wait_sem_count == 1);
-      VkdfImage output =
-         s->callbacks.postprocess(s->ctx,
-                                  *wait_sem,
-                                  s->sync.postprocess_sem,
-                                  s->callbacks.data);
-
-      if (output.image != s->rt.output.image)
-         prepare_present_from_image(s, output);
+      output = s->callbacks.postprocess(s->ctx,
+                                        *wait_sem,
+                                        s->sync.postprocess_sem,
+                                        s->callbacks.data);
 
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.postprocess_sem;
    }
 
+   // FXAA
+   if (s->fxaa.enabled) {
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->fxaa.cmd_buf,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.fxaa_sem);
+
+      output = s->fxaa.image;
+
+      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.fxaa_sem;
+   }
+
    /* ========== Copy rendering result to swapchain ========== */
 
    assert(wait_sem_count == 1);
+
+   if (output.image != s->rt.output.image)
+      prepare_present_from_image(s, output);
+
    vkdf_copy_to_swapchain(s->ctx,
                           s->cmd_buf.present,
                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
