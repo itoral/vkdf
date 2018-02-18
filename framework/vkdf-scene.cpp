@@ -95,13 +95,9 @@ init_subtiles(VkdfScene *s, VkdfSceneTile *t)
 }
 
 static void
-create_render_target(VkdfScene *s,
-                     uint32_t width,
-                     uint32_t height,
-                     VkFormat color_format)
+prepare_render_target(VkdfScene *s)
 {
-   s->rt.width = width;
-   s->rt.height = height;
+   assert(s->rt.width > 0 && s->rt.height > 0);
 
    s->rt.depth =
       vkdf_create_image(s->ctx,
@@ -124,15 +120,13 @@ create_render_target(VkdfScene *s,
                         s->rt.height,
                         1,
                         VK_IMAGE_TYPE_2D,
-                        color_format,
+                        VK_FORMAT_R8G8B8A8_UNORM,
                         VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                            VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                         VK_IMAGE_ASPECT_COLOR_BIT,
                         VK_IMAGE_VIEW_TYPE_2D);
-
-   s->rt.present_filter = VK_FILTER_NEAREST;
 }
 
 static void
@@ -384,8 +378,9 @@ vkdf_scene_new(VkdfContext *ctx,
                                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                   32);
 
-   create_render_target(s, fb_width, fb_height,
-                        VK_FORMAT_R8G8B8A8_UNORM);
+   s->rt.width = fb_width;
+   s->rt.height = fb_height;
+   s->rt.present_filter = VK_FILTER_NEAREST;
 
    return s;
 }
@@ -3827,6 +3822,7 @@ prepare_scene_gbuffer_merge_command_buffer(VkdfScene *s)
 void
 vkdf_scene_prepare(VkdfScene *s)
 {
+   prepare_render_target(s);
    prepare_scene_objects(s);
    prepare_scene_lights(s);
    prepare_scene_render_passes(s);
