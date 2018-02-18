@@ -309,10 +309,10 @@ vkdf_light_get_view_matrix_inv(VkdfLight *l);
 void inline
 vkdf_light_set_dirty(VkdfLight *l, bool dirty)
 {
-   assert(dirty || bitfield_get(l->dirty, ~VKDF_LIGHT_DIRTY) == 0);
-
-   uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
-   bitfield_set(&l->dirty, dirty_bits);
+   if (!dirty)
+      l->dirty = 0;
+   else
+      bitfield_set(&l->dirty, VKDF_LIGHT_DIRTY);
 }
 
 void inline
