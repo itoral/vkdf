@@ -3019,7 +3019,6 @@ update_dirty_lights(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
       if (!vkdf_light_is_dirty(sl->light))
          continue;
-      vkdf_light_set_dirty_shadows(sl->light, false);
       vkdf_light_set_dirty(sl->light, false);
    }
 }
