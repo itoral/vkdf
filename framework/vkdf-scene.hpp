@@ -136,7 +136,7 @@ struct _VkdfSceneTile {
 typedef void (*VkdfSceneUpdateStateCB)(void *);
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, bool, void *);
-typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
+typedef VkdfImage (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
 typedef void (*VkdfSceneGbufferMergeCommandsCB)(VkdfContext *, VkCommandBuffer, void *);
 
 struct _dim {
@@ -166,13 +166,15 @@ struct _VkdfScene {
    struct {
       uint32_t width;
       uint32_t height;
-      VkdfImage color;
-      VkdfImage depth;
 
-      uint32_t gbuffer_size;
+      VkdfImage color;            // Color target (before post-processing)
+      VkdfImage depth;            // Depth target
+
+      uint32_t gbuffer_size;      // GBuffer (for deferred)
       VkdfImage gbuffer[GBUFFER_MAX_SIZE];
 
       VkFilter present_filter;
+      VkdfImage output;           // Final color target (after post-processing)
    } rt;
 
    // Render passes

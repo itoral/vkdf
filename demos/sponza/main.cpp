@@ -202,7 +202,7 @@ typedef struct {
    } debug;
 } SceneResources;
 
-static void
+static VkdfImage
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -1918,7 +1918,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    }
 }
 
-static void
+static VkdfImage
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -1926,7 +1926,7 @@ postprocess_draw(VkdfContext *ctx,
 {
    SceneResources *res = (SceneResources *) data;
 
-   // Render debug tile
+   // Overlay debug tile on top of the scene framebuffer
    VkPipelineStageFlags debug_tile_wait_stages =
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
    vkdf_command_buffer_execute(ctx,
@@ -1934,6 +1934,9 @@ postprocess_draw(VkdfContext *ctx,
                                &debug_tile_wait_stages,
                                1, &scene_draw_sem,
                                1, &postprocess_draw_sem);
+
+   // Present from scene framebuffer
+   return res->scene->rt.color;
 }
 
 static void

@@ -29,6 +29,9 @@ struct FreeCmdBufInfo {
    VkdfSceneTile *tile;
 };
 
+static void inline
+new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf);
+
 static inline uint32_t
 tile_index_from_tile_coords(VkdfScene *s, float tx, float ty, float tz)
 {
@@ -95,38 +98,70 @@ init_subtiles(VkdfScene *s, VkdfSceneTile *t)
 }
 
 static void
+prepare_present_from_image(VkdfScene *s, VkdfImage image)
+{
+   if (s->cmd_buf.present) {
+      for (uint32_t i = 0; i < s->ctx->swap_chain_length; i++)
+         new_inactive_cmd_buf(s, 0, s->cmd_buf.present[i]);
+   }
+
+   s->rt.output = image;
+
+   s->cmd_buf.present =
+      vkdf_command_buffer_create_for_present(s->ctx,
+                                             s->cmd_buf.pool[0],
+                                             s->rt.output.image,
+                                             s->rt.width, s->rt.height,
+                                             s->rt.present_filter);
+}
+
+static VkdfImage
+create_color_framebuffer_image(VkdfScene *s)
+{
+   return vkdf_create_image(s->ctx,
+                            s->rt.width,
+                            s->rt.height,
+                            1,
+                            VK_IMAGE_TYPE_2D,
+                            VK_FORMAT_R8G8B8A8_UNORM,
+                            VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
+                            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                               VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                            VK_IMAGE_ASPECT_COLOR_BIT,
+                            VK_IMAGE_VIEW_TYPE_2D);
+}
+static VkdfImage
+create_depth_framebuffer_image(VkdfScene *s)
+{
+      return vkdf_create_image(s->ctx,
+                               s->rt.width,
+                               s->rt.height,
+                               1,
+                               VK_IMAGE_TYPE_2D,
+                               VK_FORMAT_D32_SFLOAT,
+                               VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                  VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
+                               VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                  VK_IMAGE_USAGE_SAMPLED_BIT,
+                               VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                               VK_IMAGE_ASPECT_DEPTH_BIT,
+                               VK_IMAGE_VIEW_TYPE_2D);
+}
+
+static void
 prepare_render_target(VkdfScene *s)
 {
    assert(s->rt.width > 0 && s->rt.height > 0);
 
-   s->rt.depth =
-      vkdf_create_image(s->ctx,
-                        s->rt.width,
-                        s->rt.height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        VK_FORMAT_D32_SFLOAT,
-                        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                           VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
-                        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_SAMPLED_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_DEPTH_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
+   s->rt.depth = create_depth_framebuffer_image(s);
+   s->rt.color = create_color_framebuffer_image(s);
 
-   s->rt.color =
-      vkdf_create_image(s->ctx,
-                        s->rt.width,
-                        s->rt.height,
-                        1,
-                        VK_IMAGE_TYPE_2D,
-                        VK_FORMAT_R8G8B8A8_UNORM,
-                        VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT,
-                        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                           VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
-                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                        VK_IMAGE_ASPECT_COLOR_BIT,
-                        VK_IMAGE_VIEW_TYPE_2D);
+   /* By default, we present from our rendering target. Applications that do
+    * post-processing will inform us about the final output to present through
+    * the return value of the post-processing callback.
+    */
+   prepare_present_from_image(s, s->rt.color);
 }
 
 static void
@@ -3760,17 +3795,6 @@ prepare_scene_render_passes(VkdfScene *s)
 }
 
 static void
-prepare_scene_present_command_buffers(VkdfScene *s)
-{
-   s->cmd_buf.present =
-      vkdf_command_buffer_create_for_present(s->ctx,
-                                             s->cmd_buf.pool[0],
-                                             s->rt.color.image,
-                                             s->rt.width, s->rt.height,
-                                             s->rt.present_filter);
-}
-
-static void
 prepare_scene_gbuffer_merge_command_buffer(VkdfScene *s)
 {
    assert(!s->cmd_buf.gbuffer_merge);
@@ -3826,7 +3850,6 @@ vkdf_scene_prepare(VkdfScene *s)
    prepare_scene_objects(s);
    prepare_scene_lights(s);
    prepare_scene_render_passes(s);
-   prepare_scene_present_command_buffers(s);
 }
 
 static void
@@ -4348,10 +4371,14 @@ scene_draw(VkdfScene *s)
    // Execute postprocess callback
    if (s->callbacks.postprocess) {
       assert(wait_sem_count == 1);
-      s->callbacks.postprocess(s->ctx,
-                               *wait_sem,
-                               s->sync.postprocess_sem,
-                               s->callbacks.data);
+      VkdfImage output =
+         s->callbacks.postprocess(s->ctx,
+                                  *wait_sem,
+                                  s->sync.postprocess_sem,
+                                  s->callbacks.data);
+
+      if (output.image != s->rt.output.image)
+         prepare_present_from_image(s, output);
 
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
