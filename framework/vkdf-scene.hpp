@@ -291,9 +291,6 @@ struct _VkdfScene {
       VkCommandBuffer cmd_buf;
    } ssao;
 
-   VkFramebuffer framebuffer;
-   uint32_t fb_width;
-   uint32_t fb_height;
 
    // Tiling
    struct {
