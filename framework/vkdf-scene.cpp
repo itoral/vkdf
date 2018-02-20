@@ -4527,7 +4527,7 @@ scene_draw(VkdfScene *s)
          status = vkWaitForFences(s->ctx->device,
                                   1, &s->sync.present_fence,
                                   true, 1000ull);
-#if ENABLE_DEBUG
+#if ENABLE_DEBUG && 0
          if (status == VK_NOT_READY || status == VK_TIMEOUT) {
             vkdf_info("debug: perf: scene: warning: "
                       "gpu busy, cpu stall before draw\n");
