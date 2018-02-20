@@ -5,7 +5,6 @@
 layout(push_constant) uniform pcb {
    mat4 Proj;
    vec2 noise_scale;
-   int num_samples;
    float radius;
    float bias;
    float intensity;

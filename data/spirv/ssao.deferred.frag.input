@@ -7,7 +7,6 @@ INCLUDE(../glsl/util.glsl)
 layout(push_constant) uniform pcb {
    mat4 Proj;
    vec2 noise_scale;
-   int num_samples;
    float radius;
    float bias;
    float intensity;
@@ -15,9 +14,17 @@ layout(push_constant) uniform pcb {
    float tan_half_fov;
 } PCB;
 
-const int MAX_SAMPLES = 64;
+/* It is important that the sample kernel size is a specialization constant
+ * so the shader compiler can optimize the code. Specifically, on Intel/Mesa
+ * drivers this allows the optimization backend to unroll the loop and,
+ * more importantly, promote the samples UBO (if it is not too large) to a
+ * push constant saving NUM_SAMPLES per pixel fetches from UBO memory for a
+ * significant performance boost.
+ */
+layout (constant_id = 0) const int NUM_SAMPLES = 64;
+
 layout(std140, set = 0, binding = 0) uniform SamplesUBO {
-   vec3 samples[MAX_SAMPLES];
+   vec3 samples[NUM_SAMPLES];
 } S;
 
 layout(set = 1, binding = 0) uniform sampler2D tex_depth;
@@ -50,7 +57,7 @@ void main()
 
    /* Accumulate occlusion for each kernel sample */
    float occlusion = 0.0;
-   for(int i = 0; i < PCB.num_samples; ++i) {
+   for(int i = 0; i < NUM_SAMPLES; ++i) {
       /* Compute sample position in view space */
       vec3 sample_i = TBN * S.samples[i];
       sample_i = position + sample_i * PCB.radius;
@@ -76,5 +83,5 @@ void main()
    }
 
    /* We output ambient intensity in the range [0,1] */
-   out_ssao = pow(1.0 - (occlusion / PCB.num_samples), PCB.intensity);
+   out_ssao = pow(1.0 - (occlusion / NUM_SAMPLES), PCB.intensity);
 }

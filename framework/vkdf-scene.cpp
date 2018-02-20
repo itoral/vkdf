@@ -3362,7 +3362,6 @@ prepare_depth_prepass_render_passes(VkdfScene *s)
 struct SsaoPCB {
    glm::mat4 proj;
    glm::vec2 noise_scale;
-   int32_t num_samples;
    float radius;
    float bias;
    float intensity;
@@ -3411,7 +3410,6 @@ record_ssao_cmd_buf(VkdfScene *s)
    const glm::mat4 *proj_ptr = vkdf_camera_get_projection_ptr(s->camera);
    memcpy(&pcb.proj[0][0], proj_ptr, sizeof(glm::mat4));
    pcb.noise_scale = s->ssao.noise_scale;
-   pcb.num_samples = s->ssao.num_samples;
    pcb.radius = s->ssao.radius;
    pcb.bias = s->ssao.bias;
    pcb.intensity = s->ssao.intensity;
@@ -3573,8 +3571,26 @@ prepare_ssao_rendering(VkdfScene *s)
    s->ssao.base.pipeline.shader.vs =
       vkdf_create_shader_module(s->ctx, SSAO_VS_SHADER_PATH);
 
+   VkPipelineShaderStageCreateInfo vs_info;
+   vkdf_pipeline_fill_shader_stage_info(&vs_info,
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        s->ssao.base.pipeline.shader.vs);
+
    s->ssao.base.pipeline.shader.fs =
       vkdf_create_shader_module(s->ctx, SSAO_FS_SHADER_PATH);
+
+   VkPipelineShaderStageCreateInfo fs_info;
+   VkSpecializationMapEntry entry = { 0, 0, sizeof(uint32_t) };
+   VkSpecializationInfo fs_spec_info = {
+      1,
+      &entry,
+      sizeof(uint32_t),
+      &s->ssao.num_samples
+   };
+   vkdf_pipeline_fill_shader_stage_info(&fs_info,
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        s->ssao.base.pipeline.shader.fs,
+                                        &fs_spec_info);
 
    s->ssao.base.pipeline.pipeline =
       vkdf_create_gfx_pipeline(s->ctx,
@@ -3590,8 +3606,7 @@ prepare_ssao_rendering(VkdfScene *s)
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                VK_CULL_MODE_BACK_BIT,
                                1,
-                               s->ssao.base.pipeline.shader.vs,
-                               s->ssao.base.pipeline.shader.fs);
+                               &vs_info, &fs_info);
 
    /* Base SSAO descriptor sets */
    s->ssao.base.pipeline.samples_set =

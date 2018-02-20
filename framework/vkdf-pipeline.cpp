@@ -14,8 +14,8 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          VkPrimitiveTopology primitive,
                          VkCullModeFlagBits cull_mode,
                          uint32_t num_color_attachments,
-                         VkShaderModule vs_module,
-                         VkShaderModule fs_module)
+                         const VkPipelineShaderStageCreateInfo *vs_info,
+                         const VkPipelineShaderStageCreateInfo *fs_info)
 {
    VkPipeline pipeline;
 
@@ -141,14 +141,9 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
 
    // Shader stages
    VkPipelineShaderStageCreateInfo shader_stages[2];
-   vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
-                                        VK_SHADER_STAGE_VERTEX_BIT,
-                                        vs_module);
-   if (fs_module) {
-      vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
-                                           VK_SHADER_STAGE_FRAGMENT_BIT,
-                                           fs_module);
-   }
+   shader_stages[0] = *vs_info;
+   if (fs_info)
+      shader_stages[1] = *fs_info;
 
    // Create pipeline
    VkGraphicsPipelineCreateInfo pipeline_info;
@@ -168,7 +163,7 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    pipeline_info.pColorBlendState = &cb;
    pipeline_info.pDynamicState = &dynamic_state_info;
    pipeline_info.pStages = shader_stages;
-   pipeline_info.stageCount = fs_module ? 2 : 1;
+   pipeline_info.stageCount = fs_info ? 2 : 1;
    pipeline_info.renderPass = render_pass;
    pipeline_info.subpass = 0;
 
@@ -180,4 +175,45 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                                       &pipeline));
 
    return pipeline;
+}
+
+VkPipeline
+vkdf_create_gfx_pipeline(VkdfContext *ctx,
+                         VkPipelineCache *pipeline_cache,
+                         uint32_t num_vi_bindings,
+                         VkVertexInputBindingDescription *vi_bindings,
+                         uint32_t num_vi_attribs,
+                         VkVertexInputAttributeDescription *vi_attribs,
+                         bool enable_depth_test,
+                         VkCompareOp depth_compare_op,
+                         VkRenderPass render_pass,
+                         VkPipelineLayout pipeline_layout,
+                         VkPrimitiveTopology primitive,
+                         VkCullModeFlagBits cull_mode,
+                         uint32_t num_color_attachments,
+                         VkShaderModule vs_module,
+                         VkShaderModule fs_module)
+{
+   VkPipelineShaderStageCreateInfo vs_info, fs_info;
+
+   vkdf_pipeline_fill_shader_stage_info(&vs_info,
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        vs_module);
+   if (fs_module) {
+      vkdf_pipeline_fill_shader_stage_info(&fs_info,
+                                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                                           fs_module);
+   }
+
+   return vkdf_create_gfx_pipeline(ctx, pipeline_cache,
+                                   num_vi_bindings, vi_bindings,
+                                   num_vi_attribs, vi_attribs,
+                                   enable_depth_test, depth_compare_op,
+                                   render_pass,
+                                   pipeline_layout,
+                                   primitive,
+                                   cull_mode,
+                                   num_color_attachments,
+                                   &vs_info,
+                                   fs_module ? &fs_info : NULL);
 }

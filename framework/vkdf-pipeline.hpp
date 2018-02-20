@@ -18,6 +18,23 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          VkShaderModule vs_module,
                          VkShaderModule fs_module);
 
+VkPipeline
+vkdf_create_gfx_pipeline(VkdfContext *ctx,
+                         VkPipelineCache *cache,
+                         uint32_t num_vi_bindings,
+                         VkVertexInputBindingDescription *vi_bindings,
+                         uint32_t num_vi_attribs,
+                         VkVertexInputAttributeDescription *vi_attribs,
+                         bool enable_depth_test,
+                         VkCompareOp depth_compare_op,
+                         VkRenderPass render_pass,
+                         VkPipelineLayout pipeline_layout,
+                         VkPrimitiveTopology primitive,
+                         VkCullModeFlagBits cull_mode,
+                         uint32_t num_color_attachments,
+                         const VkPipelineShaderStageCreateInfo *vs_info,
+                         const VkPipelineShaderStageCreateInfo *fs_info);
+
 static inline void
 vkdf_pipeline_fill_shader_stage_info(VkPipelineShaderStageCreateInfo *info,
                                      VkShaderStageFlagBits stage,
@@ -26,6 +43,21 @@ vkdf_pipeline_fill_shader_stage_info(VkPipelineShaderStageCreateInfo *info,
    info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
    info->pNext = NULL;
    info->pSpecializationInfo = NULL;
+   info->flags = 0;
+   info->stage = stage;
+   info->pName = "main";
+   info->module = module;
+}
+
+static inline void
+vkdf_pipeline_fill_shader_stage_info(VkPipelineShaderStageCreateInfo *info,
+                                     VkShaderStageFlagBits stage,
+                                     VkShaderModule module,
+                                     const VkSpecializationInfo *si)
+{
+   info->sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+   info->pNext = NULL;
+   info->pSpecializationInfo = si;
    info->flags = 0;
    info->stage = stage;
    info->pName = "main";
