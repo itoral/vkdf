@@ -3370,7 +3370,6 @@ struct SsaoPCB {
 };
 
 struct SsaoBlurPCB {
-   int blur_size;
    float threshold;
    float near_plane;
    float far_plane;
@@ -3461,7 +3460,6 @@ record_ssao_cmd_buf(VkdfScene *s)
                      s->ssao.blur.pipeline.pipeline);
 
    struct SsaoBlurPCB pcb_blur;
-   pcb_blur.blur_size = s->ssao.blur_size;
    pcb_blur.threshold = s->ssao.blur_threshold;
    pcb_blur.near_plane = s->camera->proj.near_plane;
    pcb_blur.far_plane = s->camera->proj.far_plane;
@@ -3718,8 +3716,27 @@ prepare_ssao_rendering(VkdfScene *s)
       s->ssao.blur.pipeline.shader.vs =
          vkdf_create_shader_module(s->ctx, SSAO_BLUR_VS_SHADER_PATH);
 
+      VkPipelineShaderStageCreateInfo vs_info;
+      vkdf_pipeline_fill_shader_stage_info(&vs_info,
+                                           VK_SHADER_STAGE_VERTEX_BIT,
+                                           s->ssao.blur.pipeline.shader.vs,
+                                           NULL);
+
       s->ssao.blur.pipeline.shader.fs =
          vkdf_create_shader_module(s->ctx, SSAO_BLUR_FS_SHADER_PATH);
+
+      VkPipelineShaderStageCreateInfo fs_info;
+      VkSpecializationMapEntry entry = { 0, 0, sizeof(uint32_t) };
+      VkSpecializationInfo fs_spec_info = {
+         1,
+         &entry,
+         sizeof(uint32_t),
+         &s->ssao.blur_size
+      };
+      vkdf_pipeline_fill_shader_stage_info(&fs_info,
+                                           VK_SHADER_STAGE_FRAGMENT_BIT,
+                                           s->ssao.blur.pipeline.shader.fs,
+                                           &fs_spec_info);
 
       s->ssao.blur.pipeline.pipeline =
          vkdf_create_gfx_pipeline(s->ctx,
@@ -3735,9 +3752,7 @@ prepare_ssao_rendering(VkdfScene *s)
                                   VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                   VK_CULL_MODE_BACK_BIT,
                                   1,
-                                  s->ssao.blur.pipeline.shader.vs,
-                                  s->ssao.blur.pipeline.shader.fs);
-
+                                  &vs_info, &fs_info);
 
       /* Blur descriptor sets */
       s->ssao.blur.input_sampler =

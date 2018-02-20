@@ -11,11 +11,12 @@ INCLUDE(../glsl/util.glsl)
  * depth values.
  */
 layout(push_constant) uniform pcb {
-   int blur_size;
    float threshold;
    float depth_near;
    float depth_far;
 } PCB;
+
+layout (constant_id = 0) const int BLUR_SIZE = 2;
 
 layout(set = 0, binding = 0) uniform sampler2D tex_ssao;
 layout(set = 0, binding = 1) uniform sampler2D tex_depth;
@@ -34,9 +35,9 @@ void main()
       compute_eye_z_from_depth(depth_ref, PCB.depth_near, PCB.depth_far);
    int sample_count = 1;
 
-   for (int x = -PCB.blur_size; x < PCB.blur_size; ++x)
+   for (int x = -BLUR_SIZE; x < BLUR_SIZE; ++x)
    {
-      for (int y = -PCB.blur_size; y < PCB.blur_size; ++y)
+      for (int y = -BLUR_SIZE; y < BLUR_SIZE; ++y)
       {
          if (x != 0 || y != 0) {
             vec2 tex_offset = in_uv + vec2(x, y) * texel_size;
