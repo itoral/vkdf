@@ -20,8 +20,10 @@ layout(std140, set = 2, binding = 0) uniform light_ubo
 struct ShadowMapData {
    mat4 light_viewproj;
    uint shadow_map_size;
-   uint pfc_kernel_size;
+   uint pfc_kernel_size; /* Overriden by specialization constant */
 };
+
+layout (constant_id = 0) const int SHADOW_MAP_PCF_KERNEL_SIZE = 2;
 
 layout(std140, set = 2, binding = 1) uniform ubo_shadow_map_data {
    ShadowMapData shadow_map_data;

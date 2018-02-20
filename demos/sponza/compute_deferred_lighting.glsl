@@ -36,7 +36,7 @@
                           light_space_position,
                           shadow_map,
                           SMD.shadow_map_data.shadow_map_size,
-                          SMD.shadow_map_data.pfc_kernel_size);
+                          SHADOW_MAP_PCF_KERNEL_SIZE);
 
       out_color = vec4(color.diffuse + color.ambient + color.specular, 1);
    }

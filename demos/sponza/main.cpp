@@ -1411,8 +1411,25 @@ create_gbuffer_merge_pipeline(SceneResources *res, bool use_ssao)
    const VkRenderPass renderpass =
       vkdf_scene_get_gbuffer_merge_render_pass(res->scene);
 
+   VkPipelineShaderStageCreateInfo vs_info;
+   vkdf_pipeline_fill_shader_stage_info(&vs_info,
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        res->shaders.gbuffer_merge.vs);
+
    VkShaderModule fs = use_ssao ? res->shaders.gbuffer_merge.fs_ssao :
                                   res->shaders.gbuffer_merge.fs;
+
+   VkPipelineShaderStageCreateInfo fs_info;
+   VkSpecializationMapEntry entry = { 0, 0, sizeof(uint32_t) };
+   VkSpecializationInfo fs_spec_info = {
+      1,
+      &entry,
+      sizeof(uint32_t),
+      &SHADOW_MAP_PCF_SIZE
+   };
+   vkdf_pipeline_fill_shader_stage_info(&fs_info,
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        fs, &fs_spec_info);
 
    VkPipeline pipeline =
       vkdf_create_gfx_pipeline(res->ctx,
@@ -1428,8 +1445,7 @@ create_gbuffer_merge_pipeline(SceneResources *res, bool use_ssao)
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                VK_CULL_MODE_BACK_BIT,
                                1,
-                               res->shaders.gbuffer_merge.vs,
-                               fs);
+                               &vs_info, &fs_info);
    return pipeline;
 }
 
