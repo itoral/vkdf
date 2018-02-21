@@ -293,6 +293,36 @@ struct _VkdfScene {
       VkCommandBuffer cmd_buf;
    } ssao;
 
+   /* HDR & Tone Mapping */
+   struct {
+      bool enabled;
+
+      VkdfImage input;
+      VkdfImage output;
+
+      float exposure;
+
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } rp;
+
+      VkSampler input_sampler;
+
+      struct {
+         VkPipeline pipeline;
+         VkPipelineLayout layout;
+         VkDescriptorSetLayout input_set_layout;
+         VkDescriptorSet input_set;
+         struct {
+            VkShaderModule vs;
+            VkShaderModule fs;
+         } shader;
+      } pipeline;
+
+      VkCommandBuffer cmd_buf;
+   } hdr;
+
    /* FXAA renderpass */
    struct {
       bool enabled;
@@ -399,6 +429,7 @@ struct _VkdfScene {
       VkSemaphore ssao_sem;
       VkSemaphore gbuffer_merge_sem;
       VkSemaphore postprocess_sem;
+      VkSemaphore hdr_sem;
       VkSemaphore fxaa_sem;
       VkFence present_fence;
       bool present_fence_active;
@@ -807,6 +838,15 @@ vkdf_scene_enable_fxaa(VkdfScene *s,
    s->fxaa.luma_min = luma_min;
    s->fxaa.luma_range_min = luma_range_min;
    s->fxaa.subpx_aa = subpx_aa;
+}
+
+inline void
+vkdf_scene_enable_hdr(VkdfScene *s, float exposure)
+{
+   s->hdr.enabled = true;
+
+   assert(exposure >= 0.0f);
+   s->hdr.exposure = exposure;
 }
 
 #endif

@@ -12,6 +12,9 @@
 #define FXAA_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/fxaa.vert.spv")
 #define FXAA_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/fxaa.frag.spv")
 
+#define TONE_MAP_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/tone-map.vert.spv")
+#define TONE_MAP_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/tone-map.frag.spv")
+
 /**
  * Input texture bindings for deferred SSAO base pass
  */
@@ -119,14 +122,17 @@ prepare_present_from_image(VkdfScene *s, VkdfImage image)
 }
 
 static VkdfImage
-create_color_framebuffer_image(VkdfScene *s)
+create_color_framebuffer_image(VkdfScene *s, bool hdr)
 {
+   VkFormat format = hdr ? VK_FORMAT_R16G16B16A16_SFLOAT :
+                           VK_FORMAT_R8G8B8A8_UNORM;
+
    return vkdf_create_image(s->ctx,
                             s->rt.width,
                             s->rt.height,
                             1,
                             VK_IMAGE_TYPE_2D,
-                            VK_FORMAT_R8G8B8A8_UNORM,
+                            format,
                             VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT |
                               VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
@@ -160,7 +166,7 @@ prepare_render_target(VkdfScene *s)
    assert(s->rt.width > 0 && s->rt.height > 0);
 
    s->rt.depth = create_depth_framebuffer_image(s);
-   s->rt.color = create_color_framebuffer_image(s);
+   s->rt.color = create_color_framebuffer_image(s, s->hdr.enabled);
 }
 
 static void
@@ -397,6 +403,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.ssao_sem = vkdf_create_semaphore(s->ctx);;
    s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
+   s->sync.hdr_sem = vkdf_create_semaphore(s->ctx);
    s->sync.fxaa_sem = vkdf_create_semaphore(s->ctx);
    s->sync.present_fence = vkdf_create_fence(s->ctx);
 
@@ -560,6 +567,34 @@ destroy_ssao_resources(VkdfScene *s)
 }
 
 static void
+destroy_hdr_resources(VkdfScene *s)
+{
+   assert(s->hdr.enabled);
+
+   /* Pipeline layouts and descriptor sets  */
+   vkDestroyPipeline(s->ctx->device, s->hdr.pipeline.pipeline, NULL);
+   vkDestroyPipelineLayout(s->ctx->device, s->hdr.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->hdr.pipeline.input_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->hdr.pipeline.input_set_layout, NULL);
+
+   /* Source image sampler */
+   vkDestroySampler(s->ctx->device, s->hdr.input_sampler, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->hdr.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->hdr.pipeline.shader.fs, NULL);
+
+
+   /* Render target */
+   vkDestroyRenderPass(s->ctx->device, s->hdr.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->hdr.rp.framebuffer, NULL);
+   vkdf_destroy_image(s->ctx, &s->hdr.output);
+}
+
+static void
 destroy_fxaa_resources(VkdfScene *s)
 {
    assert(s->fxaa.enabled);
@@ -666,6 +701,7 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.gbuffer_merge_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.ssao_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
+   vkDestroySemaphore(s->ctx->device, s->sync.hdr_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.fxaa_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.present_fence, NULL);
 
@@ -706,6 +742,9 @@ vkdf_scene_free(VkdfScene *s)
 
    if (s->ssao.enabled)
       destroy_ssao_resources(s);
+
+   if (s->hdr.enabled)
+      destroy_hdr_resources(s);
 
    if (s->fxaa.enabled)
       destroy_fxaa_resources(s);
@@ -3849,6 +3888,191 @@ prepare_scene_ssao(VkdfScene *s)
    prepare_ssao_rendering(s);
 }
 
+struct HdrPCB {
+   float exposure;
+};
+
+static VkCommandBuffer
+record_hdr_cmd_buf(VkdfScene *s)
+{
+   VkCommandBuffer cmd_buf;
+
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &cmd_buf);
+
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+   VkImageSubresourceRange subresource_range =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                          0, 1, 0, 1);
+
+   vkdf_image_set_layout(s->ctx,
+                         cmd_buf,
+                         s->hdr.input.image,
+                         subresource_range,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->hdr.rp.renderpass,
+                                s->hdr.rp.framebuffer,
+                                0, 0, s->rt.width, s->rt.height,
+                                0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->hdr.pipeline.pipeline);
+
+
+   struct HdrPCB pcb;
+   pcb.exposure = s->hdr.exposure;
+
+   vkCmdPushConstants(cmd_buf,
+                      s->hdr.pipeline.layout,
+                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(struct HdrPCB), &pcb);
+
+   VkDescriptorSet descriptor_sets[] = {
+      s->hdr.pipeline.input_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->hdr.pipeline.layout,
+                           0, 1, descriptor_sets,  // First, count, sets
+                           0, NULL);               // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   vkdf_command_buffer_end(cmd_buf);
+
+   return cmd_buf;
+}
+
+static VkdfImage
+prepare_hdr(VkdfScene *s, const VkdfImage *input)
+{
+   assert(s->hdr.enabled);
+
+   /* Output image (tone mapping output) */
+   s->hdr.output = create_color_framebuffer_image(s, false);
+
+   /* Render pass */
+   s->hdr.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->hdr.output.format,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+
+   /* Framebuffer */
+   s->hdr.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->hdr.rp.renderpass,
+                              s->hdr.output.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+
+   /* Pipeline */
+   VkPushConstantRange pcb_range;
+   pcb_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   pcb_range.offset = 0;
+   pcb_range.size = sizeof(struct HdrPCB);
+
+   VkPushConstantRange pcb_ranges[] = {
+      pcb_range,
+   };
+
+   s->hdr.pipeline.input_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   VkDescriptorSetLayout layouts[] = {
+      s->hdr.pipeline.input_set_layout,
+   };
+
+   VkPipelineLayoutCreateInfo info;
+   info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   info.pNext = NULL;
+   info.pushConstantRangeCount = 1;
+   info.pPushConstantRanges = pcb_ranges;
+   info.setLayoutCount = 1;
+   info.pSetLayouts = layouts;
+   info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &info, NULL,
+                                   &s->hdr.pipeline.layout));
+
+   s->hdr.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, TONE_MAP_VS_SHADER_PATH);
+
+   s->hdr.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, TONE_MAP_FS_SHADER_PATH);
+
+   s->hdr.pipeline.pipeline =
+      vkdf_create_gfx_pipeline(s->ctx,
+                               NULL,
+                               0,
+                               NULL,
+                               0,
+                               NULL,
+                               false,
+                               VK_COMPARE_OP_ALWAYS,
+                               s->hdr.rp.renderpass,
+                               s->hdr.pipeline.layout,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                               VK_CULL_MODE_BACK_BIT,
+                               1,
+                               s->hdr.pipeline.shader.vs,
+                               s->hdr.pipeline.shader.fs);
+
+   /* Descriptor sets */
+   s->hdr.input_sampler =
+         vkdf_create_sampler(s->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_NEAREST,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0f);
+
+   s->hdr.pipeline.input_set =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->hdr.pipeline.input_set_layout);
+
+   s->hdr.input = *input;
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->hdr.pipeline.input_set,
+                                      s->hdr.input_sampler,
+                                      s->hdr.input.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   /* Command buffer */
+   s->hdr.cmd_buf = record_hdr_cmd_buf(s);
+
+   return s->hdr.output;
+}
+
 struct FxaaPCB {
    float luma_min;
    float luma_range_min;
@@ -3933,7 +4157,7 @@ prepare_fxaa(VkdfScene *s, const VkdfImage *input)
    assert(s->fxaa.enabled);
 
    /* Output image */
-   s->fxaa.output = create_color_framebuffer_image(s);
+   s->fxaa.output = create_color_framebuffer_image(s, false);
 
    /* Render pass */
    s->fxaa.rp.renderpass =
@@ -4054,6 +4278,7 @@ prepare_scene_render_passes(VkdfScene *s)
       prepare_deferred_render_passes(s);
    }
 
+
    /* NOTE: Keep post-processing passes sorted in rendering order to keep
     * track of input and output images for each stage.
     */
@@ -4061,6 +4286,10 @@ prepare_scene_render_passes(VkdfScene *s)
 
    if (s->callbacks.postprocess && s->callbacks.postprocess_output) {
       output = *s->callbacks.postprocess_output;
+   }
+
+   if (s->hdr.enabled) {
+      output = prepare_hdr(s, &output);
    }
 
    if (s->fxaa.enabled) {
@@ -4655,6 +4884,19 @@ scene_draw(VkdfScene *s)
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.postprocess_sem;
+   }
+
+   // HDR Tone Mapping
+   if (s->hdr.enabled) {
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->hdr.cmd_buf,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.hdr_sem);
+
+      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+      wait_sem_count = 1;
+      wait_sem = &s->sync.hdr_sem;
    }
 
    // FXAA

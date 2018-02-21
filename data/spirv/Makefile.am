@@ -6,6 +6,8 @@ BUILT_SOURCES = \
     ssao-blur.deferred.vert.spv \
     ssao-blur.deferred.frag \
     ssao-blur.deferred.frag.spv \
+    tone-map.vert.spv \
+    tone-map.frag.spv \
     fxaa.vert.spv \
     fxaa.frag.spv
 
@@ -36,6 +38,14 @@ ssao-blur.deferred.frag: ssao-blur.deferred.frag.input
 
 ssao-blur.deferred.frag.spv: ssao-blur.deferred.frag
 	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.frag -o ssao-blur.deferred.frag.spv
+
+
+# HDR Tone mapping
+tone-map.vert.spv: tone-map.vert
+	$(top_srcdir)/$(GLSLANG) -V tone-map.vert -o tone-map.vert.spv
+
+tone-map.frag.spv: tone-map.frag
+	$(top_srcdir)/$(GLSLANG) -V tone-map.frag -o tone-map.frag.spv
 
 
 # FXAA
