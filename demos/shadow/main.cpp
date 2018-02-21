@@ -2186,7 +2186,7 @@ main()
 
    init_resources(&ctx, &resources);
 
-   vkdf_event_loop_run(&ctx, true, scene_update, scene_render, &resources);
+   vkdf_event_loop_run(&ctx, scene_update, scene_render, &resources);
 
    cleanup_resources(&ctx, &resources);
    vkdf_cleanup(&ctx);

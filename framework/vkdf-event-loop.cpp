@@ -117,7 +117,6 @@ present_image(VkdfContext *ctx)
 
 void
 vkdf_event_loop_run(VkdfContext *ctx,
-                    bool offscreen_rendering,
                     vkdf_event_loop_update_func update_func,
                     vkdf_event_loop_render_func render_func,
                     void *data)
@@ -129,18 +128,8 @@ vkdf_event_loop_run(VkdfContext *ctx,
 
       update_func(ctx, data);
 
-      if (offscreen_rendering) {
-         /**
-          * For offscreen rendering, the application is responsible for
-          * triggering swapchain acquisition by calling vkdf_copy_to_swapchain()
-          * at the end of render_func(), this way we can acquire right before
-          * presenting.
-          */
-         render_func(ctx, data);
-      } else {
-         acquire_next_image(ctx);
-         render_func(ctx, data);
-      }
+      acquire_next_image(ctx);
+      render_func(ctx, data);
 
       present_image(ctx);
 
@@ -156,14 +145,12 @@ vkdf_event_loop_run(VkdfContext *ctx,
 }
 
 /**
- * For applications doing offscreen rendering, we want to postpone swapchain
- * acquisition until we have finished rendering to the offscreen buffer. Such
- * applications should call this function right after they are done rendering
- * to the offscreen image in their render_func() hook.
+ * Applications doing offscreen rendering will call this function right after
+ * they are done rendering to the offscreen image in their render_func() hook.
  *
  * The function receives the list of copy command buffers for all swapchain
- * images and selects the correct one to use after aquiring the next image
- * from the swapchain.
+ * images and selects the correct one to use based on the current swap chain
+ * index.
  *
  * The fence is used so that clients can know when presentation has been
  * completed.
@@ -175,8 +162,6 @@ vkdf_copy_to_swapchain(VkdfContext *ctx,
                        VkSemaphore wait_sem,
                        VkFence fence)
 {
-   acquire_next_image(ctx);
-
    VkSemaphore wait_sems[2] = {
       wait_sem,
       ctx->acquired_sem[ctx->swap_chain_index]

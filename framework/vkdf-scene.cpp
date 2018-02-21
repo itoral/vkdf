@@ -4687,7 +4687,6 @@ void
 vkdf_scene_event_loop_run(VkdfScene *s)
 {
   vkdf_event_loop_run(s->ctx,
-                      true,
                       event_loop_update,
                       event_loop_render,
                       s);
