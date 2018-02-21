@@ -62,10 +62,10 @@ const VkFilter SSAO_FILTER               = VK_FILTER_NEAREST;
 const float SUPER_SAMPLING_FACTOR        = 1.0f;  // Min=1.0 (disabled)
 
 /* Antialiasing (FXAA) */
-const bool  ENABLE_FXAA                  = true;
-const float FXAA_LUMA_MIN                = 0.1f;    // Min > 0.0, Max=1.0
-const float FXAA_LUMA_RANGE_MIN          = 0.1312f; // Min > 0.0, Max=1.0
-const float FXAA_SUBPX_AA                = 0.5f;    // Min=0.0 (disabled)
+const bool     ENABLE_FXAA               = true;
+const float    FXAA_LUMA_MIN             = 0.1f;    // Min > 0.0, Max=1.0
+const float    FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
+const float    FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
 // =============================== Declarations ===============================
 
