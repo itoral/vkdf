@@ -715,6 +715,27 @@ _init_swap_chain(VkdfContext *ctx)
    ctx->swap_chain_index = ctx->swap_chain_length - 1;
 }
 
+static void
+set_fps_target_from_env(VkdfContext *ctx)
+{
+   char *env_str = getenv("VKDF_FPS_TARGET");
+   if (!env_str)
+      return;
+
+   char *last;
+   float fps = strtod(env_str, &last);
+   if (*last != '\0' || fps <= 0.0) {
+      vkdf_error("Can't set target fps from environment variable "
+                 "with value '%s'\n", env_str);
+      return;
+   }
+
+   vkdf_info("Setting fps target from environment variable to %.2f.\n", fps);
+   vkdf_set_framerate_target(ctx, fps);
+
+   ctx->fps_target_from_env = true;
+}
+
 void
 vkdf_init(VkdfContext *ctx,
           uint32_t width,
@@ -740,6 +761,8 @@ vkdf_init(VkdfContext *ctx,
 
    // Initialize SDL2 Image library
    IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG | IMG_INIT_TIF);
+
+   set_fps_target_from_env(ctx);
 }
 
 static void

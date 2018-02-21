@@ -107,6 +107,7 @@ struct _VkdfContext {
    // Framerate target
    float fps_target;
    double frame_time_budget;
+   bool fps_target_from_env;
 };
 
 typedef struct _VkdfContext VkdfContext;

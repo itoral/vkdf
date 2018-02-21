@@ -13,8 +13,14 @@ inline void
 vkdf_set_framerate_target(VkdfContext *ctx, float target)
 {
    assert(target > 0.0f);
-   ctx->fps_target = target;
-   ctx->frame_time_budget = 1.0 / (double) ctx->fps_target;
+
+   if (!ctx->fps_target_from_env) {
+      ctx->fps_target = target;
+      ctx->frame_time_budget = 1.0 / (double) ctx->fps_target;
+   } else {
+      vkdf_info("Ignoring framerate target requested due to "
+                "environment override.\n");
+   }
 }
 
 void
