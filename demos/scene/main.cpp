@@ -263,7 +263,6 @@ init_scene(SceneResources *res)
                                   scene_update,
                                   record_update_resources_command,
                                   record_scene_commands,
-                                  NULL,
                                   res);
 }
 

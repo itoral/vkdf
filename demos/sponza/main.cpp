@@ -211,7 +211,7 @@ typedef struct {
    } debug;
 } SceneResources;
 
-static VkdfImage
+static void
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -745,8 +745,11 @@ init_scene(SceneResources *res)
                                   ENABLE_DEFERRED_RENDERING ?
                                      record_gbuffer_scene_commands :
                                      record_forward_scene_commands,
-                                  SHOW_DEBUG_TILE ? postprocess_draw : NULL,
                                   res);
+
+   if (SHOW_DEBUG_TILE) {
+      vkdf_scene_enable_postprocessing(res->scene, postprocess_draw, NULL);
+   }
 
    VkClearValue color_clear;
    vkdf_color_clear_set(&color_clear, glm::vec4(0.2f, 0.4f, 0.8f, 1.0f));
@@ -1950,7 +1953,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    }
 }
 
-static VkdfImage
+static void
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -1966,9 +1969,6 @@ postprocess_draw(VkdfContext *ctx,
                                &debug_tile_wait_stages,
                                1, &scene_draw_sem,
                                1, &postprocess_draw_sem);
-
-   // Present from scene framebuffer
-   return res->scene->rt.color;
 }
 
 static void

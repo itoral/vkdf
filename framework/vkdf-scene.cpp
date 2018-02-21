@@ -161,12 +161,6 @@ prepare_render_target(VkdfScene *s)
 
    s->rt.depth = create_depth_framebuffer_image(s);
    s->rt.color = create_color_framebuffer_image(s);
-
-   /* By default, we present from our rendering target. Applications that do
-    * post-processing will inform us about the final output to present through
-    * the return value of the post-processing callback.
-    */
-   prepare_present_from_image(s, s->rt.color);
 }
 
 static void
@@ -575,12 +569,12 @@ destroy_fxaa_resources(VkdfScene *s)
    vkDestroyPipelineLayout(s->ctx->device, s->fxaa.pipeline.layout, NULL);
 
    vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
-                        1, &s->fxaa.pipeline.source_set);
+                        1, &s->fxaa.pipeline.input_set);
    vkDestroyDescriptorSetLayout(s->ctx->device,
-                                s->fxaa.pipeline.source_set_layout, NULL);
+                                s->fxaa.pipeline.input_set_layout, NULL);
 
    /* Source image sampler */
-   vkDestroySampler(s->ctx->device, s->fxaa.source_sampler, NULL);
+   vkDestroySampler(s->ctx->device, s->fxaa.input_sampler, NULL);
 
    /* Shaders */
    vkDestroyShaderModule(s->ctx->device, s->fxaa.pipeline.shader.vs, NULL);
@@ -590,7 +584,7 @@ destroy_fxaa_resources(VkdfScene *s)
    /* Render target */
    vkDestroyRenderPass(s->ctx->device, s->fxaa.rp.renderpass, NULL);
    vkDestroyFramebuffer(s->ctx->device, s->fxaa.rp.framebuffer, NULL);
-   vkdf_destroy_image(s->ctx, &s->fxaa.image);
+   vkdf_destroy_image(s->ctx, &s->fxaa.output);
 }
 
 void
@@ -3902,7 +3896,7 @@ record_fxaa_cmd_buf(VkdfScene *s)
                       0, sizeof(struct FxaaPCB), &pcb);
 
    VkDescriptorSet descriptor_sets[] = {
-      s->fxaa.pipeline.source_set,
+      s->fxaa.pipeline.input_set,
    };
 
    vkCmdBindDescriptorSets(cmd_buf,
@@ -3920,18 +3914,18 @@ record_fxaa_cmd_buf(VkdfScene *s)
    return cmd_buf;
 }
 
-static void
-prepare_fxaa(VkdfScene *s)
+static VkdfImage
+prepare_fxaa(VkdfScene *s, const VkdfImage *input)
 {
    assert(s->fxaa.enabled);
 
    /* Output image */
-   s->fxaa.image = create_color_framebuffer_image(s);
+   s->fxaa.output = create_color_framebuffer_image(s);
 
    /* Render pass */
    s->fxaa.rp.renderpass =
       vkdf_renderpass_simple_new(s->ctx,
-                                 s->fxaa.image.format,
+                                 s->fxaa.output.format,
                                  VK_ATTACHMENT_LOAD_OP_DONT_CARE,
                                  VK_ATTACHMENT_STORE_OP_STORE,
                                  VK_IMAGE_LAYOUT_UNDEFINED,
@@ -3946,7 +3940,7 @@ prepare_fxaa(VkdfScene *s)
    s->fxaa.rp.framebuffer =
       vkdf_create_framebuffer(s->ctx,
                               s->fxaa.rp.renderpass,
-                              s->fxaa.image.view,
+                              s->fxaa.output.view,
                               s->rt.width, s->rt.height,
                               0, NULL);
 
@@ -3960,12 +3954,12 @@ prepare_fxaa(VkdfScene *s)
       pcb_range,
    };
 
-   s->fxaa.pipeline.source_set_layout =
+   s->fxaa.pipeline.input_set_layout =
       vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
                                                 VK_SHADER_STAGE_FRAGMENT_BIT);
 
    VkDescriptorSetLayout layouts[] = {
-      s->fxaa.pipeline.source_set_layout,
+      s->fxaa.pipeline.input_set_layout,
    };
 
    VkPipelineLayoutCreateInfo info;
@@ -4004,27 +3998,30 @@ prepare_fxaa(VkdfScene *s)
                                s->fxaa.pipeline.shader.fs);
 
    /* Descriptor sets */
-   s->fxaa.source_sampler =
+   s->fxaa.input_sampler =
          vkdf_create_sampler(s->ctx,
                              VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                              VK_FILTER_LINEAR,
                              VK_SAMPLER_MIPMAP_MODE_NEAREST,
                              0.0f);
 
-   s->fxaa.pipeline.source_set =
+   s->fxaa.pipeline.input_set =
       create_descriptor_set(s->ctx,
                             s->sampler.pool,
-                            s->fxaa.pipeline.source_set_layout);
+                            s->fxaa.pipeline.input_set_layout);
 
+   s->fxaa.input = *input;
    vkdf_descriptor_set_sampler_update(s->ctx,
-                                      s->fxaa.pipeline.source_set,
-                                      s->fxaa.source_sampler,
-                                      s->rt.output.view,
+                                      s->fxaa.pipeline.input_set,
+                                      s->fxaa.input_sampler,
+                                      s->fxaa.input.view,
                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                       0, 1);
 
    /* Command buffer */
    s->fxaa.cmd_buf = record_fxaa_cmd_buf(s);
+
+   return s->fxaa.output;
 }
 
 static void
@@ -4044,9 +4041,20 @@ prepare_scene_render_passes(VkdfScene *s)
       prepare_deferred_render_passes(s);
    }
 
-   if (s->fxaa.enabled) {
-      prepare_fxaa(s);
+   /* NOTE: Keep post-processing passes sorted in rendering order to keep
+    * track of input and output images for each stage.
+    */
+   VkdfImage output = s->rt.color;
+
+   if (s->callbacks.postprocess && s->callbacks.postprocess_output) {
+      output = *s->callbacks.postprocess_output;
    }
+
+   if (s->fxaa.enabled) {
+      output = prepare_fxaa(s, &output);
+   }
+
+   prepare_present_from_image(s, output);
 }
 
 static void
@@ -4624,13 +4632,12 @@ scene_draw(VkdfScene *s)
    }
 
    // Execute postprocess callback
-   VkdfImage output = s->rt.output;
    if (s->callbacks.postprocess) {
       assert(wait_sem_count == 1);
-      output = s->callbacks.postprocess(s->ctx,
-                                        *wait_sem,
-                                        s->sync.postprocess_sem,
-                                        s->callbacks.data);
+      s->callbacks.postprocess(s->ctx,
+                               *wait_sem,
+                               s->sync.postprocess_sem,
+                               s->callbacks.data);
 
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
@@ -4645,8 +4652,6 @@ scene_draw(VkdfScene *s)
                                   wait_sem_count, wait_sem,
                                   1, &s->sync.fxaa_sem);
 
-      output = s->fxaa.image;
-
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.fxaa_sem;
@@ -4655,9 +4660,6 @@ scene_draw(VkdfScene *s)
    /* ========== Copy rendering result to swapchain ========== */
 
    assert(wait_sem_count == 1);
-
-   if (output.image != s->rt.output.image)
-      prepare_present_from_image(s, output);
 
    vkdf_copy_to_swapchain(s->ctx,
                           s->cmd_buf.present,

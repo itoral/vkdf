@@ -136,7 +136,7 @@ struct _VkdfSceneTile {
 typedef void (*VkdfSceneUpdateStateCB)(void *);
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, bool, void *);
-typedef VkdfImage (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
+typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
 typedef void (*VkdfSceneGbufferMergeCommandsCB)(VkdfContext *, VkCommandBuffer, void *);
 
 struct _dim {
@@ -297,7 +297,8 @@ struct _VkdfScene {
    struct {
       bool enabled;
 
-      VkdfImage image;
+      VkdfImage input;
+      VkdfImage output;
 
       float luma_min;
       float luma_range_min;
@@ -308,13 +309,13 @@ struct _VkdfScene {
          VkFramebuffer framebuffer;
       } rp;
 
-      VkSampler source_sampler;
+      VkSampler input_sampler;
 
       struct {
          VkPipeline pipeline;
          VkPipelineLayout layout;
-         VkDescriptorSetLayout source_set_layout;
-         VkDescriptorSet source_set;
+         VkDescriptorSetLayout input_set_layout;
+         VkDescriptorSet input_set;
          struct {
             VkShaderModule vs;
             VkShaderModule fs;
@@ -410,6 +411,7 @@ struct _VkdfScene {
       VkdfScenePostprocessCB postprocess;             // Executes post-processing command buffers
       VkdfSceneGbufferMergeCommandsCB gbuffer_merge;  // Records Gbuffer merge command buffer (deferred only)
       void *data;
+      VkdfImage *postprocess_output;                  // Pointer to output image produced by the postprocessing chain
    } callbacks;
 
    struct {
@@ -699,14 +701,21 @@ vkdf_scene_set_scene_callbacks(VkdfScene *s,
                                VkdfSceneUpdateStateCB us_cb,
                                VkdfSceneUpdateResourcesCB ur_cb,
                                VkdfSceneCommandsCB cmd_cb,
-                               VkdfScenePostprocessCB postprocess_cb,
                                void *data)
 {
    s->callbacks.update_state = us_cb;
    s->callbacks.update_resources = ur_cb;
    s->callbacks.record_commands = cmd_cb;
-   s->callbacks.postprocess = postprocess_cb;
    s->callbacks.data = data;
+}
+
+inline void
+vkdf_scene_enable_postprocessing(VkdfScene *s,
+                                 VkdfScenePostprocessCB pp_cb,
+                                 VkdfImage *output)
+{
+   s->callbacks.postprocess = pp_cb;
+   s->callbacks.postprocess_output = output;
 }
 
 void

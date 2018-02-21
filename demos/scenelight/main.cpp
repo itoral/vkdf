@@ -111,7 +111,7 @@ typedef struct {
    glm::vec4 pos;
 } VertexData;
 
-static VkdfImage
+static void
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -383,8 +383,9 @@ init_scene(SceneResources *res)
                                   scene_update,
                                   record_update_resources_command,
                                   record_scene_commands,
-                                  postprocess_draw,
                                   res);
+
+   vkdf_scene_enable_postprocessing(res->scene, postprocess_draw, NULL);
 }
 
 static void
@@ -1147,7 +1148,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
    init_debug_tile_resources(res);
 }
 
-static VkdfImage
+static void
 postprocess_draw(VkdfContext *ctx,
                  VkSemaphore scene_draw_sem,
                  VkSemaphore postprocess_draw_sem,
@@ -1163,9 +1164,6 @@ postprocess_draw(VkdfContext *ctx,
                                &debug_tile_wait_stages,
                                1, &scene_draw_sem,
                                1, &postprocess_draw_sem);
-
-   // Present from scene framebuffer
-   return res->scene->rt.color;
 }
 
 static void
