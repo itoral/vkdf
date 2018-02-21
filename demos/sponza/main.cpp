@@ -3,24 +3,24 @@
 // ================================= CONFIG ===================================
 
 /* Window resolution */
-const float    WIN_WIDTH                 = 1024.0f;
-const float    WIN_HEIGHT                = 768.0f;
-const bool     WIN_FULLSCREEN            = false;
+const float      WIN_WIDTH                 = 1024.0f;
+const float      WIN_HEIGHT                = 768.0f;
+const bool       WIN_FULLSCREEN            = false;
 
 /* Framerate target */
-const float    FRAMERATE_TARGET          = 30.0f;
+const float      FRAMERATE_TARGET          = 30.0f;
 
 /* Sponza flag mesh */
-const bool     SHOW_SPONZA_FLAG_MESH     = false;
-const uint32_t SPONZA_FLAG_MESH_IDX      = 4;
+const bool       SHOW_SPONZA_FLAG_MESH     = false;
+const uint32_t   SPONZA_FLAG_MESH_IDX      = 4;
 
 /* Show debug texture */
-const bool     SHOW_DEBUG_TILE           = false;
+const bool       SHOW_DEBUG_TILE           = false;
 
 /* Pipeline options */
-const bool     ENABLE_CLIPPING           = true;
-const bool     ENABLE_DEPTH_PREPASS      = true;
-const bool     ENABLE_DEFERRED_RENDERING = true;
+const bool       ENABLE_CLIPPING           = true;
+const bool       ENABLE_DEPTH_PREPASS      = true;
+const bool       ENABLE_DEFERRED_RENDERING = true;
 
 /* Deferred rendering options
  *
@@ -32,44 +32,50 @@ const bool     ENABLE_DEFERRED_RENDERING = true;
  * that can be reduced to some extent by increasing shadow mapping bias
  * parameters at the expense of introducing peter panning.
  */
-const uint32_t GBUFFER_OPTIMIZE_FOR_QUALITY  = true;
+const uint32_t   GBUFFER_OPTIMIZE_FOR_QUALITY  = true;
 
 /* Anisotropic filtering */
-const float    MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
+const float      MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
 
 /* Shadow mapping */
-const bool     ENABLE_SHADOWS            = true;
-const uint32_t SHADOW_MAP_SIZE           = 4096;
-const uint32_t SHADOW_MAP_PCF_SIZE       = 2;     // Min=1 (disabled)
-const uint32_t SHADOW_MAP_CONST_BIAS     = 1.0f;
-const uint32_t SHADOW_MAP_SLOPE_BIAS     = 2.0f;
+const bool       ENABLE_SHADOWS            = true;
+const uint32_t   SHADOW_MAP_SIZE           = 4096;
+const uint32_t   SHADOW_MAP_PCF_SIZE       = 2;     // Min=1 (disabled)
+const uint32_t   SHADOW_MAP_CONST_BIAS     = 1.0f;
+const uint32_t   SHADOW_MAP_SLOPE_BIAS     = 2.0f;
 
 /* Screen Space Ambient Occlusion (SSAO)
  *
  * SSAO requires that deferred rendering is enabled.
  */
-const bool     ENABLE_SSAO               = true;
-const uint32_t SSAO_NUM_SAMPLES          = 24;
-const float    SSAO_RADIUS               = 0.75f;
-const float    SSAO_BIAS                 = 0.05f;
-const float    SSAO_INTENSITY            = 3.0f;
-const uint32_t SSAO_BLUR_SIZE            = 2;     // Min=0 (no blur)
-const float    SSAO_BLUR_THRESHOLD       = 0.05f; // Min > 0.0
-const float    SSAO_DOWNSAMPLING         = 1.0f;  // Min=1.0 (no downsampling)
-const VkFilter SSAO_FILTER               = VK_FILTER_NEAREST;
+const bool       ENABLE_SSAO               = true;
+const uint32_t   SSAO_NUM_SAMPLES          = 24;
+const float      SSAO_RADIUS               = 0.75f;
+const float      SSAO_BIAS                 = 0.05f;
+const float      SSAO_INTENSITY            = 3.0f;
+const uint32_t   SSAO_BLUR_SIZE            = 2;     // Min=0 (no blur)
+const float      SSAO_BLUR_THRESHOLD       = 0.05f; // Min > 0.0
+const float      SSAO_DOWNSAMPLING         = 1.0f;  // Min=1.0 (no downsampling)
+const VkFilter   SSAO_FILTER               = VK_FILTER_NEAREST;
 
 /* High Dynamic Range (HDR) and Tone Mapping */
-const bool     ENABLE_HDR                = true;
-const float    HDR_EXPOSURE              = 1.5f;  // Min > 0.0
+const bool       ENABLE_HDR                = true;
+const float      HDR_EXPOSURE              = 1.5f;  // Min > 0.0
+
+/* Sun light */
+const glm::vec4  SUN_DIRECTION             = glm::vec4(1.0f, -4.5f, -1.25f, 0.0f);
+const glm::vec4  SUN_DIFFUSE               = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
+const glm::vec4  SUN_SPECULAR              = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
+const glm::vec4  SUN_AMBIENT               = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
 
 /* Antialiasing (super sampling) */
-const float    SUPER_SAMPLING_FACTOR     = 1.0f;  // Min=1.0 (disabled)
+const float      SUPER_SAMPLING_FACTOR     = 1.0f;  // Min=1.0 (disabled)
 
 /* Antialiasing (FXAA) */
-const bool     ENABLE_FXAA               = true;
-const float    FXAA_LUMA_MIN             = 0.1f;    // Min > 0.0, Max=1.0
-const float    FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
-const float    FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
+const bool       ENABLE_FXAA               = true;
+const float      FXAA_LUMA_MIN             = 0.1f;    // Min > 0.0, Max=1.0
+const float      FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
+const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
 // =============================== Declarations ===============================
 
@@ -769,13 +775,10 @@ init_scene(SceneResources *res)
                                ENABLE_DEFERRED_RENDERING ? NULL : &color_clear,
                                &depth_clear);
 
-   glm::vec4 direction = glm::vec4(1.0f, -4.5f, -1.25f, 0.0f);
-   glm::vec4 diffuse = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
-   glm::vec4 specular = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
-   glm::vec4 ambient = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
-
-   res->light =
-      vkdf_light_new_directional(direction, diffuse, ambient, specular);
+   res->light = vkdf_light_new_directional(SUN_DIRECTION,
+                                           SUN_DIFFUSE,
+                                           SUN_AMBIENT,
+                                           SUN_SPECULAR);
 
    res->light->intensity = 1.0f;
 
