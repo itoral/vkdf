@@ -58,8 +58,12 @@ const float    SSAO_BLUR_THRESHOLD       = 0.05f; // Min > 0.0
 const float    SSAO_DOWNSAMPLING         = 1.0f;  // Min=1.0 (no downsampling)
 const VkFilter SSAO_FILTER               = VK_FILTER_NEAREST;
 
+/* High Dynamic Range (HDR) and Tone Mapping */
+const bool     ENABLE_HDR                = true;
+const float    HDR_EXPOSURE              = 1.5f;  // Min > 0.0
+
 /* Antialiasing (super sampling) */
-const float SUPER_SAMPLING_FACTOR        = 1.0f;  // Min=1.0 (disabled)
+const float    SUPER_SAMPLING_FACTOR     = 1.0f;  // Min=1.0 (disabled)
 
 /* Antialiasing (FXAA) */
 const bool     ENABLE_FXAA               = true;
@@ -766,14 +770,14 @@ init_scene(SceneResources *res)
                                &depth_clear);
 
    glm::vec4 direction = glm::vec4(1.0f, -4.5f, -1.25f, 0.0f);
-   glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-   glm::vec4 ambient = glm::vec4(0.15f, 0.15f, 0.15f, 1.0f);
-   glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+   glm::vec4 diffuse = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
+   glm::vec4 specular = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
+   glm::vec4 ambient = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
 
    res->light =
       vkdf_light_new_directional(direction, diffuse, ambient, specular);
 
-   res->light->intensity = 1.5f;
+   res->light->intensity = 1.0f;
 
    /* Near and Far planes have been empirically chosen, together with the
     * directional offset, to provide the tightest shadow map box that registers
@@ -822,6 +826,10 @@ init_scene(SceneResources *res)
                              SSAO_INTENSITY,
                              SSAO_BLUR_SIZE,
                              SSAO_BLUR_THRESHOLD);
+   }
+
+   if (ENABLE_HDR) {
+      vkdf_scene_enable_hdr(res->scene, HDR_EXPOSURE);
    }
 
    if (ENABLE_FXAA) {
