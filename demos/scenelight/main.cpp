@@ -1064,7 +1064,9 @@ create_debug_tile_renderpass(SceneResources *res)
 {
    VkAttachmentDescription attachments[1];
 
-   attachments[0].format = res->ctx->surface_format.format;
+   VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
+
+   attachments[0].format = color_image->format;
    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
