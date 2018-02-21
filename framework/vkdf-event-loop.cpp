@@ -1,25 +1,45 @@
 #include "vkdf.hpp"
 #include "vkdf-init-priv.hpp"
 
-#if VKDF_LOG_FPS_ENABLE
 static uint64_t _frames = 0;
 static double _frame_start_time = 0.0;
 static double _last_frame_time = 0.0;
+
+#if VKDF_LOG_FPS_ENABLE
 static double _total_time = 0.0;
 static double _frame_min_time = 1000000000.0;
 static double _frame_max_time = 0.0;
+#endif
 
 static inline void
-frame_start()
+frame_start(VkdfContext *ctx)
 {
    _frame_start_time = glfwGetTime();
 }
 
 static inline void
-frame_end()
+frame_end(VkdfContext *ctx)
 {
+   _frames++;
+
+   /* Compute frame time */
    double frame_end_time = glfwGetTime();
    _last_frame_time = frame_end_time - _frame_start_time;
+
+   /* If we have a FPS target set and we are early for it we wait until
+    * our frame budget is over before rendering the next frame.
+    */
+   if (ctx->fps_target > 0.0) {
+      double remaining = MAX2(0, ctx->frame_time_budget - _last_frame_time);
+      if (remaining > 0.0) {
+         long  nanos = trunc(remaining * 1000000000.0);
+         struct timespec req = { 0, nanos };
+         nanosleep(&req, NULL);
+         _last_frame_time = ctx->frame_time_budget;
+      }
+   }
+
+#if VKDF_LOG_FPS_ENABLE
    _total_time += _last_frame_time;
 
    if (_last_frame_time > _frame_max_time)
@@ -27,7 +47,6 @@ frame_end()
    else if (_last_frame_time < _frame_min_time)
       _frame_min_time = _last_frame_time;
 
-   _frames++;
    if (_frames == 60) {
       vkdf_info("fps: %.2f, avg: %.4f min=%.4f, max = %.4f\n",
                 _frames / _total_time, _total_time / _frames,
@@ -37,8 +56,8 @@ frame_end()
       _frame_min_time = 1000000;
       _frame_max_time = 0.0;
    }
-}
 #endif
+}
 
 void
 vkdf_rebuild_swap_chain(VkdfContext *ctx)
@@ -122,9 +141,7 @@ vkdf_event_loop_run(VkdfContext *ctx,
                     void *data)
 {
    do {
-#if VKDF_LOG_FPS_ENABLE
-      frame_start();
-#endif
+      frame_start(ctx);
 
       update_func(ctx, data);
 
@@ -135,9 +152,7 @@ vkdf_event_loop_run(VkdfContext *ctx,
 
       glfwPollEvents();
 
-#if VKDF_LOG_FPS_ENABLE
-      frame_end();
-#endif
+      frame_end(ctx);
    } while (glfwGetKey(ctx->window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
             glfwWindowShouldClose(ctx->window) == 0);
 

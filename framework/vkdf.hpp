@@ -103,6 +103,10 @@ struct _VkdfContext {
    VkdfRebuildSwapChainCB before_rebuild_swap_chain_cb;
    VkdfRebuildSwapChainCB after_rebuild_swap_chain_cb;
    void *rebuild_swap_chain_cb_data;
+
+   // Framerate target
+   float fps_target;
+   double frame_time_budget;
 };
 
 typedef struct _VkdfContext VkdfContext;
