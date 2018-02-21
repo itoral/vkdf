@@ -3868,6 +3868,19 @@ record_fxaa_cmd_buf(VkdfScene *s)
    vkdf_command_buffer_begin(cmd_buf,
                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
+   VkImageSubresourceRange subresource_range =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                          0, 1, 0, 1);
+
+   vkdf_image_set_layout(s->ctx,
+                         cmd_buf,
+                         s->fxaa.input.image,
+                         subresource_range,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
    VkRenderPassBeginInfo rp_begin =
       vkdf_renderpass_begin_new(s->fxaa.rp.renderpass,
                                 s->fxaa.rp.framebuffer,
