@@ -19,7 +19,7 @@ enum {
 
 /* Fixed GBuffer slot formats
  *
- * We use a 16-bit format for eye-space normals instead of am 8-bit snorm format
+ * We use a 16-bit format for eye-space normals instead of an 8-bit snorm format
  * because otherwise bump mapping and specular reflections get a significant
  * quality hit.
  *
