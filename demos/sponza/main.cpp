@@ -7,6 +7,9 @@ const float    WIN_WIDTH                 = 1024.0f;
 const float    WIN_HEIGHT                = 768.0f;
 const bool     WIN_FULLSCREEN            = false;
 
+/* Framerate target */
+const float    FRAMERATE_TARGET          = 30.0f;
+
 /* Sponza flag mesh */
 const bool     SHOW_SPONZA_FLAG_MESH     = false;
 const uint32_t SPONZA_FLAG_MESH_IDX      = 4;
@@ -2178,6 +2181,8 @@ main()
    SceneResources resources;
 
    vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, WIN_FULLSCREEN, false, false);
+   vkdf_set_framerate_target(&ctx, FRAMERATE_TARGET);
+
    init_resources(&ctx, &resources);
 
    vkdf_scene_event_loop_run(resources.scene);
