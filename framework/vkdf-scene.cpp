@@ -4719,7 +4719,7 @@ scene_update(VkdfScene *s)
          build_primary_cmd_buf(s);
       }
 
-      vkdf_camera_set_dirty(s->camera, false);
+      vkdf_camera_reset_dirty_state(s->camera);
    }
 }
 
