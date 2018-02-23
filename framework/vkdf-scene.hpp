@@ -136,7 +136,7 @@ struct _VkdfSceneTile {
 typedef void (*VkdfSceneUpdateStateCB)(void *);
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, bool, void *);
-typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkSemaphore, VkSemaphore, void *);
+typedef void (*VkdfScenePostprocessCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneGbufferMergeCommandsCB)(VkdfContext *, VkCommandBuffer, void *);
 
 struct _dim {
@@ -319,8 +319,6 @@ struct _VkdfScene {
             VkShaderModule fs;
          } shader;
       } pipeline;
-
-      VkCommandBuffer cmd_buf;
    } hdr;
 
    /* FXAA renderpass */
@@ -351,8 +349,6 @@ struct _VkdfScene {
             VkShaderModule fs;
          } shader;
       } pipeline;
-
-      VkCommandBuffer cmd_buf;
    } fxaa;
 
    // Tiling
@@ -417,6 +413,7 @@ struct _VkdfScene {
       VkCommandBuffer shadow_maps;       // Command buffer for shadow map updates
       VkCommandBuffer *present;          // Command buffer rt -> swapchin copies
       VkCommandBuffer gbuffer_merge;     // Command buffer for deferred gbuffer merge
+      VkCommandBuffer postprocess;       // Command buffer for post-processing passes
    } cmd_buf;
 
    struct {
@@ -429,8 +426,6 @@ struct _VkdfScene {
       VkSemaphore ssao_sem;
       VkSemaphore gbuffer_merge_sem;
       VkSemaphore postprocess_sem;
-      VkSemaphore hdr_sem;
-      VkSemaphore fxaa_sem;
       VkFence present_fence;
       bool present_fence_active;
    } sync;

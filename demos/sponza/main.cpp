@@ -217,15 +217,11 @@ typedef struct {
       } pipeline;
       VkRenderPass renderpass;
       VkFramebuffer framebuffer;
-      VkCommandBuffer cmd_buf;
    } debug;
 } SceneResources;
 
 static void
-postprocess_draw(VkdfContext *ctx,
-                 VkSemaphore scene_draw_sem,
-                 VkSemaphore postprocess_draw_sem,
-                 void *data);
+postprocess_draw(VkdfContext *ctx, VkCommandBuffer cmd_buf, void *data);
 
 
 // ============================== Implementation ==============================
@@ -1784,17 +1780,9 @@ create_debug_tile_pipeline(SceneResources *res)
 }
 
 static void
-record_debug_tile_cmd_buf(SceneResources *res)
+record_debug_tile_cmd_buf(SceneResources *res, VkCommandBuffer cmd_buf)
 {
    const VkdfMesh *mesh = res->tile_mesh;
-
-   vkdf_create_command_buffer(res->ctx,
-                              res->cmd_pool,
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &res->debug.cmd_buf);
-
-   vkdf_command_buffer_begin(res->debug.cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1808,7 +1796,7 @@ record_debug_tile_cmd_buf(SceneResources *res)
    rp_begin.clearValueCount = 0;
    rp_begin.pClearValues = NULL;
 
-   vkCmdBeginRenderPass(res->debug.cmd_buf,
+   vkCmdBeginRenderPass(cmd_buf,
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_INLINE);
 
@@ -1823,30 +1811,30 @@ record_debug_tile_cmd_buf(SceneResources *res)
    viewport.maxDepth = 1.0f;
    viewport.x = 0;
    viewport.y = 0;
-   vkCmdSetViewport(res->debug.cmd_buf, 0, 1, &viewport);
+   vkCmdSetViewport(cmd_buf, 0, 1, &viewport);
 
    VkRect2D scissor;
    scissor.extent.width = width;
    scissor.extent.height = height;
    scissor.offset.x = 0;
    scissor.offset.y = 0;
-   vkCmdSetScissor(res->debug.cmd_buf, 0, 1, &scissor);
+   vkCmdSetScissor(cmd_buf, 0, 1, &scissor);
 
    // Pipeline
-   vkCmdBindPipeline(res->debug.cmd_buf,
+   vkCmdBindPipeline(cmd_buf,
                      VK_PIPELINE_BIND_POINT_GRAPHICS,
                      res->debug.pipeline.pipeline);
 
    // Vertex buffer: position, uv
    const VkDeviceSize offsets[1] = { 0 };
-   vkCmdBindVertexBuffers(res->debug.cmd_buf,
+   vkCmdBindVertexBuffers(cmd_buf,
                           0,                       // Start Binding
                           1,                       // Binding Count
                           &mesh->vertex_buf.buf,   // Buffers
                           offsets);                // Offsets
 
    // Descriptors
-   vkCmdBindDescriptorSets(res->debug.cmd_buf,
+   vkCmdBindDescriptorSets(cmd_buf,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->debug.pipeline.layout,
                            0,                                // First decriptor set
@@ -1856,23 +1844,21 @@ record_debug_tile_cmd_buf(SceneResources *res)
                            NULL);                            // Dynamic offsets
 
    // Draw
-   vkCmdDraw(res->debug.cmd_buf,
+   vkCmdDraw(cmd_buf,
              mesh->vertices.size(),                // vertex count
              1,                                    // instance count
              0,                                    // first vertex
              0);                                   // first instance
 
-   vkCmdEndRenderPass(res->debug.cmd_buf);
-
-   vkdf_command_buffer_end(res->debug.cmd_buf);
+   vkCmdEndRenderPass(cmd_buf);
 }
 
 static VkRenderPass
-create_debug_tile_renderpass(SceneResources *res)
+create_debug_tile_renderpass(SceneResources *res, VkFormat format)
 {
    VkAttachmentDescription attachments[1];
 
-   attachments[0].format = res->ctx->surface_format.format;
+   attachments[0].format = format;
    attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
    attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
    attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -1918,10 +1904,13 @@ create_debug_tile_renderpass(SceneResources *res)
 static void
 init_debug_tile_resources(SceneResources *res)
 {
-   res->debug.renderpass =
-      create_debug_tile_renderpass(res);
+   res->debug.image = res->scene->lights[0]->shadow.shadow_map;
 
    VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
+
+   res->debug.renderpass =
+      create_debug_tile_renderpass(res, color_image->format);
+
    res->debug.framebuffer =
       vkdf_create_framebuffer(res->ctx,
                               res->debug.renderpass,
@@ -1930,8 +1919,6 @@ init_debug_tile_resources(SceneResources *res)
                               0, NULL);
 
    create_debug_tile_pipeline(res);
-
-   record_debug_tile_cmd_buf(res);
 }
 
 
@@ -1955,31 +1942,14 @@ init_resources(VkdfContext *ctx, SceneResources *res)
     */
    vkdf_scene_prepare(res->scene);
    init_pipelines(res);
-
-   if (SHOW_DEBUG_TILE) {
-      // Select source image for debug output.
-      res->debug.image = res->scene->lights[0]->shadow.shadow_map;
-
-      init_debug_tile_resources(res);
-   }
 }
 
 static void
-postprocess_draw(VkdfContext *ctx,
-                 VkSemaphore scene_draw_sem,
-                 VkSemaphore postprocess_draw_sem,
-                 void *data)
+postprocess_draw(VkdfContext *ctx, VkCommandBuffer cmd_buf, void *data)
 {
    SceneResources *res = (SceneResources *) data;
-
-   // Overlay debug tile on top of the scene framebuffer
-   VkPipelineStageFlags debug_tile_wait_stages =
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-   vkdf_command_buffer_execute(ctx,
-                               res->debug.cmd_buf,
-                               &debug_tile_wait_stages,
-                               1, &scene_draw_sem,
-                               1, &postprocess_draw_sem);
+   init_debug_tile_resources(res);
+   record_debug_tile_cmd_buf(res, cmd_buf);
 }
 
 static void

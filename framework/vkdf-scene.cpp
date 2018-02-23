@@ -403,8 +403,6 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.ssao_sem = vkdf_create_semaphore(s->ctx);;
    s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
-   s->sync.hdr_sem = vkdf_create_semaphore(s->ctx);
-   s->sync.fxaa_sem = vkdf_create_semaphore(s->ctx);
    s->sync.present_fence = vkdf_create_fence(s->ctx);
 
    s->ubo.static_pool =
@@ -701,8 +699,6 @@ vkdf_scene_free(VkdfScene *s)
    vkDestroySemaphore(s->ctx->device, s->sync.gbuffer_merge_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.ssao_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.postprocess_sem, NULL);
-   vkDestroySemaphore(s->ctx->device, s->sync.hdr_sem, NULL);
-   vkDestroySemaphore(s->ctx->device, s->sync.fxaa_sem, NULL);
    vkDestroyFence(s->ctx->device, s->sync.present_fence, NULL);
 
    for (uint32_t i = 0; i < s->thread.num_threads; i++) {
@@ -3892,19 +3888,9 @@ struct HdrPCB {
    float exposure;
 };
 
-static VkCommandBuffer
-record_hdr_cmd_buf(VkdfScene *s)
+static void
+record_hdr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
 {
-   VkCommandBuffer cmd_buf;
-
-   vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[0],
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
-
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-
    VkImageSubresourceRange subresource_range =
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
                                           0, 1, 0, 1);
@@ -3956,14 +3942,10 @@ record_hdr_cmd_buf(VkdfScene *s)
    vkCmdDraw(cmd_buf, 4, 1, 0, 0);
 
    vkCmdEndRenderPass(cmd_buf);
-
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
 }
 
 static VkdfImage
-prepare_hdr(VkdfScene *s, const VkdfImage *input)
+prepare_hdr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
 {
    assert(s->hdr.enabled);
 
@@ -4068,7 +4050,7 @@ prepare_hdr(VkdfScene *s, const VkdfImage *input)
                                       0, 1);
 
    /* Command buffer */
-   s->hdr.cmd_buf = record_hdr_cmd_buf(s);
+   record_hdr_cmd_buf(s, cmd_buf);
 
    return s->hdr.output;
 }
@@ -4079,19 +4061,9 @@ struct FxaaPCB {
    float subpx_aa;
 };
 
-static VkCommandBuffer
-record_fxaa_cmd_buf(VkdfScene *s)
+static void
+record_fxaa_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
 {
-   VkCommandBuffer cmd_buf;
-
-   vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[0],
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
-
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-
    VkImageSubresourceRange subresource_range =
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
                                           0, 1, 0, 1);
@@ -4145,14 +4117,10 @@ record_fxaa_cmd_buf(VkdfScene *s)
    vkCmdDraw(cmd_buf, 4, 1, 0, 0);
 
    vkCmdEndRenderPass(cmd_buf);
-
-   vkdf_command_buffer_end(cmd_buf);
-
-   return cmd_buf;
 }
 
 static VkdfImage
-prepare_fxaa(VkdfScene *s, const VkdfImage *input)
+prepare_fxaa(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
 {
    assert(s->fxaa.enabled);
 
@@ -4256,9 +4224,65 @@ prepare_fxaa(VkdfScene *s, const VkdfImage *input)
                                       0, 1);
 
    /* Command buffer */
-   s->fxaa.cmd_buf = record_fxaa_cmd_buf(s);
+   record_fxaa_cmd_buf(s, cmd_buf);
 
    return s->fxaa.output;
+}
+
+static void
+prepare_post_processing_render_passes(VkdfScene *s)
+{
+   /* We record all the post-processing commands into a single
+    * command buffer
+    */
+   VkCommandBuffer cmd_buf;
+
+   vkdf_create_command_buffer(s->ctx,
+                              s->cmd_buf.pool[0],
+                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                              1, &cmd_buf);
+
+   vkdf_command_buffer_begin(cmd_buf,
+                             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+
+   /* NOTE: Keep post-processing passes sorted in rendering order to keep
+    * track of input and output images for each stage.
+    */
+   VkdfImage output = s->rt.color;
+
+   bool has_post_processing = false;
+
+   if (s->callbacks.postprocess) {
+      has_post_processing = true;
+      s->callbacks.postprocess(s->ctx, cmd_buf, s->callbacks.data);
+      if (s->callbacks.postprocess_output)
+         output = *s->callbacks.postprocess_output;
+   }
+
+   if (s->hdr.enabled) {
+      has_post_processing = true;
+      output = prepare_hdr(s, cmd_buf, &output);
+   }
+
+   if (s->fxaa.enabled) {
+      has_post_processing = true;
+      output = prepare_fxaa(s, cmd_buf, &output);
+   }
+
+   vkdf_command_buffer_end(cmd_buf);
+
+   /* If we haven't recorded any post-processing passes into the
+    * command buffer, free it
+    */
+   if (has_post_processing) {
+      s->cmd_buf.postprocess = cmd_buf;
+   } else {
+      vkFreeCommandBuffers(s->ctx->device, s->cmd_buf.pool[0], 1, &cmd_buf);
+   }
+
+   /* We present from the output of the last post-processing pass */
+   prepare_present_from_image(s, output);
 }
 
 static void
@@ -4278,25 +4302,7 @@ prepare_scene_render_passes(VkdfScene *s)
       prepare_deferred_render_passes(s);
    }
 
-
-   /* NOTE: Keep post-processing passes sorted in rendering order to keep
-    * track of input and output images for each stage.
-    */
-   VkdfImage output = s->rt.color;
-
-   if (s->callbacks.postprocess && s->callbacks.postprocess_output) {
-      output = *s->callbacks.postprocess_output;
-   }
-
-   if (s->hdr.enabled) {
-      output = prepare_hdr(s, &output);
-   }
-
-   if (s->fxaa.enabled) {
-      output = prepare_fxaa(s, &output);
-   }
-
-   prepare_present_from_image(s, output);
+   prepare_post_processing_render_passes(s);
 }
 
 static void
@@ -4873,43 +4879,17 @@ scene_draw(VkdfScene *s)
       wait_sem = &s->sync.gbuffer_merge_sem;
    }
 
-   // Execute postprocess callback
-   if (s->callbacks.postprocess) {
-      assert(wait_sem_count == 1);
-      s->callbacks.postprocess(s->ctx,
-                               *wait_sem,
-                               s->sync.postprocess_sem,
-                               s->callbacks.data);
+   // Execute post-processing chain command buffer
+   if (s->cmd_buf.postprocess) {
+      vkdf_command_buffer_execute(s->ctx,
+                                  s->cmd_buf.postprocess,
+                                  &wait_stage,
+                                  wait_sem_count, wait_sem,
+                                  1, &s->sync.postprocess_sem);
 
       wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.postprocess_sem;
-   }
-
-   // HDR Tone Mapping
-   if (s->hdr.enabled) {
-      vkdf_command_buffer_execute(s->ctx,
-                                  s->hdr.cmd_buf,
-                                  &wait_stage,
-                                  wait_sem_count, wait_sem,
-                                  1, &s->sync.hdr_sem);
-
-      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-      wait_sem_count = 1;
-      wait_sem = &s->sync.hdr_sem;
-   }
-
-   // FXAA
-   if (s->fxaa.enabled) {
-      vkdf_command_buffer_execute(s->ctx,
-                                  s->fxaa.cmd_buf,
-                                  &wait_stage,
-                                  wait_sem_count, wait_sem,
-                                  1, &s->sync.fxaa_sem);
-
-      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-      wait_sem_count = 1;
-      wait_sem = &s->sync.fxaa_sem;
    }
 
    /* ========== Copy rendering result to swapchain ========== */
