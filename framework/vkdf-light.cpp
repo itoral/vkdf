@@ -91,6 +91,8 @@ vkdf_light_get_view_matrix(VkdfLight *l)
 
 
    bitfield_unset(&l->dirty, VKDF_LIGHT_DIRTY_VIEW);
+   bitfield_set(&l->dirty, VKDF_LIGHT_DIRTY_VIEW_INV);
+
    return &l->view_matrix;
 }
 
