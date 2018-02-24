@@ -69,7 +69,12 @@ typedef struct {
    VkdfLight *light;
    struct {
       VkdfSceneShadowSpec spec;
-      VkdfBox box; /* Only for directional lights */
+      /* Only for directional lights */
+      struct {
+         VkdfBox box;       // Shadow map box
+         glm::vec3 cam_pos; // Camera position used to record shadow map
+         glm::vec3 cam_rot; // Camera view dir used to record shadow map
+      } directional;
       glm::mat4 proj;
       glm::mat4 viewproj;
       VkdfImage shadow_map;

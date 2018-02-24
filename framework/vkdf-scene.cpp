@@ -1003,8 +1003,11 @@ compute_directional_light_projection(VkdfSceneLight *sl, VkdfCamera *cam)
    proj[3][3] =  1.0f;
 
    sl->shadow.proj = clip * proj;
+   sl->shadow.directional.box = *box;
 
-   sl->shadow.box = *box;
+   /* Record the camera parameters used to capture the shadow map */
+   sl->shadow.directional.cam_pos = cam->pos;
+   sl->shadow.directional.cam_rot = cam->rot;
 }
 
 static void
@@ -1055,7 +1058,8 @@ compute_light_view_projection(VkdfScene *s, VkdfSceneLight *sl)
     */
    glm::mat4 final_view;
    const glm::mat4 *view_inv = vkdf_light_get_view_matrix_inv(sl->light);
-   glm::vec3 offset = vec3((*view_inv) * vec4(sl->shadow.box.center, 1.0f));
+   glm::vec3 offset =
+      vec3((*view_inv) * vec4(sl->shadow.directional.box.center, 1.0f));
    glm::vec3 dir = vkdf_camera_get_viewdir(s->camera);
    offset += dir * sl->shadow.spec.directional.offset;
    final_view = glm::translate((*view), -offset);
@@ -3015,6 +3019,22 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
    }
 }
 
+static bool
+directional_light_has_dirty_shadow_map(VkdfScene *s, VkdfSceneLight *sl)
+{
+   VkdfCamera *cam = vkdf_scene_get_camera(s);
+
+   glm::vec3 cam_pos = vkdf_camera_get_position(cam);
+   if (cam->pos != sl->shadow.directional.cam_pos)
+      return true;
+
+   glm::vec3 cam_rot = vkdf_camera_get_rotation(cam);
+   if (cam_rot != sl->shadow.directional.cam_rot)
+      return true;
+
+   return false;
+}
+
 static void
 update_dirty_lights(VkdfScene *s)
 {
@@ -3041,10 +3061,9 @@ update_dirty_lights(VkdfScene *s)
 
       // Directional ligthts are special because the shadow box that defines
       // the shadow map changes as the camera moves around.
-      if (vkdf_light_casts_shadows(l) &&
-          vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL &&
-          (vkdf_camera_has_dirty_position(s->camera) ||
-           vkdf_camera_has_dirty_viewdir(s->camera))) {
+      if (vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL &&
+          vkdf_light_casts_shadows(l) &&
+          directional_light_has_dirty_shadow_map(s, sl)) {
          compute_light_projection(s, sl);
          vkdf_light_set_dirty_shadows(l, true);
       }
