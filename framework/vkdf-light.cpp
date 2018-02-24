@@ -15,6 +15,8 @@ init_light(VkdfLight *l,
 
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
+
+   bitfield_unset(&l->cached, ~0);
 }
 
 VkdfLight *
@@ -68,7 +70,7 @@ vkdf_light_new_spotlight(glm::vec4 pos,
 const glm::mat4 *
 vkdf_light_get_view_matrix(VkdfLight *l)
 {
-   if (!bitfield_get(l->dirty, VKDF_LIGHT_DIRTY_VIEW))
+   if (bitfield_get(l->cached, VKDF_LIGHT_CACHED_VIEW))
       return &l->view_matrix;
 
    switch (vkdf_light_get_type(l)) {
@@ -89,9 +91,10 @@ vkdf_light_get_view_matrix(VkdfLight *l)
       break;
    };
 
-
    bitfield_unset(&l->dirty, VKDF_LIGHT_DIRTY_VIEW);
-   bitfield_set(&l->dirty, VKDF_LIGHT_DIRTY_VIEW_INV);
+
+   bitfield_set(&l->cached, VKDF_LIGHT_CACHED_VIEW);
+   bitfield_unset(&l->cached, VKDF_LIGHT_CACHED_VIEW_INV);
 
    return &l->view_matrix;
 }
@@ -99,19 +102,16 @@ vkdf_light_get_view_matrix(VkdfLight *l)
 const glm::mat4 *
 vkdf_light_get_view_matrix_inv(VkdfLight *l)
 {
-   if (bitfield_get(l->dirty, VKDF_LIGHT_DIRTY_VIEW)) {
+   if (bitfield_get(l->dirty, VKDF_LIGHT_DIRTY_VIEW))
       vkdf_light_get_view_matrix(l);
-      bitfield_set(&l->dirty, VKDF_LIGHT_DIRTY_VIEW_INV);
-   }
 
-   if (bitfield_get(l->dirty, VKDF_LIGHT_DIRTY_VIEW_INV)) {
+   if (!bitfield_get(l->cached, VKDF_LIGHT_CACHED_VIEW_INV)) {
       l->view_matrix_inv = glm::inverse(l->view_matrix);
-      bitfield_unset(&l->dirty, VKDF_LIGHT_DIRTY_VIEW_INV);
+      bitfield_set(&l->cached, VKDF_LIGHT_CACHED_VIEW_INV);
    }
 
    return &l->view_matrix_inv;
 }
-
 
 void
 vkdf_light_free(VkdfLight *light)

@@ -11,7 +11,11 @@ enum {
    VKDF_LIGHT_DIRTY            = (1 << 0),
    VKDF_LIGHT_DIRTY_SHADOWS    = (1 << 1),
    VKDF_LIGHT_DIRTY_VIEW       = (1 << 2),
-   VKDF_LIGHT_DIRTY_VIEW_INV   = (1 << 3),
+};
+
+enum {
+   VKDF_LIGHT_CACHED_VIEW       = (1 << 0),
+   VKDF_LIGHT_CACHED_VIEW_INV   = (1 << 1),
 };
 
 typedef struct {
@@ -42,7 +46,8 @@ typedef struct {
    uint32_t casts_shadows;
 
    uint32_t dirty;              // Dirty state
-   float padding[1];            // Keep this struct 16-byte aligned
+   uint32_t cached;
+   float padding[0];            // Keep this struct 16-byte aligned
 } VkdfLight;
 
 VkdfLight *
@@ -71,9 +76,8 @@ vkdf_light_set_type(VkdfLight *l, uint32_t light_type)
 {
    l->origin.w = (float) light_type;
 
-   uint32_t dirty_bits =
-      VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_SHADOWS | VKDF_LIGHT_DIRTY_VIEW;
-   bitfield_set(&l->dirty, dirty_bits);
+   bitfield_set(&l->dirty, ~0);
+   bitfield_unset(&l->cached, ~0);
 }
 
 uint32_t inline
@@ -91,6 +95,9 @@ vkdf_light_set_position(VkdfLight *l, glm::vec3 pos)
    uint32_t dirty_bits =
       VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_SHADOWS | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
+
+   bitfield_unset(&l->cached,
+                  VKDF_LIGHT_CACHED_VIEW | VKDF_LIGHT_CACHED_VIEW_INV);
 }
 
 glm::vec4 inline
@@ -109,6 +116,9 @@ vkdf_light_set_direction(VkdfLight *l, glm::vec3 dir)
    uint32_t dirty_bits =
       VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_SHADOWS | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
+
+   bitfield_unset(&l->cached,
+                  VKDF_LIGHT_CACHED_VIEW | VKDF_LIGHT_CACHED_VIEW_INV);
 }
 
 glm::vec4 inline
@@ -192,6 +202,9 @@ vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
    uint32_t dirty_bits =
       VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_SHADOWS | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
+
+   bitfield_unset(&l->cached,
+                  VKDF_LIGHT_CACHED_VIEW | VKDF_LIGHT_CACHED_VIEW_INV);
 }
 
 /* The cutoff angle is half of the aperture angle of the spotlight */
@@ -234,7 +247,11 @@ vkdf_light_set_rotation(VkdfLight *l, glm::vec3 rot)
 
    uint32_t dirty_bits =
       VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_SHADOWS | VKDF_LIGHT_DIRTY_VIEW;
+
    bitfield_set(&l->dirty, dirty_bits);
+
+   bitfield_unset(&l->cached,
+                  VKDF_LIGHT_CACHED_VIEW | VKDF_LIGHT_CACHED_VIEW_INV);
 }
 
 glm::vec3 inline

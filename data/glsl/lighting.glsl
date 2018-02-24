@@ -16,7 +16,7 @@ struct Light
    float intensity;
    bool casts_shadows;
    uint dirty;
-   uint pad0;
+   uint cached;
 };
 
 struct Material
