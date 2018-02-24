@@ -63,23 +63,39 @@ typedef struct {
    // PFC kernel_size: valid values start at 1 (no PFC, 1 sample) to
    // N (2*(N-1)+1)^2 samples).
    uint32_t pcf_kernel_size;
+
+   // Min. number of frames to skip before executing a shadow map update
+   int32_t skip_frames;
 } VkdfSceneShadowSpec;
 
 typedef struct {
    VkdfLight *light;
    struct {
       VkdfSceneShadowSpec spec;
-      /* Only for directional lights */
+
+      // Number of frames elapsed without updating the shadow map
+      int32_t frame_counter;
+
+      // Directional light shadow map info
       struct {
          VkdfBox box;       // Shadow map box
          glm::vec3 cam_pos; // Camera position used to record shadow map
          glm::vec3 cam_rot; // Camera view dir used to record shadow map
       } directional;
+
+      // Light's projection and view-projection matrices
       glm::mat4 proj;
       glm::mat4 viewproj;
+
+      // Shadow map image for the light
       VkdfImage shadow_map;
+
+      // Rendering resources required to render the shadoe map
       VkFramebuffer framebuffer;
       VkSampler sampler;
+
+      // List of visible tiles for the light. Used to clip the scene to the
+      // light's view area when rendering the shadow map
       GList *visible;
    } shadow;
    VkdfFrustum frustum;
@@ -804,6 +820,7 @@ vkdf_scene_event_loop_run(VkdfScene *s);
 
 inline void
 vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
+                           int32_t skip_frames,
                            uint32_t shadow_map_size,
                            float near_plane,
                            float far_plane,
@@ -821,6 +838,7 @@ vkdf_scene_shadow_spec_set(VkdfSceneShadowSpec *spec,
    spec->directional.offset = directional_offset;
    spec->directional.scale = directional_scale;
    spec->pcf_kernel_size = pcf_kernel_size;
+   spec->skip_frames = skip_frames;
 }
 
 inline void

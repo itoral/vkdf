@@ -1091,6 +1091,9 @@ scene_light_enable_shadows(VkdfScene *s,
                                  VK_FILTER_LINEAR,
                                  VK_SAMPLER_MIPMAP_MODE_NEAREST);
 
+   /* Make sure we compute the shadow map immediately */
+   sl->shadow.frame_counter = -1;
+
    compute_light_projection(s, sl);
 
    vkdf_light_set_dirty_shadows(sl->light, true);
@@ -2756,20 +2759,33 @@ record_shadow_map_commands(VkdfScene *s,
    vkCmdEndRenderPass(s->cmd_buf.shadow_maps);
 }
 
-static inline void
-check_for_dirty_lights(VkdfScene *s)
+static bool
+skip_shadow_map_frame(VkdfSceneLight *sl)
 {
-   s->lights_dirty = false;
-   s->shadow_maps_dirty = false;
-   for (uint32_t i = 0;
-        !(s->lights_dirty && s->shadow_maps_dirty) && i < s->lights.size();
-        i++) {
-      VkdfLight *l = s->lights[i]->light;
-      if (vkdf_light_is_dirty(l))
-         s->lights_dirty = true;
-      if (vkdf_light_has_dirty_shadows(l))
-         s->shadow_maps_dirty = true;
-   }
+   /* If frame_counter < 0 it means that the shadow map has never
+    * been recorded yet, so we can't skip
+    */
+   if (sl->shadow.frame_counter < 0)
+      return false;
+
+   /* If skip_frames < 0 it means we never want to update the shadow map */
+   if (sl->shadow.spec.skip_frames < 0)
+      return true;
+
+   /* Otherwise, update only if we have skipped the requested frames */
+   if (sl->shadow.frame_counter < sl->shadow.spec.skip_frames)
+      return true;
+
+   return false;
+}
+
+static bool
+vkdf_scene_light_has_dirty_shadows(VkdfSceneLight *sl)
+{
+   if (!vkdf_light_has_dirty_shadows(sl->light))
+      return false;
+
+   return !skip_shadow_map_frame(sl);
 }
 
 static bool
@@ -2807,7 +2823,7 @@ record_scene_light_resource_updates(VkdfScene *s)
          VkdfSceneLight *sl = s->lights[i];
          if (!vkdf_light_casts_shadows(sl->light))
             continue;
-         if (!vkdf_light_has_dirty_shadows(sl->light))
+         if (!vkdf_scene_light_has_dirty_shadows(sl))
             continue;
 
          struct _shadow_map_ubo_data data;
@@ -2997,7 +3013,7 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 
    // If the light has dirty shadows it means that its area of influence
    // has changed and we need to recompute its list of visible tiles.
-   if (vkdf_light_has_dirty_shadows(l)) {
+   if (vkdf_scene_light_has_dirty_shadows(sl)) {
       data->has_dirty_shadow_map = true;
       compute_light_view_projection(s, sl);
       compute_visible_tiles_for_light(s, sl);
@@ -3007,10 +3023,13 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
    // we need to regen shadow maps due to dynamic objects anyway. If the
    // light has dynamic objects in its area of influence then we also need
    // an updated list of objects so we can render them to the shadow map
+   //
+   // We need to update the shadow maps in this case even if we are skipping
+   // shadow map frames, since otherwise we get self-shadowing on dynamic
+   // objects
    bool has_dirty_objects;
    GHashTable *dyn_sets =
       find_dynamic_objects_for_light(s, sl, &has_dirty_objects);
-
    data->has_dirty_shadow_map = data->has_dirty_shadow_map || has_dirty_objects;
 
    if (data->has_dirty_shadow_map) {
@@ -3023,6 +3042,9 @@ static bool
 directional_light_has_dirty_shadow_map(VkdfScene *s, VkdfSceneLight *sl)
 {
    VkdfCamera *cam = vkdf_scene_get_camera(s);
+
+   if (vkdf_light_has_dirty_shadows(sl->light))
+      return true;
 
    glm::vec3 cam_pos = vkdf_camera_get_position(cam);
    if (cam->pos != sl->shadow.directional.cam_pos)
@@ -3071,7 +3093,7 @@ update_dirty_lights(VkdfScene *s)
       if (vkdf_light_is_dirty(l))
          s->lights_dirty = true;
 
-      if (vkdf_light_has_dirty_shadows(l))
+      if (vkdf_scene_light_has_dirty_shadows(sl))
          sl->dirty_frustum = true;
 
       if (!vkdf_light_casts_shadows(l))
@@ -3112,7 +3134,6 @@ update_dirty_lights(VkdfScene *s)
       for (; i < data_count; i++) {
          if (!data[i].has_dirty_shadow_map)
             continue;
-
          struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
          record_shadow_map_commands(s, ds->sl, ds->dyn_sets);
          dirty_shadow_map_list = g_list_prepend(dirty_shadow_map_list, ds);
@@ -3133,9 +3154,16 @@ update_dirty_lights(VkdfScene *s)
    // Clean-up dirty bits on the lights now
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
-      if (!vkdf_light_is_dirty(sl->light))
-         continue;
-      vkdf_light_set_dirty(sl->light, false);
+
+      if (vkdf_scene_light_has_dirty_shadows(sl)) {
+         vkdf_light_set_dirty_shadows(sl->light, false);
+         sl->shadow.frame_counter = 0;
+      } else {
+         sl->shadow.frame_counter++;
+      }
+
+      bitfield_unset(&sl->light->dirty,
+                     VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_VIEW);
    }
 }
 
@@ -3146,10 +3174,6 @@ update_dirty_lights(VkdfScene *s)
 static void
 prepare_scene_lights(VkdfScene *s)
 {
-   check_for_dirty_lights(s);
-   if (!s->shadow_maps_dirty)
-      return;
-
    // Create shared rendering resources for shadow maps
    create_shadow_map_renderpass(s);
    create_shadow_map_pipelines(s);
@@ -3157,7 +3181,8 @@ prepare_scene_lights(VkdfScene *s)
    // Create per-light resources
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
-      create_shadow_map_framebuffer(s, sl);
+      if (vkdf_light_casts_shadows(s->lights[i]->light))
+         create_shadow_map_framebuffer(s, sl);
    }
 }
 

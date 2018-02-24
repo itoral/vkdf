@@ -40,6 +40,7 @@ const float      MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
 /* Shadow mapping */
 const bool       ENABLE_SHADOWS            = true;
 const uint32_t   SHADOW_MAP_SIZE           = 4096;
+const int32_t    SHADOW_MAP_SKIP_FRAMES    = -1;    // N < 0: never update, N >= 0: skip N frames
 const uint32_t   SHADOW_MAP_PCF_SIZE       = 2;     // Min=1 (disabled)
 const uint32_t   SHADOW_MAP_CONST_BIAS     = 1.0f;
 const uint32_t   SHADOW_MAP_SLOPE_BIAS     = 2.0f;
@@ -786,6 +787,7 @@ init_scene(SceneResources *res)
     * of the model.
     */
    vkdf_scene_shadow_spec_set(&res->shadow_spec,
+                              SHADOW_MAP_SKIP_FRAMES,
                               SHADOW_MAP_SIZE,
                               0.1f, 60.0f,                 // Near, Far
                               SHADOW_MAP_CONST_BIAS,
