@@ -2924,88 +2924,70 @@ find_dynamic_objects_for_light(VkdfScene *s,
    return dyn_sets;
 }
 
-static bool
-record_scene_dynamic_shadow_map_resource_updates(VkdfScene *s,
-                                                 GList *dirty_shadow_maps)
+static void
+record_dynamic_shadow_map_resource_updates_helper(VkdfScene *s,
+                                                  const _DirtyShadowMapInfo *ds,
+                                                  VkDeviceSize *offset)
 {
-   if (!dirty_shadow_maps)
-      return false;
-
-   // Generate host buffer with data
+   // Fill host buffer with data
    //
    // We store visible objects to each light contiguously so we can use
    // instanced rendering. Because the same object can be seen by multiple
    // lights, we may have to replicate object data for each light.
    uint8_t *mem = (uint8_t *) s->dynamic.ubo.shadow_map.host_buf;
-   VkDeviceSize offset = 0;
 
-   GList *sm_iter = dirty_shadow_maps;
-   while (sm_iter) {
-      struct _DirtyShadowMapInfo *ds
-         = (struct _DirtyShadowMapInfo *) sm_iter->data;
-      uint32_t count = 0;
+   uint32_t count = 0;
 
-      char *id;
-      VkdfSceneSetInfo *info;
-      GHashTableIter set_iter;
-      g_hash_table_iter_init(&set_iter, ds->dyn_sets);
-      while (g_hash_table_iter_next(&set_iter, (void **)&id, (void **)&info)) {
-         if (!info || info->shadow_caster_count == 0)
-            continue;
+   char *id;
+   VkdfSceneSetInfo *info;
+   GHashTableIter set_iter;
+   g_hash_table_iter_init(&set_iter, ds->dyn_sets);
+   while (g_hash_table_iter_next(&set_iter, (void **)&id, (void **)&info)) {
+      if (!info || info->shadow_caster_count == 0)
+         continue;
 
-         // Sanity check
-         assert(count == info->shadow_caster_start_index);
+      // Sanity check
+      assert(count == info->shadow_caster_start_index);
 
-         GList *obj_iter = info->objs;
-         while (obj_iter) {
-            VkdfObject *obj = (VkdfObject *) obj_iter->data;
+      GList *obj_iter = info->objs;
+      while (obj_iter) {
+         VkdfObject *obj = (VkdfObject *) obj_iter->data;
 
-            // Model matrix
-            glm::mat4 model = vkdf_object_get_model_matrix(obj);
-            memcpy(mem + offset,
-                   &model[0][0], sizeof(glm::mat4));
-            offset += sizeof(glm::mat4);
+         // Model matrix
+         glm::mat4 model = vkdf_object_get_model_matrix(obj);
+         memcpy(mem + (*offset),
+                &model[0][0], sizeof(glm::mat4));
+         *offset += sizeof(glm::mat4);
 
-            offset = ALIGN(offset, 16);
+         *offset = ALIGN(*offset, 16);
 
-            count++;
-            obj_iter = g_list_next(obj_iter);
-         }
+         count++;
+         obj_iter = g_list_next(obj_iter);
       }
+   }
+}
 
-      sm_iter = g_list_next(sm_iter);
+static void
+record_dynamic_shadow_map_resource_updates(VkdfScene *s,
+                                           const std::vector<struct LightThreadData>& data)
+{
+   VkDeviceSize offset = 0;
+   for (int i = 0; i < data.size(); i++) {
+      if (!data[i].has_dirty_shadow_map)
+         continue;
+      const struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
+      record_dynamic_shadow_map_resource_updates_helper(s, ds, &offset);
    }
 
    // If offset > 0 then we have at least one dynamic object that needs
    // to be updated
    if (offset > 0) {
       assert(offset < 64 * 1024);
+      uint8_t *mem = (uint8_t *) s->dynamic.ubo.shadow_map.host_buf;
       vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                         s->dynamic.ubo.shadow_map.buf.buf,
                         0, offset, mem);
-
-      s->cmd_buf.have_resource_updates = true;
    }
-
-   return s->cmd_buf.have_resource_updates;
-}
-
-static inline void
-free_dirty_shadow_map_info_list(GList **dirty_shadow_map_list)
-{
-   assert(*dirty_shadow_map_list);
-
-   GList *iter = *dirty_shadow_map_list;
-   do {
-      struct _DirtyShadowMapInfo *ds =
-         (struct _DirtyShadowMapInfo *) iter->data;
-      g_hash_table_foreach(ds->dyn_sets, destroy_set, NULL);
-      g_hash_table_destroy(ds->dyn_sets);
-      /* warning: ds points to stack-allocated data so don't free it here */
-      iter = g_list_next(iter);
-   } while (iter);
-   g_list_free(*dirty_shadow_map_list);
-   *dirty_shadow_map_list = NULL;
 }
 
 static void
@@ -3151,33 +3133,23 @@ update_dirty_lights(VkdfScene *s)
    if (s->lights_dirty)
       record_dirty_light_resource_updates(s);
 
-   GList *dirty_shadow_map_list = NULL;
    if (s->shadow_maps_dirty) {
       record_dirty_shadow_map_resource_updates(s);
+      record_dynamic_shadow_map_resource_updates(s, data);
 
-      for (int i = first_dirty_shadow_map; i < data_count; i++) {
-         if (!data[i].has_dirty_shadow_map)
-            continue;
-         struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
-         dirty_shadow_map_list = g_list_prepend(dirty_shadow_map_list, ds);
-      }
-      record_scene_dynamic_shadow_map_resource_updates(s, dirty_shadow_map_list);
-   }
-
-   // Record command buffer for rendering dirty shadow maps
-   if (s->shadow_maps_dirty) {
+      /* Record shadow map commands */
       start_recording_shadow_map_commands(s);
       for (int i = first_dirty_shadow_map; i < data_count; i++) {
          if (!data[i].has_dirty_shadow_map)
             continue;
          struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
          record_shadow_map_commands(s, ds->sl, ds->dyn_sets);
+
+         g_hash_table_foreach(ds->dyn_sets, destroy_set, NULL);
+         g_hash_table_destroy(ds->dyn_sets);
       }
       stop_recording_shadow_map_commands(s);
    }
-
-   if (dirty_shadow_map_list)
-      free_dirty_shadow_map_info_list(&dirty_shadow_map_list);
 
    // Clean-up dirty bits on the lights now
    for (uint32_t i = 0; i < num_lights; i++) {
