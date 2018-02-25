@@ -3123,39 +3123,51 @@ update_dirty_lights(VkdfScene *s)
       vkdf_thread_pool_wait(s->thread.pool);
 
    // Check if we have at least one shadow map that we need to update.
-   uint32_t i = 0;
-   for (; i < data_count; i++) {
-      if (data[i].has_dirty_shadow_map)
+   uint32_t first_dirty_shadow_map = 0;
+   for (; first_dirty_shadow_map < data_count; first_dirty_shadow_map++) {
+      if (data[first_dirty_shadow_map].has_dirty_shadow_map) {
+         s->shadow_maps_dirty = true;
          break;
+      }
    }
 
-   // If we do, then record a cmd_buf with all the shadow map updates
+   /* Record the commands to update scene light resources for rendering, this
+    * includes:
+    *
+    * 1. Dirty light descriptions
+    * 2. Dirty shadow map descriptions
+    * 3. Dynamic objects that need to be rendered into each shadow map
+    */
+   if (s->lights_dirty)
+      record_dirty_light_resource_updates(s);
+
    GList *dirty_shadow_map_list = NULL;
-   if (i < data_count) {
-      s->shadow_maps_dirty = true;
+   if (s->shadow_maps_dirty) {
+      record_dirty_shadow_map_resource_updates(s);
+
+      for (int i = first_dirty_shadow_map; i < data_count; i++) {
+         if (!data[i].has_dirty_shadow_map)
+            continue;
+         struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
+         dirty_shadow_map_list = g_list_prepend(dirty_shadow_map_list, ds);
+      }
+      record_scene_dynamic_shadow_map_resource_updates(s, dirty_shadow_map_list);
+   }
+
+   // Record command buffer for rendering dirty shadow maps
+   if (s->shadow_maps_dirty) {
       start_recording_shadow_maps_cmd_buf(s);
-      for (; i < data_count; i++) {
+      for (int i = first_dirty_shadow_map; i < data_count; i++) {
          if (!data[i].has_dirty_shadow_map)
             continue;
          struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
          record_shadow_map_commands(s, ds->sl, ds->dyn_sets);
-         dirty_shadow_map_list = g_list_prepend(dirty_shadow_map_list, ds);
       }
       stop_recording_shadow_maps_cmd_buf(s);
    }
 
-   // Record commands to update dynamic shadow map resources for each light
-   if (dirty_shadow_map_list) {
-      record_scene_dynamic_shadow_map_resource_updates(s, dirty_shadow_map_list);
+   if (dirty_shadow_map_list)
       free_dirty_shadow_map_info_list(&dirty_shadow_map_list);
-   }
-
-   // Record the commands to update scene light resources for rendering
-   if (s->lights_dirty)
-      record_dirty_light_resource_updates(s);
-
-   if (s->shadow_maps_dirty)
-      record_dirty_shadow_map_resource_updates(s);
 
    // Clean-up dirty bits on the lights now
    for (uint32_t i = 0; i < num_lights; i++) {
