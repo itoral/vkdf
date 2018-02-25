@@ -2788,63 +2788,65 @@ vkdf_scene_light_has_dirty_shadows(VkdfSceneLight *sl)
    return !skip_shadow_map_frame(sl);
 }
 
-static bool
-record_scene_light_resource_updates(VkdfScene *s)
+static void
+record_dirty_light_resource_updates(VkdfScene *s)
 {
-   assert(s->lights_dirty || s->shadow_maps_dirty);
+   assert(s->lights_dirty);
 
    uint32_t num_lights = s->lights.size();
 
-   // First we update dirty light descriptions
-   //
    // FIXME: maybe a single update of the entire buffer is faster if we have
    // too many dirty lights
    VkDeviceSize light_inst_size = ALIGN(sizeof(VkdfLight), 16);
-   if (s->lights_dirty) {
-      for (uint32_t i = 0; i < num_lights; i++) {
-         VkdfSceneLight *sl = s->lights[i];
-         if (!vkdf_light_is_dirty(sl->light))
-            continue;
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      if (!vkdf_light_is_dirty(sl->light))
+         continue;
 
-         assert(light_inst_size < 64 * 1024);
-         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
-                           s->ubo.light.buf.buf,
-                           i * light_inst_size, light_inst_size,
-                           sl->light);
-      }
-   }
-
-   // Next we update dirty shadow mapping descriptions
-   if (s->shadow_maps_dirty) {
-      VkDeviceSize base_offset = s->ubo.light.shadow_map_data_offset;
-      VkDeviceSize shadow_map_inst_size =
-         ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
-      for (uint32_t i = 0; i < num_lights; i++) {
-         VkdfSceneLight *sl = s->lights[i];
-         if (!vkdf_light_casts_shadows(sl->light))
-            continue;
-         if (!vkdf_scene_light_has_dirty_shadows(sl))
-            continue;
-
-         struct _shadow_map_ubo_data data;
-         memcpy(&data.light_viewproj[0][0],
-                &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
-         memcpy(&data.shadow_map_size,
-                &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
-         memcpy(&data.pcf_kernel_size,
-                &sl->shadow.spec.pcf_kernel_size, sizeof(uint32_t));
-
-         assert(shadow_map_inst_size < 64 * 1024);
-         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
-                           s->ubo.light.buf.buf,
-                           base_offset + i * shadow_map_inst_size,
-                           shadow_map_inst_size,
-                           &data);
-      }
+      assert(light_inst_size < 64 * 1024);
+      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                        s->ubo.light.buf.buf,
+                        i * light_inst_size, light_inst_size,
+                        sl->light);
    }
 
    s->cmd_buf.have_resource_updates = true;
-   return true;
+}
+
+static void
+record_dirty_shadow_map_resource_updates(VkdfScene *s)
+{
+   assert(s->shadow_maps_dirty);
+
+   uint32_t num_lights = s->lights.size();
+
+   VkDeviceSize base_offset = s->ubo.light.shadow_map_data_offset;
+   VkDeviceSize shadow_map_inst_size =
+      ALIGN(sizeof(struct _shadow_map_ubo_data), 16);
+   for (uint32_t i = 0; i < num_lights; i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      if (!vkdf_light_casts_shadows(sl->light))
+         continue;
+      if (!vkdf_scene_light_has_dirty_shadows(sl))
+         continue;
+
+      struct _shadow_map_ubo_data data;
+      memcpy(&data.light_viewproj[0][0],
+             &sl->shadow.viewproj[0][0], sizeof(glm::mat4));
+      memcpy(&data.shadow_map_size,
+             &sl->shadow.spec.shadow_map_size, sizeof(uint32_t));
+      memcpy(&data.pcf_kernel_size,
+             &sl->shadow.spec.pcf_kernel_size, sizeof(uint32_t));
+
+      assert(shadow_map_inst_size < 64 * 1024);
+      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                        s->ubo.light.buf.buf,
+                        base_offset + i * shadow_map_inst_size,
+                        shadow_map_inst_size,
+                        &data);
+   }
+
+   s->cmd_buf.have_resource_updates = true;
 }
 
 static GHashTable *
@@ -3149,8 +3151,11 @@ update_dirty_lights(VkdfScene *s)
    }
 
    // Record the commands to update scene light resources for rendering
-   if (s->lights_dirty || s->shadow_maps_dirty)
-      record_scene_light_resource_updates(s);
+   if (s->lights_dirty)
+      record_dirty_light_resource_updates(s);
+
+   if (s->shadow_maps_dirty)
+      record_dirty_shadow_map_resource_updates(s);
 
    // Clean-up dirty bits on the lights now
    for (uint32_t i = 0; i < num_lights; i++) {
