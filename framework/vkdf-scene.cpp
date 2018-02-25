@@ -3174,6 +3174,9 @@ update_dirty_lights(VkdfScene *s)
 static void
 prepare_scene_lights(VkdfScene *s)
 {
+   if (!s->has_shadow_caster_lights)
+      return;
+
    // Create shared rendering resources for shadow maps
    create_shadow_map_renderpass(s);
    create_shadow_map_pipelines(s);
