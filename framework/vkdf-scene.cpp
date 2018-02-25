@@ -14,8 +14,6 @@
 #include "vkdf-semaphore.hpp"
 #include "vkdf-event-loop.hpp"
 
-#define JOIN(a,b) (a b)
-
 #define SHADOW_MAP_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/shadow-map.vert.spv")
 
 #define SSAO_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssao.deferred.vert.spv")

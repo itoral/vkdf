@@ -15,6 +15,8 @@
 
 #define ALIGN(value, align) (((value) + (align) - 1) & ~((align) - 1))
 
+#define JOIN(a,b) (a b)
+
 inline float
 rand_float(float min, float max)
 {
