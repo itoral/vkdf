@@ -1,6 +1,13 @@
 #ifndef __VKDF_UTIL_H__
 #define __VKDF_UTIL_H__
 
+#define PI ((float) M_PI)
+#define DEG_TO_RAD(x) ((float)((x) * PI / 180.0f))
+#define RAD_TO_DEG(x) ((float)((x) * 180.0f / PI))
+
+#define RAND_NEG(n) (random() % (2*n+1) - (2*n+1) / 2)
+#define RAND(n) (random() % (n+1))
+
 #define MIN2(a, b) (((a) < (b)) ? (a) : (b))
 #define MAX2(a, b) (((a) > (b)) ? (a) : (b))
 

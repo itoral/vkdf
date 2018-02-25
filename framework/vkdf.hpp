@@ -29,18 +29,10 @@
 
 #define VKDF_LOG_FPS_ENABLE 1
 
-#define PI ((float) M_PI)
-#define DEG_TO_RAD(x) ((float)((x) * PI / 180.0f))
-#define RAD_TO_DEG(x) ((float)((x) * 180.0f / PI))
-
-#define RAND_NEG(n) (random() % (2*n+1) - (2*n+1) / 2)
-#define RAND(n) (random() % (n+1))
-
 typedef struct {
    VkImage image;
    VkImageView view;
 } VkdfSwapChainImage;
-
 
 struct _VkdfContext;
 
