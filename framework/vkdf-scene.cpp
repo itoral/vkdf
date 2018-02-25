@@ -395,7 +395,6 @@ vkdf_scene_new(VkdfContext *ctx,
    }
 
    s->sync.update_resources_sem = vkdf_create_semaphore(s->ctx);
-   s->sync.shadow_maps_sem = vkdf_create_semaphore(s->ctx);
    s->sync.depth_draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.depth_draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
@@ -691,7 +690,6 @@ vkdf_scene_free(VkdfScene *s)
    std::vector<VkdfSceneLight *>(s->lights).swap(s->lights);
 
    vkDestroySemaphore(s->ctx->device, s->sync.update_resources_sem, NULL);
-   vkDestroySemaphore(s->ctx->device, s->sync.shadow_maps_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.depth_draw_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.depth_draw_static_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.draw_sem, NULL);
@@ -2543,24 +2541,36 @@ compute_visible_tiles_for_light(VkdfScene *s, VkdfSceneLight *sl)
 }
 
 static inline void
-start_recording_shadow_maps_cmd_buf(VkdfScene *s)
+start_recording_shadow_map_commands(VkdfScene *s)
 {
-   if (s->cmd_buf.shadow_maps)
-      new_inactive_cmd_buf(s, 0, s->cmd_buf.shadow_maps);
+   /* Ensure that dirty light / hadow map descriptions have been updated as
+    * well as dirty dynamic objects
+    */
+   VkBufferMemoryBarrier barriers[2] = {
+      vkdf_create_buffer_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 VK_ACCESS_SHADER_READ_BIT,
+                                 s->ubo.light.buf.buf,
+                                 0, VK_WHOLE_SIZE),
 
-   vkdf_create_command_buffer(s->ctx,
-                              s->cmd_buf.pool[0],
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &s->cmd_buf.shadow_maps);
+      vkdf_create_buffer_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 VK_ACCESS_SHADER_READ_BIT,
+                                 s->dynamic.ubo.shadow_map.buf.buf,
+                                 0, VK_WHOLE_SIZE),
+   };
 
-   vkdf_command_buffer_begin(s->cmd_buf.shadow_maps,
-                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+   vkCmdPipelineBarrier(s->cmd_buf.update_resources,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+                        0,
+                        0, NULL,
+                        2, barriers,
+                        0, NULL);
 }
 
 static inline void
-stop_recording_shadow_maps_cmd_buf(VkdfScene *s)
+stop_recording_shadow_map_commands(VkdfScene *s)
 {
-   vkdf_command_buffer_end(s->cmd_buf.shadow_maps);
+   /* Nothing to do here for now */
 }
 
 static void
@@ -2590,22 +2600,22 @@ record_shadow_map_commands(VkdfScene *s,
    rp_begin.clearValueCount = 1;
    rp_begin.pClearValues = clear_values;
 
-   vkCmdBeginRenderPass(s->cmd_buf.shadow_maps,
+   vkCmdBeginRenderPass(s->cmd_buf.update_resources,
                         &rp_begin,
                         VK_SUBPASS_CONTENTS_INLINE);
 
    // Dynamic viewport / scissor / depth bias
-   record_viewport_and_scissor_commands(s->cmd_buf.shadow_maps,
+   record_viewport_and_scissor_commands(s->cmd_buf.update_resources,
                                         shadow_map_size,
                                         shadow_map_size);
 
-   vkCmdSetDepthBias(s->cmd_buf.shadow_maps,
+   vkCmdSetDepthBias(s->cmd_buf.update_resources,
                      sl->shadow.spec.depth_bias_const_factor,
                      0.0f,
                      sl->shadow.spec.depth_bias_slope_factor);
 
    // Push constants (Light View/projection)
-   vkCmdPushConstants(s->cmd_buf.shadow_maps,
+   vkCmdPushConstants(s->cmd_buf.update_resources,
                       s->shadows.pipeline.layout,
                       VK_SHADER_STAGE_VERTEX_BIT,
                       0, sizeof(_shadow_map_pcb), &sl->shadow.viewproj[0][0]);
@@ -2615,7 +2625,7 @@ record_shadow_map_commands(VkdfScene *s,
    // Render static objects
    if (s->static_shadow_caster_count > 0) {
       // Descriptor sets (UBO with object model matrices)
-      vkCmdBindDescriptorSets(s->cmd_buf.shadow_maps,
+      vkCmdBindDescriptorSets(s->cmd_buf.update_resources,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               s->shadows.pipeline.layout,
                               0,                               // First decriptor set
@@ -2663,7 +2673,7 @@ record_shadow_map_commands(VkdfScene *s,
                   assert(pipeline);
 
                   if (pipeline != current_pipeline) {
-                     vkCmdBindPipeline(s->cmd_buf.shadow_maps,
+                     vkCmdBindPipeline(s->cmd_buf.update_resources,
                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
                                        pipeline);
                      current_pipeline = pipeline;
@@ -2675,14 +2685,14 @@ record_shadow_map_commands(VkdfScene *s,
 
                   // Draw all instances
                   const VkDeviceSize offsets[1] = { 0 };
-                  vkCmdBindVertexBuffers(s->cmd_buf.shadow_maps,
+                  vkCmdBindVertexBuffers(s->cmd_buf.update_resources,
                                          0,                       // Start Binding
                                          1,                       // Binding Count
                                          &mesh->vertex_buf.buf,   // Buffers
                                          offsets);                // Offsets
 
                   vkdf_mesh_draw(mesh,
-                                 s->cmd_buf.shadow_maps,
+                                 s->cmd_buf.update_resources,
                                  set_info->shadow_caster_count,
                                  set_info->shadow_caster_start_index);
                }
@@ -2694,7 +2704,7 @@ record_shadow_map_commands(VkdfScene *s,
    }
 
    // Render dynamic objects
-   vkCmdBindDescriptorSets(s->cmd_buf.shadow_maps,
+   vkCmdBindDescriptorSets(s->cmd_buf.update_resources,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            s->shadows.pipeline.layout,
                            0,                                   // First decriptor set
@@ -2735,7 +2745,7 @@ record_shadow_map_commands(VkdfScene *s,
          assert(pipeline);
 
          if (pipeline != current_pipeline) {
-            vkCmdBindPipeline(s->cmd_buf.shadow_maps,
+            vkCmdBindPipeline(s->cmd_buf.update_resources,
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               pipeline);
             current_pipeline = pipeline;
@@ -2743,20 +2753,20 @@ record_shadow_map_commands(VkdfScene *s,
 
          // Draw all instances
          const VkDeviceSize offsets[1] = { 0 };
-         vkCmdBindVertexBuffers(s->cmd_buf.shadow_maps,
+         vkCmdBindVertexBuffers(s->cmd_buf.update_resources,
                                 0,                       // Start Binding
                                 1,                       // Binding Count
                                 &mesh->vertex_buf.buf,   // Buffers
                                 offsets);                // Offsets
 
          vkdf_mesh_draw(mesh,
-                        s->cmd_buf.shadow_maps,
+                        s->cmd_buf.update_resources,
                         set_info->shadow_caster_count,
                         set_info->shadow_caster_start_index);
       }
    }
 
-   vkCmdEndRenderPass(s->cmd_buf.shadow_maps);
+   vkCmdEndRenderPass(s->cmd_buf.update_resources);
 }
 
 static bool
@@ -3156,14 +3166,14 @@ update_dirty_lights(VkdfScene *s)
 
    // Record command buffer for rendering dirty shadow maps
    if (s->shadow_maps_dirty) {
-      start_recording_shadow_maps_cmd_buf(s);
+      start_recording_shadow_map_commands(s);
       for (int i = first_dirty_shadow_map; i < data_count; i++) {
          if (!data[i].has_dirty_shadow_map)
             continue;
          struct _DirtyShadowMapInfo *ds = &data[i].shadow_map_info;
          record_shadow_map_commands(s, ds->sl, ds->dyn_sets);
       }
-      stop_recording_shadow_maps_cmd_buf(s);
+      stop_recording_shadow_map_commands(s);
    }
 
    if (dirty_shadow_map_list)
@@ -4802,6 +4812,7 @@ scene_draw(VkdfScene *s)
    // do not render to the render target, such us any resource update.
 
    // If we have resource update commands, execute them first
+   // (this includes shadow map updates)
    if (s->cmd_buf.have_resource_updates) {
       VkPipelineStageFlags resources_wait_stage = 0;
       vkdf_command_buffer_execute(s->ctx,
@@ -4810,26 +4821,13 @@ scene_draw(VkdfScene *s)
                                   0, NULL,
                                   1, &s->sync.update_resources_sem);
 
-      wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+      wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       wait_sem_count = 1;
       wait_sem = &s->sync.update_resources_sem;
    } else {
       wait_stage = 0;
       wait_sem_count = 0;
       wait_sem = NULL;
-   }
-
-   // If we have dirty shadow maps, update them.
-   if (s->shadow_maps_dirty) {
-      vkdf_command_buffer_execute(s->ctx,
-                                  s->cmd_buf.shadow_maps,
-                                  &wait_stage,
-                                  wait_sem_count, wait_sem,
-                                  1, &s->sync.shadow_maps_sem);
-
-      wait_stage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-      wait_sem_count = 1;
-      wait_sem = &s->sync.shadow_maps_sem;
    }
 
    // Execute rendering command for the depth-prepass

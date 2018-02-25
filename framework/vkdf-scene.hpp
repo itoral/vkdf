@@ -431,7 +431,6 @@ struct _VkdfScene {
       VkCommandBuffer dynamic;                                 // Command buffer for rendering dynamic objs
       VkCommandBuffer update_resources;                        // Command buffer for resource updates
       bool have_resource_updates;
-      VkCommandBuffer shadow_maps;       // Command buffer for shadow map updates
       VkCommandBuffer *present;          // Command buffer rt -> swapchin copies
       VkCommandBuffer gbuffer_merge;     // Command buffer for deferred gbuffer merge
       VkCommandBuffer postprocess;       // Command buffer for post-processing passes
@@ -439,7 +438,6 @@ struct _VkdfScene {
 
    struct {
       VkSemaphore update_resources_sem;
-      VkSemaphore shadow_maps_sem;
       VkSemaphore depth_draw_static_sem;
       VkSemaphore depth_draw_sem;
       VkSemaphore draw_static_sem;
