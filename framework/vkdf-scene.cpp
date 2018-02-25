@@ -3060,6 +3060,7 @@ directional_light_has_dirty_shadow_map(VkdfScene *s, VkdfSceneLight *sl)
 static void
 update_dirty_lights(VkdfScene *s)
 {
+   s->lights_dirty = false;
    s->shadow_maps_dirty = false;
 
    uint32_t num_lights = s->lights.size();
