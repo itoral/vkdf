@@ -1,7 +1,10 @@
 #ifndef __VKDF_MESH_H__
 #define __VKDF_MESH_H__
 
-#include <vector>
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+#include "vkdf-box.hpp"
+#include "vkdf-buffer.hpp"
 
 typedef struct {
    bool active;

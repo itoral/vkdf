@@ -1,6 +1,8 @@
 #ifndef __VKDF_ERROR_H__
 #define __VKDF_ERROR_H__
 
+#include "vkdf-deps.hpp"
+
 #define S(x) str(x)
 #define str(x) #x
 

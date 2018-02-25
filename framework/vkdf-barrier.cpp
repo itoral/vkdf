@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-barrier.hpp"
 
 VkImageMemoryBarrier
 vkdf_create_image_barrier(VkAccessFlags src_access_mask,

@@ -1,4 +1,18 @@
-#include "vkdf.hpp"
+#include "vkdf-scene.hpp"
+#include "vkdf-memory.hpp"
+#include "vkdf-sampler.hpp"
+#include "vkdf-cmd-buffer.hpp"
+#include "vkdf-model.hpp"
+#include "vkdf-mesh.hpp"
+#include "vkdf-renderpass.hpp"
+#include "vkdf-framebuffer.hpp"
+#include "vkdf-pipeline.hpp"
+#include "vkdf-descriptor.hpp"
+#include "vkdf-barrier.hpp"
+#include "vkdf-ssao.hpp"
+#include "vkdf-shader.hpp"
+#include "vkdf-semaphore.hpp"
+#include "vkdf-event-loop.hpp"
 
 #define JOIN(a,b) (a b)
 

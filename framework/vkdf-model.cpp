@@ -1,4 +1,5 @@
-#include "vkdf.hpp"
+#include "vkdf-model.hpp"
+#include "vkdf-memory.hpp"
 
 VkdfModel *
 vkdf_model_new()

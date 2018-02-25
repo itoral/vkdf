@@ -1,4 +1,5 @@
-#include "vkdf.hpp"
+#include "vkdf-buffer.hpp"
+#include "vkdf-memory.hpp"
 
 VkdfBuffer
 vkdf_create_buffer(VkdfContext *ctx,

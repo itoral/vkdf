@@ -1,5 +1,8 @@
-#include "vkdf.hpp"
+#include "vkdf-event-loop.hpp"
 #include "vkdf-init-priv.hpp"
+#include "vkdf-util.hpp"
+#include "vkdf-error.hpp"
+#include "vkdf-cmd-buffer.hpp"
 
 static uint64_t _frames = 0;
 static double _frame_start_time = 0.0;

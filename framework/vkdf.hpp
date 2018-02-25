@@ -4,9 +4,9 @@
 #define VKDF_LOG_FPS_ENABLE 1
 
 #include "vkdf-deps.hpp"
+#include "vkdf-util.hpp"
 #include "vkdf-plane.hpp"
 #include "vkdf-box.hpp"
-#include "vkdf-util.hpp"
 #include "vkdf-frustum.hpp"
 #include "vkdf-thread-pool.hpp"
 #include "vkdf-error.hpp"

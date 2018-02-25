@@ -1,4 +1,6 @@
-#include "vkdf.hpp"
+#include "vkdf-mesh.hpp"
+#include "vkdf-memory.hpp"
+#include "vkdf-util.hpp"
 
 VkdfMesh *
 vkdf_mesh_new(VkPrimitiveTopology primitive)

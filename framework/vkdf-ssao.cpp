@@ -1,4 +1,5 @@
-#include "vkdf.hpp"
+#include "vkdf-ssao.hpp"
+#include "vkdf-util.hpp"
 
 /**
  * Generates a SSAO kernel sample with 'num_samples' samples in tangent space

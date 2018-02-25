@@ -1,6 +1,18 @@
 #ifndef __VKDF_SCENE_H__
 #define __VKDF_SCENE_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+#include "vkdf-light.hpp"
+#include "vkdf-image.hpp"
+#include "vkdf-frustum.hpp"
+#include "vkdf-plane.hpp"
+#include "vkdf-object.hpp"
+#include "vkdf-box.hpp"
+#include "vkdf-buffer.hpp"
+#include "vkdf-camera.hpp"
+#include "vkdf-thread-pool.hpp"
+
 const uint32_t GBUFFER_MAX_SIZE = 8;
 
 /* Fixed GBuffer slot indices

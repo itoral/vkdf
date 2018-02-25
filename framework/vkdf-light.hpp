@@ -1,6 +1,9 @@
 #ifndef __VKDF_LIGHT_H__
 #define __VKDF_LIGHT_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-util.hpp"
+
 enum {
    VKDF_LIGHT_DIRECTIONAL = 0,
    VKDF_LIGHT_POINT       = 1,

@@ -1,8 +1,4 @@
-#include "vkdf.hpp"
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdarg.h>
+#include "vkdf-error.hpp"
 
 void
 vkdf_error(const char *msg, ...)

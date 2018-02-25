@@ -1,6 +1,9 @@
 #ifndef __VKDF_BUFFER_H__
 #define __VKDF_BUFFER_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+
 typedef struct {
    VkBuffer buf;
    VkMemoryRequirements mem_reqs;

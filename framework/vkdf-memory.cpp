@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-memory.hpp"
 
 bool
 vkdf_memory_type_from_properties(VkdfContext *ctx,

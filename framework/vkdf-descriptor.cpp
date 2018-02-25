@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-descriptor.hpp"
 
 VkDescriptorPool
 vkdf_create_descriptor_pool(VkdfContext *ctx,

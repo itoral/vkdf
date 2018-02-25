@@ -1,4 +1,5 @@
-#include "vkdf.hpp"
+#include "vkdf-box.hpp"
+#include "vkdf-util.hpp"
 
 glm::vec3
 vkdf_box_get_vertex(const VkdfBox *box, uint32_t index)

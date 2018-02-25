@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-light.hpp"
 
 static void
 init_light(VkdfLight *l,

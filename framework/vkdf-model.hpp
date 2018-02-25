@@ -1,6 +1,12 @@
 #ifndef __VKDF_MODEL_H__
 #define __VKDF_MODEL_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+#include "vkdf-box.hpp"
+#include "vkdf-mesh.hpp"
+#include "vkdf-image.hpp"
+
 typedef struct {
    glm::vec4 diffuse;
    glm::vec4 ambient;

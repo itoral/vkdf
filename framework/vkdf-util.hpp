@@ -1,6 +1,8 @@
 #ifndef __VKDF_UTIL_H__
 #define __VKDF_UTIL_H__
 
+#include "vkdf-deps.hpp"
+
 #define PI ((float) M_PI)
 #define DEG_TO_RAD(x) ((float)((x) * PI / 180.0f))
 #define RAD_TO_DEG(x) ((float)((x) * 180.0f / PI))

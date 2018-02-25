@@ -1,6 +1,9 @@
 #ifndef __VKDF_IMAGE_H__
 #define __VKDF_IMAGE_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+
 typedef struct {
    VkImage image;
    VkFormat format;

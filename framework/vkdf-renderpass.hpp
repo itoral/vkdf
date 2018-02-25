@@ -1,6 +1,9 @@
 #ifndef __VKDF_RENDERPASS_H__
 #define __VKDF_RENDERPASS_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+
 VkRenderPass
 vkdf_renderpass_simple_new(VkdfContext *ctx,
                            VkFormat color_format,

@@ -1,6 +1,10 @@
 #ifndef __VKDF_FRAMEBUFFER_H__
 #define __VKDF_FRAMEBUFFER_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+#include "vkdf-image.hpp"
+
 VkFramebuffer
 vkdf_create_framebuffer(VkdfContext *ctx,
                         VkRenderPass render_pass,

@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-shader.hpp"
 
 uint32_t *
 vkdf_shader_read_spirv_file(const char *path, VkDeviceSize *size)

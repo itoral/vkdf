@@ -1,4 +1,5 @@
-#include "vkdf.hpp"
+#include "vkdf-sampler.hpp"
+#include "vkdf-error.hpp"
 
 VkSampler
 vkdf_create_sampler(VkdfContext *ctx,

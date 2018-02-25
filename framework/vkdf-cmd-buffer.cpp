@@ -1,4 +1,6 @@
-#include "vkdf.hpp"
+#include "vkdf-cmd-buffer.hpp"
+#include "vkdf-image.hpp"
+#include "vkdf-barrier.hpp"
 
 VkCommandPool
 vkdf_create_gfx_command_pool(VkdfContext *ctx,

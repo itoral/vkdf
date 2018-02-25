@@ -1,6 +1,8 @@
 #ifndef __VKDF_THREAD_POOL_H__
 #define __VKDF_THREAD_POOL_H__
 
+#include "vkdf-deps.hpp"
+
 #include <pthread.h>
 
 struct _VkdfThreadPool;

@@ -1,4 +1,9 @@
-#include "vkdf.hpp"
+#include "vkdf-image.hpp"
+#include "vkdf-util.hpp"
+#include "vkdf-buffer.hpp"
+#include "vkdf-cmd-buffer.hpp"
+#include "vkdf-memory.hpp"
+#include "vkdf-barrier.hpp"
 
 VkImage
 create_image(VkdfContext *ctx,

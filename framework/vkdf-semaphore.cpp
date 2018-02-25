@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-semaphore.hpp"
 
 VkSemaphore
 vkdf_create_semaphore(VkdfContext *ctx)

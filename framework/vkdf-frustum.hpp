@@ -1,6 +1,9 @@
 #ifndef __VKDF_FRUSTUM_H__
 #define __VKDF_FRUSTUM_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-box.hpp"
+
 /* Frustum vertices: Far|Near, Top|Bottom, Left|Right */
 enum {
   FRUSTUM_FTR = 0,

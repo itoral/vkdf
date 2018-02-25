@@ -6,7 +6,12 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <stdarg.h>
 #include <math.h>
+#include <time.h>
+
+// LIBSTDC++
+#include <vector>
 
 // GLIB
 #include <glib.h>

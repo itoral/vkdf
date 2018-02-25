@@ -1,4 +1,6 @@
-#include "vkdf.hpp"
+#include "vkdf-deps.hpp"
+#include "vkdf-plane.hpp"
+#include "vkdf-util.hpp"
 
 void
 vkdf_plane_from_points(VkdfPlane *plane,

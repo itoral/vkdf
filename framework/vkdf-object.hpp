@@ -1,6 +1,11 @@
 #ifndef __VKDF_OBJECT_H__
 #define __VKDF_OBJECT_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-model.hpp"
+#include "vkdf-mesh.hpp"
+#include "vkdf-plane.hpp"
+
 typedef struct {
    glm::vec3 pos;
    glm::vec3 rot;

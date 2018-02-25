@@ -1,4 +1,5 @@
-#include "vkdf.hpp"
+#include "vkdf-object.hpp"
+#include "vkdf-util.hpp"
 
 inline static void
 init_object(VkdfObject *obj, const glm::vec3 &pos)

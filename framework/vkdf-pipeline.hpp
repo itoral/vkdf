@@ -1,6 +1,9 @@
 #ifndef __VKDF_PIPELINE_H__
 #define __VKDF_PIPELINE_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+
 VkPipeline
 vkdf_create_gfx_pipeline(VkdfContext *ctx,
                          VkPipelineCache *cache,

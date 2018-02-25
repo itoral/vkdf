@@ -1,4 +1,4 @@
-#include "vkdf.hpp"
+#include "vkdf-pipeline.hpp"
 
 VkPipeline
 vkdf_create_gfx_pipeline(VkdfContext *ctx,

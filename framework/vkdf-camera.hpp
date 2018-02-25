@@ -1,6 +1,11 @@
 #ifndef __VKDF_CAMERA_H__
 #define __VKDF_CAMERA_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-box.hpp"
+#include "vkdf-frustum.hpp"
+#include "vkdf-util.hpp"
+
 enum {
    VKDF_CAMERA_DIRTY_PROJ        = (1 << 0),
    VKDF_CAMERA_DIRTY_POS         = (1 << 1),

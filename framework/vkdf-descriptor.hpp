@@ -1,6 +1,9 @@
 #ifndef __VKDF_DESCRIPTOR_H__
 #define __VKDF_DESCRIPTOR_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+
 VkDescriptorPool
 vkdf_create_descriptor_pool(VkdfContext *ctx,
                             VkDescriptorType type,

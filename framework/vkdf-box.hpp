@@ -1,6 +1,9 @@
 #ifndef __VKDF_BOX_H__
 #define __VKDF_BOX_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-plane.hpp"
+
 typedef struct {
    glm::vec3 center;
    float w, h, d;

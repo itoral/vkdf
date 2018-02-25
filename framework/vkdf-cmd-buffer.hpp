@@ -1,6 +1,9 @@
 #ifndef __VKDF_CMD_BUFFER_H__
 #define __VKDF_CMD_BUFFER_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-init.hpp"
+
 VkCommandPool
 vkdf_create_gfx_command_pool(VkdfContext *ctx,
                              VkCommandPoolCreateFlags flags);

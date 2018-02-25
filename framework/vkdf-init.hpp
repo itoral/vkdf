@@ -1,6 +1,9 @@
 #ifndef __VKDF_INIT_H__
 #define __VKDF_INIT_H__
 
+#include "vkdf-deps.hpp"
+#include "vkdf-error.hpp"
+
 typedef struct {
    VkImage image;
    VkImageView view;
