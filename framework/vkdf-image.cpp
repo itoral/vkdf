@@ -540,7 +540,7 @@ create_image_from_data(VkdfContext *ctx,
                         image->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                         1,
                         &blit_region,
-                        VK_FILTER_NEAREST);
+                        VK_FILTER_LINEAR);
       }
 
       barrier_layout_mip_0 =
