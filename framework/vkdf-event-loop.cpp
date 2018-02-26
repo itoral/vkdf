@@ -4,6 +4,8 @@
 #include "vkdf-error.hpp"
 #include "vkdf-cmd-buffer.hpp"
 
+#define VKDF_LOG_FPS_ENABLE 1
+
 static uint64_t _frames = 0;
 static double _frame_start_time = 0.0;
 static double _last_frame_time = 0.0;

@@ -1,8 +1,6 @@
 #ifndef __VKDF_H__
 #define __VKDF_H__
 
-#define VKDF_LOG_FPS_ENABLE 1
-
 #include "vkdf-deps.hpp"
 #include "vkdf-util.hpp"
 #include "vkdf-plane.hpp"
