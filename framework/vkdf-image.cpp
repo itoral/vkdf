@@ -537,6 +537,34 @@ create_image_from_data(VkdfContext *ctx,
    VkFormatFeatureFlags format_flags =
       get_format_feature_flags_from_usage(usage);
 
+   /* FIXME: mipmaps require blitting, so if is not supported we should
+    *        probably do the following:
+    *
+    * 1. Copy the pixel data to an image in the original format. Let's call this
+    *   imageA.
+    *
+    * 2. Create another image with a RGBA or sRGBA format where blitting
+    *    and color attachment support is mandated by the spec. Let's call this
+    *    imageB
+    *
+    * 2. Copy mip-level 0 from imageA to imageB. To do this we can't use
+    *    a normal image copy, since the pixel sizes are probably different,
+    *    instead we will have to use a shader so imageA only requires the
+    *    SAMPLED feature.
+    *
+    * 3. Finally, we generate bitmaps for imageB and use imageB as result.
+    */
+   if (gen_mipmaps) {
+      VkFormatProperties props;
+      vkGetPhysicalDeviceFormatProperties(ctx->phy_device, format, &props);
+      VkFormatFeatureFlags blit_flags = (VkFormatFeatureFlags)
+         VK_FORMAT_FEATURE_BLIT_SRC_BIT | VK_FORMAT_FEATURE_BLIT_DST_BIT;
+      if ((props.optimalTilingFeatures & blit_flags) != blit_flags) {
+         vkdf_error("image: blitting is not supported for format %d, "
+                    "mipmap generation might not be correct.", format);
+      }
+   }
+
    image->image = create_image(ctx, width, height, num_levels,
                                VK_IMAGE_TYPE_2D,
                                image->format,
