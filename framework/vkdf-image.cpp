@@ -360,42 +360,27 @@ compute_gpu_image_size(uint32_t width,
 }
 
 /**
- * Generates mipmaps by blitting the first level using linear filtering
+ * Generates mipmaps by blitting to mip-level N from mip-level N-1 using
+ * linear filtering.
  */
 static void
-gen_mipmaps_linear_blit(VkImage image,
+gen_mipmaps_linear_blit(VkdfContext *ctx,
+                        VkImage image,
                         uint32_t num_levels,
                         struct _MipmapInfo *mip_levels,
                         VkCommandBuffer cmd_buf)
 {
-   VkImageSubresourceRange mip_0 =
-      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                          0, 1, 0, 1);
-
+   /* Transition mip-levels 1..N to transfer destination */
    VkImageSubresourceRange mip_1N =
-      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                          1, num_levels - 1, 0, 1);
+       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                           1, num_levels - 1, 0, 1);
 
-   VkImageMemoryBarrier barrier_layout_mip_0;
-   barrier_layout_mip_0 =
-      vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
-                                VK_ACCESS_TRANSFER_READ_BIT,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                image, mip_0);
-
-   VkImageMemoryBarrier barrier_layout_mip_1N;
-   barrier_layout_mip_1N =
-      vkdf_create_image_barrier(0,
-                                VK_ACCESS_TRANSFER_WRITE_BIT,
-                                VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                image, mip_1N);
-
-   VkImageMemoryBarrier barriers[2] = {
-      barrier_layout_mip_0,
-      barrier_layout_mip_1N
-   };
+   VkImageMemoryBarrier barrier_layout_mip_1N =
+       vkdf_create_image_barrier(0,
+                                 VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                 image, mip_1N);
 
    vkCmdPipelineBarrier(cmd_buf,
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -403,56 +388,69 @@ gen_mipmaps_linear_blit(VkImage image,
                         0,
                         0, NULL,
                         0, NULL,
-                        2, barriers);
-
-   VkImageBlit blit_region;
-   blit_region.srcSubresource =
-      vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1);
-
-   blit_region.srcOffsets[0].x = 0;
-   blit_region.srcOffsets[0].y = 0;
-   blit_region.srcOffsets[0].z = 0;
-
-   blit_region.srcOffsets[1].x = mip_levels[0].w;
-   blit_region.srcOffsets[1].y = mip_levels[0].h;
-   blit_region.srcOffsets[1].z = 1;
+                        1, &barrier_layout_mip_1N);
 
    for (uint32_t i = 1; i < num_levels; i++) {
-      blit_region.dstSubresource =
+      VkImageSubresourceLayers src_subresource =
+         vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT,
+                                              i - 1, 0, 1);
+
+      VkImageSubresourceLayers dst_subresource =
          vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT,
                                               i, 0, 1);
-      blit_region.dstOffsets[0].x = 0;
-      blit_region.dstOffsets[0].y = 0;
-      blit_region.dstOffsets[0].z = 0;
 
-      blit_region.dstOffsets[1].x = mip_levels[i].w;
-      blit_region.dstOffsets[1].y = mip_levels[i].h;
-      blit_region.dstOffsets[1].z = 1;
+      VkImageBlit region =
+         vkdf_create_image_blit_region(src_subresource,
+                                       glm::uvec3(0, 0, 0),
+                                       glm::uvec3(mip_levels[i - 1].w,
+                                                  mip_levels[i - 1].h,
+                                                  1),
+                                       dst_subresource,
+                                       glm::uvec3(0, 0, 0),
+                                       glm::uvec3(mip_levels[i].w,
+                                                  mip_levels[i].h,
+                                                  1));
+
+      VkImageSubresourceRange prev_mip =
+         vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                             i - 1, 1, 0, 1);
+
+      vkdf_image_set_layout(ctx, cmd_buf, image, prev_mip,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT,
+                            VK_PIPELINE_STAGE_TRANSFER_BIT);
 
       vkCmdBlitImage(cmd_buf,
                      image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                      image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                     1,
-                     &blit_region,
-                     VK_FILTER_LINEAR);
+                     1, &region, VK_FILTER_LINEAR);
    }
 
-   barrier_layout_mip_0 =
+   VkImageSubresourceRange mip_0Nm1 =
+       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                           0, num_levels - 1, 0, 1);
+   VkImageMemoryBarrier dst_barrier_0Nm1 =
       vkdf_create_image_barrier(VK_ACCESS_TRANSFER_READ_BIT,
                                 VK_ACCESS_SHADER_READ_BIT,
                                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                image, mip_0);
+                                image, mip_0Nm1);
 
-   barrier_layout_mip_1N =
+   VkImageSubresourceRange mip_N =
+       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                           num_levels - 1, 1, 0, 1);
+   VkImageMemoryBarrier dst_barrier_N =
       vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
                                 VK_ACCESS_SHADER_READ_BIT,
                                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                image, mip_1N);
+                                image, mip_N);
 
-   barriers[0] = barrier_layout_mip_0;
-   barriers[1] = barrier_layout_mip_1N;
+   VkImageMemoryBarrier barriers[2] = {
+      dst_barrier_0Nm1,
+      dst_barrier_N,
+   };
    vkCmdPipelineBarrier(cmd_buf,
                         VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
@@ -568,7 +566,7 @@ create_image_from_data(VkdfContext *ctx,
                             VK_PIPELINE_STAGE_TRANSFER_BIT,
                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
    } else {
-      gen_mipmaps_linear_blit(image->image, num_levels, mip_levels, cmd_buf);
+      gen_mipmaps_linear_blit(ctx, image->image, num_levels, mip_levels, cmd_buf);
    }
 
    vkdf_command_buffer_end(cmd_buf);
