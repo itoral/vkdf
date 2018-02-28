@@ -73,5 +73,6 @@ vkdf_ssao_gen_noise_image(VkdfContext *ctx,
                                VK_FORMAT_R16G16B16_SFLOAT,
                                false,
                                &(*samples)[0],
+                               VK_IMAGE_USAGE_SAMPLED_BIT,
                                image);
 }

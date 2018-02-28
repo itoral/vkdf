@@ -458,6 +458,40 @@ gen_mipmaps_linear_blit(VkImage image,
                         2, barriers);
 }
 
+static VkFormatFeatureFlags
+get_format_feature_flags_from_usage(VkImageUsageFlags usage)
+{
+   VkFormatFeatureFlags flags = 0;
+
+   uint64_t usage_mask = (uint64_t) usage;
+   while (usage_mask != 0) {
+      uint64_t usage_flag = 1 << (ffsll(usage_mask) - 1);
+      switch (usage_flag) {
+         case VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT:
+            flags |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+            break;
+         case VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT:
+            flags |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+            break;
+         case VK_IMAGE_USAGE_TRANSFER_SRC_BIT:
+            flags |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT_KHR;
+            break;
+         case VK_IMAGE_USAGE_TRANSFER_DST_BIT:
+            flags |= VK_FORMAT_FEATURE_TRANSFER_DST_BIT_KHR;
+            break;
+         case VK_IMAGE_USAGE_SAMPLED_BIT:
+            flags |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+            break;
+         default:
+            vkdf_fatal("image: unhandled image usage flag");
+            break;
+      }
+      usage_mask &= ~usage_flag;
+   }
+
+   return flags;
+}
+
 static void
 create_image_from_data(VkdfContext *ctx,
                        VkCommandPool pool,
@@ -467,6 +501,7 @@ create_image_from_data(VkdfContext *ctx,
                        VkFormat format,
                        uint32_t bpp,
                        const VkComponentSwizzle *swz,
+                       VkImageUsageFlags usage,
                        uint32_t gen_mipmaps,
                        const void *pixel_data)
 {
@@ -492,13 +527,18 @@ create_image_from_data(VkdfContext *ctx,
    // Create the image
    image->format = format;
 
+   usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+   if (num_levels > 1)
+      usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+
+   VkFormatFeatureFlags format_flags =
+      get_format_feature_flags_from_usage(usage);
+
    image->image = create_image(ctx, width, height, num_levels,
                                VK_IMAGE_TYPE_2D,
                                image->format,
-                               VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
-                               VK_IMAGE_USAGE_SAMPLED_BIT |
-                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+                               format_flags,
+                               usage);
 
    bind_image_memory(ctx,
                      image->image,
@@ -704,6 +744,7 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           VkCommandPool pool,
                           const char *path,
                           VkdfImage *image,
+                          VkImageUsageFlags usage,
                           bool is_srgb)
 {
    memset(image, 0, sizeof(VkdfImage));
@@ -752,7 +793,7 @@ vkdf_load_image_from_file(VkdfContext *ctx,
    create_image_from_data(ctx, pool,
                           image, surf->w, surf->h,
                           format, bpp, swz,
-                          true, surf->pixels);
+                          usage, true, surf->pixels);
 
    return true;
 }
@@ -765,6 +806,7 @@ vkdf_create_image_from_data(VkdfContext *ctx,
                             VkFormat format,
                             bool gen_mipmaps,
                             const void *pixel_data,
+                            VkImageUsageFlags usage,
                             VkdfImage *image)
 {
    memset(image, 0, sizeof(VkdfImage));
@@ -777,6 +819,7 @@ vkdf_create_image_from_data(VkdfContext *ctx,
    create_image_from_data(ctx, pool,
                           image, width, height,
                           format, bpp, swz,
+                          usage,
                           gen_mipmaps,
                           pixel_data);
 }

@@ -520,6 +520,7 @@ vkdf_model_load_textures(VkdfContext *ctx,
          assert(tex->diffuse_path);
          if (!vkdf_load_image_from_file(ctx, pool,
                                         tex->diffuse_path, &tex->diffuse,
+                                        VK_IMAGE_USAGE_SAMPLED_BIT,
                                         color_is_srgb)) {
             mat->diffuse_tex_count = 0;
          }
@@ -529,6 +530,7 @@ vkdf_model_load_textures(VkdfContext *ctx,
          assert(tex->specular_path);
          if (!vkdf_load_image_from_file(ctx, pool,
                                         tex->specular_path, &tex->specular,
+                                        VK_IMAGE_USAGE_SAMPLED_BIT,
                                         color_is_srgb)) {
             mat->specular_tex_count = 0;
          }
@@ -538,6 +540,7 @@ vkdf_model_load_textures(VkdfContext *ctx,
          assert(tex->normal_path);
          if (!vkdf_load_image_from_file(ctx, pool,
                                         tex->normal_path, &tex->normal,
+                                        VK_IMAGE_USAGE_SAMPLED_BIT,
                                         false)) {
             mat->normal_tex_count = 0;
          }
@@ -547,6 +550,7 @@ vkdf_model_load_textures(VkdfContext *ctx,
          assert(tex->opacity_path);
          if (!vkdf_load_image_from_file(ctx, pool,
                                         tex->opacity_path, &tex->opacity,
+                                        VK_IMAGE_USAGE_SAMPLED_BIT,
                                         false)) {
             mat->opacity_tex_count = 0;
          }

@@ -29,6 +29,7 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           VkCommandPool pool,
                           const char *path,
                           VkdfImage *image,
+                          VkImageUsageFlags usage,
                           bool is_srgb);
 
 void
@@ -39,6 +40,7 @@ vkdf_create_image_from_data(VkdfContext *ctx,
                             VkFormat format,
                             bool gen_mipmaps,
                             const void *pixel_data,
+                            VkImageUsageFlags usage,
                             VkdfImage *image);
 
 void
