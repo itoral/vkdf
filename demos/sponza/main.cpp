@@ -931,7 +931,6 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             DIFFUSE_TEX_BINDING, 1);
       } else {
-         vkdf_info("Material %u doesn't have a diffuse texture\n", i);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
                                             res->sponza_sampler,
@@ -949,7 +948,6 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             SPECULAR_TEX_BINDING, 1);
       } else {
-         vkdf_info("Material %u doesn't have a specular texture\n", i);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
                                             res->sponza_sampler,
@@ -967,7 +965,6 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
                                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                             NORMAL_TEX_BINDING, 1);
       } else {
-         vkdf_info("Material %u doesn't have a normal texture\n", i);
          vkdf_descriptor_set_sampler_update(res->ctx,
                                             res->pipelines.descr.obj_tex_set[i],
                                             res->sponza_sampler,
