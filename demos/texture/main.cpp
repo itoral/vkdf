@@ -377,8 +377,7 @@ create_texture(VkdfContext *ctx, DemoResources *res)
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
                                           0, levels.num_levels, 0, 1);
 
-   vkdf_image_set_layout(ctx,
-                         upload_tex_cmd_buf,
+   vkdf_image_set_layout(upload_tex_cmd_buf,
                          image.image,
                          subresource_range,
                          VK_IMAGE_LAYOUT_UNDEFINED,
@@ -411,8 +410,7 @@ create_texture(VkdfContext *ctx, DemoResources *res)
 
    // Now that the image data has been copied we need the image to be in a
    // layout suitable for shader access, specifically in the fragment shader
-   vkdf_image_set_layout(ctx,
-                         upload_tex_cmd_buf,
+   vkdf_image_set_layout(upload_tex_cmd_buf,
                          image.image,
                          subresource_range,
                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,

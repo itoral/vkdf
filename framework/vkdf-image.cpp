@@ -240,8 +240,7 @@ vkdf_create_image_blit_region(VkImageSubresourceLayers src_subresource_layers,
 }
 
 void
-vkdf_image_set_layout(VkdfContext *ctx,
-                      VkCommandBuffer cmd_buf,
+vkdf_image_set_layout(VkCommandBuffer cmd_buf,
                       VkImage image,
                       VkImageSubresourceRange subresource_range,
                       VkImageLayout old_layout,
@@ -364,8 +363,7 @@ compute_gpu_image_size(uint32_t width,
  * linear filtering.
  */
 static void
-gen_mipmaps_linear_blit(VkdfContext *ctx,
-                        VkImage image,
+gen_mipmaps_linear_blit(VkImage image,
                         uint32_t num_levels,
                         struct _MipmapInfo *mip_levels,
                         VkCommandBuffer cmd_buf)
@@ -415,7 +413,7 @@ gen_mipmaps_linear_blit(VkdfContext *ctx,
          vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
                                              i - 1, 1, 0, 1);
 
-      vkdf_image_set_layout(ctx, cmd_buf, image, prev_mip,
+      vkdf_image_set_layout(cmd_buf, image, prev_mip,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                             VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -560,13 +558,13 @@ create_image_from_data(VkdfContext *ctx,
 
 
    if (num_levels == 1) {
-      vkdf_image_set_layout(ctx, cmd_buf, image->image, mip_0,
+      vkdf_image_set_layout(cmd_buf, image->image, mip_0,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                             VK_PIPELINE_STAGE_TRANSFER_BIT,
                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
    } else {
-      gen_mipmaps_linear_blit(ctx, image->image, num_levels, mip_levels, cmd_buf);
+      gen_mipmaps_linear_blit(image->image, num_levels, mip_levels, cmd_buf);
    }
 
    vkdf_command_buffer_end(cmd_buf);

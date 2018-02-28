@@ -3954,8 +3954,7 @@ record_hdr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
                                           0, 1, 0, 1);
 
-   vkdf_image_set_layout(s->ctx,
-                         cmd_buf,
+   vkdf_image_set_layout(cmd_buf,
                          s->hdr.input.image,
                          subresource_range,
                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -4127,8 +4126,7 @@ record_fxaa_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
                                           0, 1, 0, 1);
 
-   vkdf_image_set_layout(s->ctx,
-                         cmd_buf,
+   vkdf_image_set_layout(cmd_buf,
                          s->fxaa.input.image,
                          subresource_range,
                          VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,

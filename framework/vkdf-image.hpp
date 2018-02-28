@@ -79,8 +79,7 @@ vkdf_create_image_blit_region(VkImageSubresourceLayers src_subresource_layers,
                               glm::uvec3 dst_size);
 
 void
-vkdf_image_set_layout(VkdfContext *ctx,
-                      VkCommandBuffer cmd_buf,
+vkdf_image_set_layout(VkCommandBuffer cmd_buf,
                       VkImage image,
                       VkImageSubresourceRange subresource_range,
                       VkImageLayout old_layout,
