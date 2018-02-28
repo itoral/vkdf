@@ -502,7 +502,7 @@ create_image_from_data(VkdfContext *ctx,
                        uint32_t bpp,
                        const VkComponentSwizzle *swz,
                        VkImageUsageFlags usage,
-                       uint32_t gen_mipmaps,
+                       bool gen_mipmaps,
                        const void *pixel_data)
 {
    uint32_t num_levels;
@@ -510,6 +510,9 @@ create_image_from_data(VkdfContext *ctx,
    VkDeviceSize gpu_image_bytes =
       compute_gpu_image_size(width, height, bpp,
                              gen_mipmaps, &num_levels, &mip_levels);
+
+   if (num_levels < 2)
+      gen_mipmaps = false;
 
    // Upload pixel data to a host-visible staging buffer
    VkdfBuffer buf =
@@ -528,7 +531,7 @@ create_image_from_data(VkdfContext *ctx,
    image->format = format;
 
    usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-   if (num_levels > 1)
+   if (gen_mipmaps)
       usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
    VkFormatFeatureFlags format_flags =
@@ -597,7 +600,7 @@ create_image_from_data(VkdfContext *ctx,
                           1, &region);
 
 
-   if (num_levels == 1) {
+   if (!gen_mipmaps) {
       vkdf_image_set_layout(cmd_buf, image->image, mip_0,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
