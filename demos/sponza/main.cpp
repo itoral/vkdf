@@ -484,10 +484,19 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
 
       if (!strcmp(set_id, "sponza")) {
          if (!is_depth_prepass) {
+            /* If depth-prepass is enabled we have already done opacity
+             * testing then so we use the regular pipeline to render everything.
+             * If depth-prepass is disabled, then we need to do opacity
+             * testing during the gbuffer generation.
+             */
             pipeline = res->pipelines.sponza;
             pipeline_layout = res->pipelines.layout.base;
-            pipeline_opacity = res->pipelines.sponza_opacity;
-            pipeline_opacity_layout = res->pipelines.layout.opacity;
+            pipeline_opacity = ENABLE_DEPTH_PREPASS ?
+               res->pipelines.sponza :
+               res->pipelines.sponza_opacity;
+            pipeline_opacity_layout = ENABLE_DEPTH_PREPASS ?
+               res->pipelines.layout.base :
+               res->pipelines.layout.opacity;
             tex_set = res->pipelines.descr.obj_tex_set;
          } else {
             pipeline = res->pipelines.depth_prepass;
@@ -595,10 +604,19 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
 
       if (!strcmp(set_id, "sponza")) {
          if (!is_depth_prepass) {
+            /* If depth-prepass is enabled we have already done opacity
+             * testing then so we use the regular pipeline to render everything.
+             * If depth-prepass is disabled, then we need to do opacity
+             * testing during the gbuffer generation.
+             */
             pipeline = res->pipelines.sponza;
             pipeline_layout = res->pipelines.layout.gbuffer_base;
-            pipeline_opacity = res->pipelines.sponza_opacity;
-            pipeline_opacity_layout = res->pipelines.layout.gbuffer_opacity;
+            pipeline_opacity = ENABLE_DEPTH_PREPASS ?
+               res->pipelines.sponza :
+               res->pipelines.sponza_opacity;
+            pipeline_opacity_layout = ENABLE_DEPTH_PREPASS ?
+               res->pipelines.layout.gbuffer_base :
+               res->pipelines.layout.gbuffer_opacity;
             tex_set = res->pipelines.descr.obj_tex_set;
          } else {
             pipeline = res->pipelines.depth_prepass;
@@ -896,12 +914,17 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
 
       VkdfTexMaterial *tm = &model->tex_materials[i];
 
-      // We have a single shader that handles both solid+texture materials
-      // and also solid-only materials. This means the shader always has
-      // sampler bindings and these need to be valid even if the material
-      // for the mesh we're rendering doesn't have any actual textures
-      // so just bind the texture from a textured material
-      if (m->opacity_tex_count == 0) {
+      /* We have a single shader that handles both solid+texture materials
+       * and also solid-only materials. This means the shader always has
+       * sampler bindings and these need to be valid even if the material
+       * for the mesh we're rendering doesn't have any actual textures
+       * so just bind the texture from a textured material
+       *
+       * When depth-prepass is enabled, opacity testing occurs during the
+       * depth pre-pass, and later passes can ignore opacity completely
+       * since they will only run for visible pixels.
+       */
+      if (m->opacity_tex_count == 0 || ENABLE_DEPTH_PREPASS) {
          res->pipelines.descr.obj_tex_set[i] =
             create_descriptor_set(res->ctx,
                                   res->descriptor_pool.sampler_pool,
@@ -975,14 +998,17 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
 
       if (m->opacity_tex_count > 0) {
          assert(tm->opacity.view);
-         vkdf_descriptor_set_sampler_update(res->ctx,
-                                            res->pipelines.descr.obj_tex_set[i],
-                                            res->sponza_opacity_sampler,
-                                            tm->opacity.view,
-                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                            OPACITY_TEX_BINDING, 1);
-
-         if (ENABLE_DEPTH_PREPASS) {
+         /* We only care for opacity outside the depth-prepass when
+          * depth-prepass is disabled.
+          */
+         if (!ENABLE_DEPTH_PREPASS) {
+            vkdf_descriptor_set_sampler_update(res->ctx,
+                                               res->pipelines.descr.obj_tex_set[i],
+                                               res->sponza_opacity_sampler,
+                                               tm->opacity.view,
+                                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                               OPACITY_TEX_BINDING, 1);
+         } else {
             vkdf_descriptor_set_sampler_update(res->ctx,
                                                res->pipelines.descr.depth_prepass_tex_set[i],
                                                res->sponza_opacity_sampler,
