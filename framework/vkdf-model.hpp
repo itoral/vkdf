@@ -16,7 +16,9 @@ typedef struct {
    uint32_t normal_tex_count;
    uint32_t specular_tex_count;
    uint32_t opacity_tex_count;
-   uint32_t padding[3]; // So the size if 16-byte aligned
+   float reflectiveness;
+   float roughness;
+   uint32_t padding[1]; // So the size if 16-byte aligned
 } VkdfMaterial;
 
 typedef struct {

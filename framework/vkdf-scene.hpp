@@ -166,6 +166,35 @@ struct _VkdfSceneTile {
    VkdfSceneTile *subtiles;        // Subtiles within this tile
 };
 
+/* Screen-Space Reflections configuration. Check SSR fragment shader for
+ * documentation on each of these settings.
+ */
+typedef struct {
+   int32_t max_samples;
+   float min_step_size;
+   float max_step_size;
+
+   float fg_test_bias;
+   int   fg_obstacle_max_samples;
+   float fg_obstacle_min_step_size;
+   float fg_obstacle_max_step_size;
+   float fg_obstacle_break_dist;
+   float fg_obstacle_jump_min_dist;
+
+   int32_t max_binary_search_samples;
+
+   float max_reflection_dist;
+   float att_reflection_dist_start;
+
+   float att_screen_edge_dist_start;
+
+   float max_dot_reflection_normal;
+   float att_dot_reflection_normal_start;
+
+   float min_dot_reflection_view;
+   float att_dot_reflection_view_start;
+} VkdfSceneSsrSpec;
+
 typedef void (*VkdfSceneUpdateStateCB)(void *);
 typedef bool (*VkdfSceneUpdateResourcesCB)(VkdfContext *, VkCommandBuffer, void *);
 typedef void (*VkdfSceneCommandsCB)(VkdfContext *, VkCommandBuffer, GHashTable *, bool, bool, void *);
@@ -325,6 +354,85 @@ struct _VkdfScene {
 
       VkCommandBuffer cmd_buf;
    } ssao;
+
+   /* SSR */
+   struct {
+      bool enabled;
+
+      VkdfImage output;
+
+      VkSampler linear_sampler;
+      VkSampler nearest_sampler;
+
+      VkdfSceneSsrSpec config;
+      void *spec_const_buf;
+
+      struct {
+         VkdfImage input;
+         VkdfImage output;
+
+         struct {
+            VkRenderPass renderpass;
+            VkFramebuffer framebuffer;
+         } rp;
+
+         struct {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout tex_set_layout;
+            VkDescriptorSet tex_set;
+            struct {
+               VkShaderModule vs;
+               VkShaderModule fs;
+            } shader;
+         } pipeline;
+      } base;
+
+      struct {
+         VkdfImage input;
+         VkdfImage output_x;
+         VkdfImage output;
+
+         struct {
+            VkRenderPass renderpass;
+            VkFramebuffer framebuffer_x;
+            VkFramebuffer framebuffer;
+         } rp;
+
+         struct {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout tex_set_layout;
+            VkDescriptorSet tex_set_x;
+            VkDescriptorSet tex_set_y;
+            struct {
+               VkShaderModule vs;
+               VkShaderModule fs;
+            } shader;
+         } pipeline;
+      } blur;
+
+      struct {
+         VkdfImage input;
+         VkdfImage output;
+
+         struct {
+            VkRenderPass renderpass;
+            VkFramebuffer framebuffer;
+         } rp;
+
+         struct {
+            VkPipeline pipeline;
+            VkPipelineLayout layout;
+            VkDescriptorSetLayout tex_set_layout;
+            VkDescriptorSet tex_set;
+            struct {
+               VkShaderModule vs;
+               VkShaderModule fs;
+            } shader;
+         } pipeline;
+      } blend;
+   } ssr;
 
    /* HDR & Tone Mapping */
    struct {
@@ -875,6 +983,41 @@ vkdf_scene_enable_hdr(VkdfScene *s, float exposure)
 
    assert(exposure >= 0.0f);
    s->hdr.exposure = exposure;
+}
+
+inline void
+vkdf_scene_enable_ssr(VkdfScene *s, VkdfSceneSsrSpec *config)
+{
+   s->ssr.enabled = true;
+   s->ssr.config = *config;
+}
+
+inline void
+vkdf_scene_ssr_spec_init_defaults(VkdfSceneSsrSpec *spec)
+{
+   spec->max_samples = -1;
+   spec->min_step_size = -1;
+   spec->max_step_size = -1;
+
+   spec->fg_test_bias = -1;
+   spec->fg_obstacle_max_samples = -1;
+   spec->fg_obstacle_min_step_size = -1;
+   spec->fg_obstacle_max_step_size = -1;
+   spec->fg_obstacle_break_dist = -1;
+   spec->fg_obstacle_jump_min_dist = -1;
+
+   spec->max_binary_search_samples = -1;
+
+   spec->max_reflection_dist = -1;
+   spec->att_reflection_dist_start = -1;
+
+   spec->att_screen_edge_dist_start = -1;
+
+   spec->max_dot_reflection_normal = -1;
+   spec->att_dot_reflection_normal_start = -1;
+
+   spec->min_dot_reflection_view = -1;
+   spec->att_dot_reflection_view_start = -1;
 }
 
 #endif

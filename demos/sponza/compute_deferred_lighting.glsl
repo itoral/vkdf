@@ -38,5 +38,6 @@
                           SMD.shadow_map_data.shadow_map_size,
                           SHADOW_MAP_PCF_KERNEL_SIZE);
 
-      out_color = vec4(color.diffuse + color.ambient + color.specular, 1);
+      out_color = vec4(color.diffuse + color.ambient + color.specular,
+                       mat.diffuse.a);
    }

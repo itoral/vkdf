@@ -29,7 +29,9 @@ struct Material
    uint normal_tex_count;
    uint specular_tex_count;
    uint opacity_tex_count;
-   uint pad0, pad1, pad2;
+   float reflectiveness;
+   float roughness;
+   uint pad0;
 };
 
 struct LightColor

@@ -27,6 +27,15 @@
 #define TONE_MAP_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/tone-map.vert.spv")
 #define TONE_MAP_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/tone-map.frag.spv")
 
+#define SSR_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr.vert.spv")
+#define SSR_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr.frag.spv")
+
+#define SSR_BLUR_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr-blur.vert.spv")
+#define SSR_BLUR_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr-blur.frag.spv")
+
+#define SSR_BLEND_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr-blend.vert.spv")
+#define SSR_BLEND_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr-blend.frag.spv")
+
 /**
  * Input texture bindings for deferred SSAO base pass
  */
@@ -166,7 +175,9 @@ create_depth_framebuffer_image(VkdfScene *s)
                                VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
                                   VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT,
                                VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                                  VK_IMAGE_USAGE_SAMPLED_BIT,
+                                  VK_IMAGE_USAGE_SAMPLED_BIT |
+                                  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                  VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                VK_IMAGE_ASPECT_DEPTH_BIT,
                                VK_IMAGE_VIEW_TYPE_2D);
@@ -411,7 +422,7 @@ vkdf_scene_new(VkdfContext *ctx,
    s->sync.depth_draw_static_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_sem = vkdf_create_semaphore(s->ctx);
    s->sync.draw_static_sem = vkdf_create_semaphore(s->ctx);
-   s->sync.ssao_sem = vkdf_create_semaphore(s->ctx);;
+   s->sync.ssao_sem = vkdf_create_semaphore(s->ctx);
    s->sync.gbuffer_merge_sem = vkdf_create_semaphore(s->ctx);
    s->sync.postprocess_sem = vkdf_create_semaphore(s->ctx);
    s->sync.present_fence = vkdf_create_fence(s->ctx);
@@ -507,7 +518,7 @@ free_dynamic_objects(VkdfScene *s)
 }
 
 static void
-destroy_shadow_map_pipeline(gpointer key, gpointer value, gpointer data)
+destroy_hashed_pipeline(gpointer key, gpointer value, gpointer data)
 {
    VkdfScene *s = (VkdfScene *) data;
    VkPipeline pipeline = (VkPipeline) value;
@@ -573,6 +584,85 @@ destroy_ssao_resources(VkdfScene *s)
       vkDestroyFramebuffer(s->ctx->device, s->ssao.blur.rp.framebuffer, NULL);
       vkdf_destroy_image(s->ctx, &s->ssao.blur.image);
    }
+}
+
+static void
+destroy_ssr_resources(VkdfScene *s)
+{
+   assert(s->ssr.enabled);
+
+   /* Samplers */
+   vkDestroySampler(s->ctx->device, s->ssr.linear_sampler, NULL);
+   vkDestroySampler(s->ctx->device, s->ssr.nearest_sampler, NULL);
+
+   /* === Base pass === */
+
+   /* Pipelines */
+   vkDestroyPipeline(s->ctx->device, s->ssr.base.pipeline.pipeline, NULL);
+
+   vkDestroyPipelineLayout(s->ctx->device, s->ssr.base.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->ssr.base.pipeline.tex_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->ssr.base.pipeline.tex_set_layout, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->ssr.base.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->ssr.base.pipeline.shader.fs, NULL);
+
+   /* Render target */
+   vkDestroyRenderPass(s->ctx->device, s->ssr.base.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->ssr.base.rp.framebuffer, NULL);
+   vkdf_destroy_image(s->ctx, &s->ssr.base.output);
+
+   /* === Blur pass === */
+
+   /* Pipeline */
+   vkDestroyPipeline(s->ctx->device, s->ssr.blur.pipeline.pipeline, NULL);
+   vkDestroyPipelineLayout(s->ctx->device, s->ssr.blur.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->ssr.blur.pipeline.tex_set_x);
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->ssr.blur.pipeline.tex_set_y);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->ssr.blur.pipeline.tex_set_layout, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->ssr.blur.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->ssr.blur.pipeline.shader.fs, NULL);
+
+   /* Render target */
+   vkDestroyRenderPass(s->ctx->device, s->ssr.blur.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->ssr.blur.rp.framebuffer_x, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->ssr.blur.rp.framebuffer, NULL);
+   vkdf_destroy_image(s->ctx, &s->ssr.blur.output_x);
+   vkdf_destroy_image(s->ctx, &s->ssr.blur.output);
+
+   /* === Blend pass === */
+
+   /* Pipeline */
+   vkDestroyPipeline(s->ctx->device, s->ssr.blend.pipeline.pipeline, NULL);
+   vkDestroyPipelineLayout(s->ctx->device, s->ssr.blend.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->ssr.blend.pipeline.tex_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->ssr.blend.pipeline.tex_set_layout, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->ssr.blend.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->ssr.blend.pipeline.shader.fs, NULL);
+
+   /* Render target
+    *
+    * Notice that we blend the output of this pass onto the pass's input, so
+    * the output image is only a reference to an image allocated by another
+    * pass and should not be destroyed here.
+    */
+   vkDestroyRenderPass(s->ctx->device, s->ssr.blend.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->ssr.blend.rp.framebuffer, NULL);
 }
 
 static void
@@ -739,7 +829,7 @@ vkdf_scene_free(VkdfScene *s)
 
    if (s->shadows.pipeline.pipelines) {
       g_hash_table_foreach(s->shadows.pipeline.pipelines,
-                           destroy_shadow_map_pipeline, s);
+                           destroy_hashed_pipeline, s);
       g_hash_table_destroy(s->shadows.pipeline.pipelines);
    }
 
@@ -748,6 +838,9 @@ vkdf_scene_free(VkdfScene *s)
 
    if (s->ssao.enabled)
       destroy_ssao_resources(s);
+
+   if (s->ssr.enabled)
+      destroy_ssr_resources(s);
 
    if (s->hdr.enabled)
       destroy_hdr_resources(s);
@@ -4286,6 +4379,819 @@ prepare_fxaa(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
    return s->fxaa.output;
 }
 
+struct SsrPCB {
+   glm::mat4 proj;
+   float aspect_ratio;
+   float tan_half_fov;
+};
+
+struct SsrBlurPCB {
+   uint32_t is_horiz;
+};
+
+static inline uint32_t
+hash_ssr_pipeline_spec(uint32_t vertex_data_stride,
+                       VkPrimitiveTopology primitive)
+{
+   assert((vertex_data_stride & 0x00ffffff) == vertex_data_stride);
+   return primitive << 24 | vertex_data_stride;
+}
+
+static void
+record_ssr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
+{
+   /* ============ Base pass ============ */
+
+   /* Transition depth buffer for sampling */
+   VkImageSubresourceRange mip0_depth =
+       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT,
+                                           0, 1, 0, 1);
+
+   vkdf_image_set_layout(cmd_buf,
+                         s->rt.depth.image,
+                         mip0_depth,
+                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   /* Transition color buffer for sampling */
+   VkImageSubresourceRange mip0_color =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                          0, 1, 0, 1);
+
+   vkdf_image_set_layout(cmd_buf,
+                         s->ssr.base.input.image,
+                         mip0_color,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->ssr.base.rp.renderpass,
+                                s->ssr.base.rp.framebuffer,
+                                0, 0, s->rt.width, s->rt.height,
+                                0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   struct SsrPCB pcb;
+   glm::mat4 *projection_ptr = vkdf_camera_get_projection_ptr(s->camera);
+   pcb.proj = *projection_ptr;
+   pcb.aspect_ratio = s->camera->proj.aspect_ratio;
+   pcb.tan_half_fov = tanf(glm::radians(s->camera->proj.fov / 2.0f));
+   vkCmdPushConstants(cmd_buf,
+                      s->ssr.base.pipeline.layout,
+                      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(struct SsrPCB), &pcb);
+
+   VkDescriptorSet base_descriptor_sets[1] = {
+      s->ssr.base.pipeline.tex_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->ssr.base.pipeline.layout,
+                           0, 1, base_descriptor_sets,
+                           0, NULL);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->ssr.base.pipeline.pipeline);
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   /* ============ Blur pass ============ */
+
+   /* Horizontal blur */
+   vkdf_image_set_layout(cmd_buf,
+                         s->ssr.blur.input.image,
+                         mip0_color,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   rp_begin = vkdf_renderpass_begin_new(s->ssr.blur.rp.renderpass,
+                                        s->ssr.blur.rp.framebuffer_x,
+                                        0, 0, s->rt.width, s->rt.height,
+                                        0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->ssr.blur.pipeline.pipeline);
+
+   bool is_horiz = true;
+   vkCmdPushConstants(cmd_buf,
+                      s->ssr.blur.pipeline.layout,
+                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(SsrBlurPCB), &is_horiz);
+
+   VkDescriptorSet blur_descriptor_sets_x[] = {
+      s->ssr.blur.pipeline.tex_set_x,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->ssr.blur.pipeline.layout,
+                           0, 1, blur_descriptor_sets_x, // First, count, sets
+                           0, NULL);                     // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   /* Vertical blur */
+   vkdf_image_set_layout(cmd_buf,
+                         s->ssr.blur.output_x.image,
+                         mip0_color,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   rp_begin = vkdf_renderpass_begin_new(s->ssr.blur.rp.renderpass,
+                                        s->ssr.blur.rp.framebuffer,
+                                        0, 0, s->rt.width, s->rt.height,
+                                        0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->ssr.blur.pipeline.pipeline);
+
+   is_horiz = false;
+   vkCmdPushConstants(cmd_buf,
+                      s->ssr.blur.pipeline.layout,
+                      VK_SHADER_STAGE_FRAGMENT_BIT,
+                      0, sizeof(SsrBlurPCB), &is_horiz);
+
+   VkDescriptorSet blur_descriptor_sets_y[] = {
+      s->ssr.blur.pipeline.tex_set_y,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->ssr.blur.pipeline.layout,
+                           0, 1, blur_descriptor_sets_y, // First, count, sets
+                           0, NULL);                     // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+
+   /* ============ Blend pass ============ */
+
+   vkdf_image_set_layout(cmd_buf,
+                         s->ssr.blur.output.image,
+                         mip0_color,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   rp_begin = vkdf_renderpass_begin_new(s->ssr.blend.rp.renderpass,
+                                        s->ssr.blend.rp.framebuffer,
+                                        0, 0, s->rt.width, s->rt.height,
+                                        0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->ssr.blend.pipeline.pipeline);
+
+   VkDescriptorSet blend_descriptor_sets[] = {
+      s->ssr.blend.pipeline.tex_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->ssr.blend.pipeline.layout,
+                           0, 1, blend_descriptor_sets,  // First, count, sets
+                           0, NULL);                     // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+}
+
+static VkPipeline
+create_ssr_blend_pipeline(VkdfScene *s)
+{
+   VkPipeline pipeline;
+
+   // Vertex input
+   VkPipelineVertexInputStateCreateInfo vi;
+   vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+   vi.pNext = NULL;
+   vi.flags = 0;
+   vi.vertexBindingDescriptionCount = 0;
+   vi.pVertexBindingDescriptions = NULL;
+   vi.vertexAttributeDescriptionCount = 0;
+   vi.pVertexAttributeDescriptions = NULL;
+
+   // Input assembly
+   VkPipelineInputAssemblyStateCreateInfo ia;
+   ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+   ia.pNext = NULL;
+   ia.flags = 0;
+   ia.primitiveRestartEnable = VK_FALSE;
+   ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+
+   // Viewport (Dynamic)
+   VkPipelineViewportStateCreateInfo vp = {};
+   vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+   vp.pNext = NULL;
+   vp.flags = 0;
+   vp.viewportCount = 1;
+   vp.scissorCount = 1;
+   vp.pScissors = NULL;
+   vp.pViewports = NULL;
+
+   // Rasterization
+   VkPipelineRasterizationStateCreateInfo rs;
+   rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+   rs.pNext = NULL;
+   rs.flags = 0;
+   rs.polygonMode = VK_POLYGON_MODE_FILL;
+   rs.cullMode = VK_CULL_MODE_BACK_BIT;
+   rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+   rs.depthClampEnable = VK_FALSE;
+   rs.rasterizerDiscardEnable = VK_FALSE;
+   rs.depthBiasEnable = VK_FALSE;
+   rs.depthBiasConstantFactor = 0;
+   rs.depthBiasClamp = 0;
+   rs.depthBiasSlopeFactor = 0;
+   rs.lineWidth = 1.0f;
+
+   // Multisampling
+   VkPipelineMultisampleStateCreateInfo ms;
+   ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+   ms.pNext = NULL;
+   ms.flags = 0;
+   ms.pSampleMask = NULL;
+   ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+   ms.sampleShadingEnable = VK_FALSE;
+   ms.alphaToCoverageEnable = VK_FALSE;
+   ms.alphaToOneEnable = VK_FALSE;
+   ms.minSampleShading = 0.0;
+
+   // Depth / Stencil
+   VkPipelineDepthStencilStateCreateInfo ds;
+   ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+   ds.pNext = NULL;
+   ds.flags = 0;
+   ds.depthTestEnable = VK_FALSE;
+   ds.depthWriteEnable = VK_FALSE;
+   ds.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+   ds.depthBoundsTestEnable = VK_FALSE;
+   ds.minDepthBounds = 0;
+   ds.maxDepthBounds = 0;
+   ds.stencilTestEnable = VK_FALSE;
+   ds.back.failOp = VK_STENCIL_OP_KEEP;
+   ds.back.passOp = VK_STENCIL_OP_KEEP;
+   ds.back.compareOp = VK_COMPARE_OP_ALWAYS;
+   ds.back.compareMask = 0;
+   ds.back.reference = 0;
+   ds.back.depthFailOp = VK_STENCIL_OP_KEEP;
+   ds.back.writeMask = 0;
+   ds.front = ds.back;
+
+   // Blending
+   VkPipelineColorBlendAttachmentState att_state[1];
+   att_state[0].colorWriteMask = 0xf;
+   att_state[0].blendEnable = VK_TRUE;
+   att_state[0].alphaBlendOp = VK_BLEND_OP_MAX;
+   att_state[0].colorBlendOp = VK_BLEND_OP_ADD;
+   att_state[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+   att_state[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+   att_state[0].srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+   att_state[0].dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+
+   VkPipelineColorBlendStateCreateInfo cb;
+   cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+   cb.flags = 0;
+   cb.pNext = NULL;
+   cb.attachmentCount = 1;
+   cb.pAttachments = att_state;
+   cb.logicOpEnable = VK_FALSE;
+   cb.logicOp = VK_LOGIC_OP_COPY;
+   cb.blendConstants[0] = 1.0f;
+   cb.blendConstants[1] = 1.0f;
+   cb.blendConstants[2] = 1.0f;
+   cb.blendConstants[3] = 1.0f;
+
+   // Dynamic state (Viewport, Scissor)
+   int dynamic_state_count = 0;
+   VkDynamicState dynamic_state_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
+   memset(dynamic_state_enables, 0, sizeof(dynamic_state_enables));
+   dynamic_state_enables[dynamic_state_count++] =
+      VK_DYNAMIC_STATE_SCISSOR;
+   dynamic_state_enables[dynamic_state_count++] =
+      VK_DYNAMIC_STATE_VIEWPORT;
+
+   VkPipelineDynamicStateCreateInfo dynamic_state_info;
+   dynamic_state_info.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+   dynamic_state_info.pNext = NULL;
+   dynamic_state_info.flags = 0;
+   dynamic_state_info.pDynamicStates = dynamic_state_enables;
+   dynamic_state_info.dynamicStateCount = dynamic_state_count;
+
+   // Shader stages
+   VkPipelineShaderStageCreateInfo shader_stages[2];
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[0],
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        s->ssr.blend.pipeline.shader.vs);
+
+   vkdf_pipeline_fill_shader_stage_info(&shader_stages[1],
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        s->ssr.blend.pipeline.shader.fs);
+
+   // Create pipeline
+   VkGraphicsPipelineCreateInfo pipeline_info;
+   pipeline_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+   pipeline_info.pNext = NULL;
+   pipeline_info.layout = s->ssr.blend.pipeline.layout;
+   pipeline_info.basePipelineHandle = VK_NULL_HANDLE;
+   pipeline_info.basePipelineIndex = 0;
+   pipeline_info.flags = 0;
+   pipeline_info.pVertexInputState = &vi;
+   pipeline_info.pInputAssemblyState = &ia;
+   pipeline_info.pTessellationState = NULL;
+   pipeline_info.pViewportState = &vp;
+   pipeline_info.pRasterizationState = &rs;
+   pipeline_info.pMultisampleState = &ms;
+   pipeline_info.pDepthStencilState = &ds;
+   pipeline_info.pColorBlendState = &cb;
+   pipeline_info.pDynamicState = &dynamic_state_info;
+   pipeline_info.pStages = shader_stages;
+   pipeline_info.stageCount = 2;
+   pipeline_info.renderPass = s->ssr.blend.rp.renderpass;
+   pipeline_info.subpass = 0;
+
+   VK_CHECK(vkCreateGraphicsPipelines(s->ctx->device,
+                                      NULL,
+                                      1,
+                                      &pipeline_info,
+                                      NULL,
+                                      &pipeline));
+   return pipeline;
+}
+
+static void
+set_specialization_constant(VkSpecializationMapEntry *entries,
+                            uint32_t *num_entries,
+                            uint32_t id,
+                            uint32_t *offset,
+                            uint32_t size,
+                            void *value_buf,
+                            void *value)
+{
+   assert(*num_entries < 32);
+   assert(*offset < 4 * 32);
+
+   memcpy(((uint8_t *)value_buf) + (*offset), value, size);
+
+   VkSpecializationMapEntry entry = { id, *offset, size };
+   entries[*num_entries] = entry;
+
+   *offset += size;
+   *num_entries = *num_entries + 1;
+}
+
+static void
+ssr_populate_specialization_constants(VkdfScene *s,
+                                      VkPipelineShaderStageCreateInfo *info)
+{
+   VkdfSceneSsrSpec *spec = &s->ssr.config;
+
+   /* Let's assume that we have a maximum of 32 constants of 4B each */
+   s->ssr.spec_const_buf = malloc(4 * 32);
+   void *val_buf = s->ssr.spec_const_buf;
+
+   uint32_t num_entries = 0;
+   uint32_t offset = 0;
+   VkSpecializationMapEntry entries[32];
+
+   if (spec->max_samples != -1)
+      set_specialization_constant(entries, &num_entries, 0, &offset, sizeof(int32_t), val_buf, &spec->max_samples);
+
+   if (spec->min_step_size != -1)
+      set_specialization_constant(entries, &num_entries, 1, &offset, sizeof(float), val_buf, &spec->min_step_size);
+
+   if (spec->max_step_size != -1)
+      set_specialization_constant(entries, &num_entries, 2, &offset, sizeof(float), val_buf, &spec->max_step_size);
+
+   if (spec->fg_test_bias != -1)
+      set_specialization_constant(entries, &num_entries, 3, &offset, sizeof(float), val_buf, &spec->fg_test_bias);
+
+   if (spec->fg_obstacle_max_samples != -1)
+      set_specialization_constant(entries, &num_entries, 4, &offset, sizeof(int32_t), val_buf, &spec->fg_obstacle_max_samples);
+
+   if (spec->fg_obstacle_min_step_size != -1)
+      set_specialization_constant(entries, &num_entries, 5, &offset, sizeof(float), val_buf, &spec->fg_obstacle_min_step_size);
+
+   if (spec->fg_obstacle_max_step_size != -1)
+      set_specialization_constant(entries, &num_entries, 6, &offset, sizeof(float), val_buf, &spec->fg_obstacle_max_step_size);
+
+   if (spec->fg_obstacle_break_dist != -1)
+      set_specialization_constant(entries, &num_entries, 7, &offset, sizeof(float), val_buf, &spec->fg_obstacle_break_dist);
+
+   if (spec->fg_obstacle_jump_min_dist != -1)
+      set_specialization_constant(entries, &num_entries, 8, &offset, sizeof(float), val_buf, &spec->fg_obstacle_jump_min_dist);
+
+   if (spec->max_binary_search_samples != -1)
+      set_specialization_constant(entries, &num_entries, 9, &offset, sizeof(int32_t), val_buf, &spec->max_binary_search_samples);
+
+   if (spec->max_reflection_dist != -1)
+      set_specialization_constant(entries, &num_entries, 10, &offset, sizeof(float), val_buf, &spec->max_reflection_dist);
+
+   if (spec->att_reflection_dist_start != -1)
+      set_specialization_constant(entries, &num_entries, 11, &offset, sizeof(float), val_buf, &spec->att_reflection_dist_start);
+
+   if (spec->att_screen_edge_dist_start != -1)
+      set_specialization_constant(entries, &num_entries, 12, &offset, sizeof(float), val_buf, &spec->att_screen_edge_dist_start);
+
+   if (spec->max_dot_reflection_normal != -1)
+      set_specialization_constant(entries, &num_entries, 13, &offset, sizeof(float), val_buf, &spec->max_dot_reflection_normal);
+
+   if (spec->att_dot_reflection_normal_start != -1)
+      set_specialization_constant(entries, &num_entries, 14, &offset, sizeof(float), val_buf, &spec->att_dot_reflection_normal_start);
+
+   if (spec->min_dot_reflection_view != -1)
+      set_specialization_constant(entries, &num_entries, 15, &offset, sizeof(float), val_buf, &spec->min_dot_reflection_view);
+
+   if (spec->att_dot_reflection_view_start != -1)
+      set_specialization_constant(entries, &num_entries, 16, &offset, sizeof(float), val_buf, &spec->att_dot_reflection_view_start);
+
+   VkSpecializationInfo fs_spec_info = {
+      num_entries,
+      entries,
+      offset,
+      val_buf
+   };
+
+   vkdf_pipeline_fill_shader_stage_info(info,
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        s->ssr.base.pipeline.shader.fs,
+                                        &fs_spec_info);
+}
+
+static VkdfImage
+prepare_ssr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
+{
+   assert(s->ssr.enabled);
+
+   /* FIXME: We only support deferred for now */
+   if (!s->rp.do_deferred) {
+      vkdf_error("scene: SSR is not supported in forward mode yet.");
+      s->ssr.enabled = false;
+      return *input;
+   }
+
+   /* ====== Base pass ====== */
+
+   /* Output image */
+   s->ssr.base.input = *input;
+   s->ssr.base.output = create_color_framebuffer_image(s, false);
+
+   /* Texture samplers */
+   s->ssr.linear_sampler =
+         vkdf_create_sampler(s->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_LINEAR,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0f);
+
+   s->ssr.nearest_sampler =
+         vkdf_create_sampler(s->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_NEAREST,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0f);
+
+   /* Render pass */
+   s->ssr.base.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->ssr.base.output.format,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+   /* Framebuffer */
+   s->ssr.base.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->ssr.base.rp.renderpass,
+                              s->ssr.base.output.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+   /* Pipeline */
+   VkPushConstantRange base_pcb;
+   base_pcb.stageFlags = VK_SHADER_STAGE_VERTEX_BIT |
+                         VK_SHADER_STAGE_FRAGMENT_BIT;
+   base_pcb.offset = 0;
+   base_pcb.size = sizeof(struct SsrPCB);
+
+   s->ssr.base.pipeline.tex_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 3,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   VkDescriptorSetLayout base_layouts[] = {
+      s->ssr.base.pipeline.tex_set_layout,
+   };
+
+   VkPipelineLayoutCreateInfo base_info;
+   base_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   base_info.pNext = NULL;
+   base_info.pushConstantRangeCount = 1;
+   base_info.pPushConstantRanges = &base_pcb;
+   base_info.setLayoutCount = 1;
+   base_info.pSetLayouts = base_layouts;
+   base_info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &base_info, NULL,
+                                   &s->ssr.base.pipeline.layout));
+   s->ssr.base.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, SSR_VS_SHADER_PATH);
+
+   VkPipelineShaderStageCreateInfo vs_info;
+   vkdf_pipeline_fill_shader_stage_info(&vs_info,
+                                        VK_SHADER_STAGE_VERTEX_BIT,
+                                        s->ssr.base.pipeline.shader.vs);
+
+   s->ssr.base.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, SSR_FS_SHADER_PATH);
+
+   VkPipelineShaderStageCreateInfo fs_info;
+   ssr_populate_specialization_constants(s, &fs_info);
+
+   s->ssr.base.pipeline.pipeline =
+      vkdf_create_gfx_pipeline(s->ctx,
+                               NULL,
+                               0, NULL,
+                               0, NULL,
+                               false,
+                               VK_COMPARE_OP_ALWAYS,
+                               s->ssr.base.rp.renderpass,
+                               s->ssr.base.pipeline.layout,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                               VK_CULL_MODE_BACK_BIT,
+                               1, &vs_info, &fs_info);
+
+   /* Descriptor sets */
+   s->ssr.base.pipeline.tex_set =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->ssr.base.pipeline.tex_set_layout);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.base.pipeline.tex_set,
+                                      s->ssr.nearest_sampler,
+                                      s->ssr.base.input.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.base.pipeline.tex_set,
+                                      s->ssr.nearest_sampler,
+                                      s->rt.depth.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      1, 1);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.base.pipeline.tex_set,
+                                      s->ssr.nearest_sampler,
+                                      s->rt.gbuffer[GBUFFER_EYE_NORMAL_IDX].view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      2, 1);
+
+   /* ====== Blur pass ====== */
+
+   s->ssr.blur.input = s->ssr.base.output;
+   s->ssr.blur.output_x = create_color_framebuffer_image(s, false);
+   s->ssr.blur.output = create_color_framebuffer_image(s, false);
+
+   /* Render pass */
+   s->ssr.blur.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->ssr.blur.output.format,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+   /* Framebuffer */
+   s->ssr.blur.rp.framebuffer_x =
+      vkdf_create_framebuffer(s->ctx,
+                              s->ssr.blur.rp.renderpass,
+                              s->ssr.blur.output_x.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+   s->ssr.blur.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->ssr.blur.rp.renderpass,
+                              s->ssr.blur.output.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+   /* Pipeline */
+   VkPushConstantRange blur_pcb;
+   blur_pcb.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   blur_pcb.offset = 0;
+   blur_pcb.size = sizeof(struct SsrBlurPCB);
+
+   s->ssr.blur.pipeline.tex_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 2,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT |
+                                                   VK_SHADER_STAGE_VERTEX_BIT);
+
+   VkDescriptorSetLayout blur_layouts[] = {
+      s->ssr.blur.pipeline.tex_set_layout
+   };
+
+   VkPipelineLayoutCreateInfo blur_info;
+   blur_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   blur_info.pNext = NULL;
+   blur_info.pushConstantRangeCount = 1;
+   blur_info.pPushConstantRanges = &blur_pcb;
+   blur_info.setLayoutCount = 1;
+   blur_info.pSetLayouts = blur_layouts;
+   blur_info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &blur_info, NULL,
+                                   &s->ssr.blur.pipeline.layout));
+
+   s->ssr.blur.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, SSR_BLUR_VS_SHADER_PATH);
+
+   s->ssr.blur.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, SSR_BLUR_FS_SHADER_PATH);
+
+   s->ssr.blur.pipeline.pipeline =
+      vkdf_create_gfx_pipeline(s->ctx,
+                               NULL,
+                               0,
+                               NULL,
+                               0,
+                               NULL,
+                               false,
+                               VK_COMPARE_OP_ALWAYS,
+                               s->ssr.blur.rp.renderpass,
+                               s->ssr.blur.pipeline.layout,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                               VK_CULL_MODE_BACK_BIT,
+                               1,
+                               s->ssr.blur.pipeline.shader.vs,
+                               s->ssr.blur.pipeline.shader.fs);
+
+   /* Descriptor sets */
+   s->ssr.blur.pipeline.tex_set_x =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->ssr.blur.pipeline.tex_set_layout);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.blur.pipeline.tex_set_x,
+                                      s->ssr.nearest_sampler,
+                                      s->ssr.blur.input.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.blur.pipeline.tex_set_x,
+                                      s->ssr.nearest_sampler,
+                                      s->rt.gbuffer[GBUFFER_EYE_NORMAL_IDX].view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      1, 1);
+
+   s->ssr.blur.pipeline.tex_set_y =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->ssr.blur.pipeline.tex_set_layout);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.blur.pipeline.tex_set_y,
+                                      s->ssr.nearest_sampler,
+                                      s->ssr.blur.output_x.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.blur.pipeline.tex_set_y,
+                                      s->ssr.nearest_sampler,
+                                      s->rt.gbuffer[GBUFFER_EYE_NORMAL_IDX].view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      1, 1);
+
+   /* ====== Blend pass ====== */
+
+   s->ssr.blend.input = s->ssr.blur.output;
+   s->ssr.blend.output = *input; /* We blend the result onto the input */
+
+   /* Render pass */
+   s->ssr.blend.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->ssr.blend.output.format,
+                                 VK_ATTACHMENT_LOAD_OP_LOAD,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+   /* Framebuffer */
+   s->ssr.blend.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->ssr.blend.rp.renderpass,
+                              s->ssr.blend.output.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+   /* Pipeline */
+   s->ssr.blend.pipeline.tex_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   VkDescriptorSetLayout blend_layouts[] = {
+      s->ssr.blend.pipeline.tex_set_layout
+   };
+
+   VkPipelineLayoutCreateInfo blend_info;
+   blend_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   blend_info.pNext = NULL;
+   blend_info.pushConstantRangeCount = 0;
+   blend_info.pPushConstantRanges = NULL;
+   blend_info.setLayoutCount = 1;
+   blend_info.pSetLayouts = blend_layouts;
+   blend_info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &blend_info, NULL,
+                                   &s->ssr.blend.pipeline.layout));
+
+   s->ssr.blend.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, SSR_BLEND_VS_SHADER_PATH);
+
+   s->ssr.blend.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, SSR_BLEND_FS_SHADER_PATH);
+
+   s->ssr.blend.pipeline.pipeline = create_ssr_blend_pipeline(s);
+
+   /* Descriptor sets */
+   s->ssr.blend.pipeline.tex_set =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->ssr.blend.pipeline.tex_set_layout);
+
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->ssr.blend.pipeline.tex_set,
+                                      s->ssr.nearest_sampler,
+                                      s->ssr.blend.input.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   /* Command buffer */
+   record_ssr_cmd_buf(s, cmd_buf);
+
+   return s->ssr.blend.output;
+}
+
 static void
 prepare_post_processing_render_passes(VkdfScene *s)
 {
@@ -4310,6 +5216,7 @@ prepare_post_processing_render_passes(VkdfScene *s)
 
    bool has_post_processing = false;
 
+   /* FIXME: this callback should receive the current "output" as input */
    if (s->callbacks.postprocess) {
       has_post_processing = true;
       s->callbacks.postprocess(s->ctx, cmd_buf, s->callbacks.data);
@@ -4320,6 +5227,11 @@ prepare_post_processing_render_passes(VkdfScene *s)
    if (s->hdr.enabled) {
       has_post_processing = true;
       output = prepare_hdr(s, cmd_buf, &output);
+   }
+
+   if (s->ssr.enabled) {
+      has_post_processing = true;
+      output = prepare_ssr(s, cmd_buf, &output);
    }
 
    if (s->fxaa.enabled) {

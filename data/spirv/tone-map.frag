@@ -14,7 +14,8 @@ layout(location = 0) out vec4 out_color;
 
 void main()
 {
-   vec3 hdr_color = texture(tex_source, in_uv).rgb;
+   vec4 color = texture(tex_source, in_uv);
+   vec3 hdr_color = color.rgb;
    vec3 ldr_color = vec3(1.0) - exp(-hdr_color * PCB.exposure);
-   out_color = vec4(ldr_color, 1.0);
+   out_color = vec4(ldr_color, color.a);
 }

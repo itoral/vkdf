@@ -17,10 +17,11 @@
       out_eye_normal = vec4(in_eye_normal, 0);
    }
 
-   // Diffuse
+   // Diffuse and reflectiveness
    if (mat.diffuse_tex_count > 0)
       mat.diffuse = texture(tex_diffuse, in_uv);
-   out_diffuse = mat.diffuse;
+   out_diffuse.xyz = mat.diffuse.xyz;
+   out_diffuse.w = mat.reflectiveness;
 
    // Specular
    if (mat.specular_tex_count > 0)

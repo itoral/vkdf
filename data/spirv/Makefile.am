@@ -6,6 +6,12 @@ BUILT_SOURCES = \
     ssao-blur.deferred.vert.spv \
     ssao-blur.deferred.frag \
     ssao-blur.deferred.frag.spv \
+    ssr-blur.vert.spv \
+    ssr-blur.frag.spv \
+    ssr.vert.spv \
+    ssr.frag.spv \
+    ssr-blend.vert.spv \
+    ssr-blend.frag.spv \
     tone-map.vert.spv \
     tone-map.frag.spv \
     fxaa.vert.spv \
@@ -38,6 +44,26 @@ ssao-blur.deferred.frag: ssao-blur.deferred.frag.input
 
 ssao-blur.deferred.frag.spv: ssao-blur.deferred.frag
 	$(top_srcdir)/$(GLSLANG) -V ssao-blur.deferred.frag -o ssao-blur.deferred.frag.spv
+
+
+# SSR
+ssr.vert.spv: ssr.vert
+	$(top_srcdir)/$(GLSLANG) -V ssr.vert -o ssr.vert.spv
+
+ssr.frag.spv: ssr.frag
+	$(top_srcdir)/$(GLSLANG) -V ssr.frag -o ssr.frag.spv
+
+ssr-blur.vert.spv: ssr-blur.vert
+	$(top_srcdir)/$(GLSLANG) -V ssr-blur.vert -o ssr-blur.vert.spv
+
+ssr-blur.frag.spv: ssr-blur.frag
+	$(top_srcdir)/$(GLSLANG) -V ssr-blur.frag -o ssr-blur.frag.spv
+
+ssr-blend.vert.spv: ssr-blend.vert
+	$(top_srcdir)/$(GLSLANG) -V ssr-blend.vert -o ssr-blend.vert.spv
+
+ssr-blend.frag.spv: ssr-blend.frag
+	$(top_srcdir)/$(GLSLANG) -V ssr-blend.frag -o ssr-blend.frag.spv
 
 
 # HDR Tone mapping
