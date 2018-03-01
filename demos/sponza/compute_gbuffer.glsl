@@ -8,14 +8,15 @@
 
    Material mat = Mat.materials[in_material_idx];
 
-   // Eye-space normal
+   // Eye-space normal and roughness
    if (mat.normal_tex_count > 0) {
       mat3 TBN = mat3(in_eye_tangent, in_eye_bitangent, in_eye_normal);
       vec3 tangent_normal = texture(tex_normal, in_uv).rgb * 2.0 - 1.0;
-      out_eye_normal = vec4(normalize(TBN * tangent_normal), 0);
+      out_eye_normal.xyz = normalize(TBN * tangent_normal);
    } else {
-      out_eye_normal = vec4(in_eye_normal, 0);
+      out_eye_normal.xyz = in_eye_normal;
    }
+   out_eye_normal.w = mat.roughness;
 
    // Diffuse and reflectiveness
    if (mat.diffuse_tex_count > 0)

@@ -69,6 +69,15 @@ const glm::vec4  SUN_DIFFUSE               = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
 const glm::vec4  SUN_SPECULAR              = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
 const glm::vec4  SUN_AMBIENT               = glm::vec4(0.1f, 0.1f, 0.1f, 1.0f);
 
+/* Screen Space Reflections (SSR) */
+const bool       ENABLE_SSR                = true;
+const float      SSR_REFLECTION_STRENGTH   = 0.1f;  // Min > 0.0, Max=1.0
+const int        SSR_REFLECTION_ROUGHNESS  = 0;     // Min = 0
+const int32_t    SSR_MAX_SAMPLES           = 32;
+const float      SSR_STEP_SIZE             = 0.02f; // Min > 0.0
+const int32_t    SSR_MAX_SEARCH_SAMPLES    = 4;     // Min >= 0
+const float      SSR_MAX_REFLECTION_DIST   = 0.7f;  // Min > 0.0
+
 /* Antialiasing (super sampling) */
 const float      SUPER_SAMPLING_FACTOR     = 1.0f;  // Min=1.0 (disabled)
 
@@ -79,6 +88,8 @@ const float      FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
 const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
 // =============================== Declarations ===============================
+
+const uint32_t   SPONZA_FLOOR_MATERIAL_IDX = 10;
 
 enum {
    DIFFUSE_TEX_BINDING  = 0,
@@ -845,6 +856,17 @@ init_scene(SceneResources *res)
                              SSAO_INTENSITY,
                              SSAO_BLUR_SIZE,
                              SSAO_BLUR_THRESHOLD);
+   }
+
+   if (ENABLE_SSR) {
+      VkdfSceneSsrSpec ssr_config;
+      vkdf_scene_ssr_spec_init_defaults(&ssr_config);
+      ssr_config.max_samples = SSR_MAX_SAMPLES;
+      ssr_config.min_step_size = SSR_STEP_SIZE;
+      ssr_config.max_step_size = SSR_STEP_SIZE;
+      ssr_config.max_binary_search_samples = SSR_MAX_SEARCH_SAMPLES;
+      ssr_config.max_reflection_dist = SSR_MAX_REFLECTION_DIST;
+      vkdf_scene_enable_ssr(res->scene, &ssr_config);
    }
 
    if (ENABLE_HDR) {
@@ -1686,6 +1708,13 @@ init_meshes(SceneResources *res)
 
    if (SHOW_SPONZA_FLAG_MESH == false)
       res->sponza_model->meshes[SPONZA_FLAG_MESH_IDX]->active = false;
+
+   if (ENABLE_SSR) {
+      res->sponza_model->materials[SPONZA_FLOOR_MATERIAL_IDX].
+         reflectiveness = SSR_REFLECTION_STRENGTH;
+      res->sponza_model->materials[SPONZA_FLOOR_MATERIAL_IDX].
+         roughness = SSR_REFLECTION_ROUGHNESS;
+   }
 
    // Make all meshes visible by default
    memset(res->sponza_mesh_visible, 1, sizeof(res->sponza_mesh_visible));
