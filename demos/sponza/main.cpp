@@ -91,6 +91,26 @@ const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
 const uint32_t   SPONZA_FLOOR_MATERIAL_IDX = 10;
 
+const bool       SHOW_SPONZA_VASE_MESHES   = true;
+const uint32_t   SPONZA_VASE_MESH_IDX[]    = {
+   1,   2,
+   380, 381,
+   378, 379,
+   376, 377,
+   374, 375,
+   372, 373,
+   370, 371,
+   368, 369
+};
+
+const bool       SHOW_SPONZA_SUPPORT_MESHES= true;
+const uint32_t   SPONZA_SUPPORT_MESH_IDX[] = {
+   332, 333, 334, 335, 336, 337, 338, 339, 340,
+   341, 342, 343, 344, 345, 346, 347, 348, 349,
+   351, 352, 353, 354, 355, 356, 357, 358, 359,
+   360, 361, 362, 363, 364, 365, 366, 367, 368
+};
+
 enum {
    DIFFUSE_TEX_BINDING  = 0,
    NORMAL_TEX_BINDING   = 1,
@@ -1708,6 +1728,22 @@ init_meshes(SceneResources *res)
 
    if (SHOW_SPONZA_FLAG_MESH == false)
       res->sponza_model->meshes[SPONZA_FLAG_MESH_IDX]->active = false;
+
+   if (SHOW_SPONZA_VASE_MESHES == false) {
+      uint32_t num_meshes = sizeof(SPONZA_VASE_MESH_IDX) / sizeof(uint32_t);
+      for (uint32_t i = 0; i < num_meshes; i++) {
+         uint32_t mesh_idx = SPONZA_VASE_MESH_IDX[i];
+         res->sponza_model->meshes[mesh_idx]->active = false;
+      }
+   }
+
+   if (SHOW_SPONZA_SUPPORT_MESHES == false) {
+      uint32_t num_meshes = sizeof(SPONZA_SUPPORT_MESH_IDX) / sizeof(uint32_t);
+      for (uint32_t i = 0; i < num_meshes; i++) {
+         uint32_t mesh_idx = SPONZA_SUPPORT_MESH_IDX[i];
+         res->sponza_model->meshes[mesh_idx]->active = false;
+      }
+   }
 
    if (ENABLE_SSR) {
       res->sponza_model->materials[SPONZA_FLOOR_MATERIAL_IDX].
