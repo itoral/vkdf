@@ -14,7 +14,12 @@ const float      FRAMERATE_TARGET          = 30.0f;
 const bool       SHOW_SPONZA_FLAG_MESH     = false;
 const uint32_t   SPONZA_FLAG_MESH_IDX      = 4;
 
-/* Show debug texture */
+/* Show debug texture
+ *
+ * WARNING: Enabling this produces a GPU hang on Intel Mesa when SSR is also
+ *          enabled with deferred rendering. The hang goes away if we remove
+ *          the blur pass from the SSR implementation.
+ */
 const bool       SHOW_DEBUG_TILE           = false;
 
 /* Pipeline options */
