@@ -203,7 +203,6 @@ do_binary_search(vec3 ss_p_min, vec3 ss_p_max, out vec3 ss_p_out)
    ss_p_out = ss_p_max;
 }
 
-
 bool
 is_foreground_obstacle(float z_buffer, float z, vec3 ss_max, vec3 ss_min)
 {

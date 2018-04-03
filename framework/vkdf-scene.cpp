@@ -3978,11 +3978,6 @@ prepare_scene_ssao(VkdfScene *s)
    /* SSAO requires depth information, which we assume is there if we
     * are in deferred mode, but in forward it requires depth-prepass to be
     * explicitly enabled.
-    *
-    * FIXME: Our SSAO implementation assumes that we have a Position texture
-    *        in the Gbuffer from which we can retriev linear Z values. In the
-    *        future we might want to make this more flexible and be able to
-    *        reconstruct linear Z without demanding a Position texture at all.
     */
    if (!s->rp.do_deferred && !s->rp.do_depth_prepass) {
       vkdf_error("scene: cannot enable SSAO. Forward SSAO needs depth-prepass "
