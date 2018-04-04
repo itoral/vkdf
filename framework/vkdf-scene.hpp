@@ -22,9 +22,9 @@ const uint32_t GBUFFER_MAX_SIZE = 8;
  * reconstruction from depth (we actually requite this for SSAO).
  */
 enum {
-   GBUFFER_EYE_NORMAL_IDX      = 0,
-   GBUFFER_DIFFUSE_IDX         = 1,
-   GBUFFER_SPECULAR_IDX        = 2,
+   GBUFFER_EYE_NORMAL_IDX      = 0,  // .w contains roughness (for SSR)
+   GBUFFER_DIFFUSE_IDX         = 1,  // .w contains reflectiveness (for SSR)
+   GBUFFER_SPECULAR_IDX        = 2,  // .w contains shininess (for specular)
 
    GBUFFER_LAST_FIXED_IDX
 };
