@@ -3387,7 +3387,9 @@ create_gbuffer_render_pass(VkdfScene *s, bool for_dynamic)
    atts[idx].initialLayout =
       load_depth ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL :
                    VK_IMAGE_LAYOUT_UNDEFINED;
-   atts[idx].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+   atts[idx].finalLayout =
+      for_dynamic ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL :
+                    VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
    atts[idx].flags = 0;
    depth_idx = idx++;
 
@@ -4396,19 +4398,6 @@ static void
 record_ssr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
 {
    /* ============ Base pass ============ */
-
-   /* Transition depth buffer for sampling */
-   VkImageSubresourceRange mip0_depth =
-       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_DEPTH_BIT,
-                                           0, 1, 0, 1);
-
-   vkdf_image_set_layout(cmd_buf,
-                         s->rt.depth.image,
-                         mip0_depth,
-                         VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
 
    /* Transition color buffer for sampling */
    VkImageSubresourceRange mip0_color =
