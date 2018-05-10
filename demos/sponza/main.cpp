@@ -389,32 +389,37 @@ record_update_resources_command(VkdfContext *ctx,
                                 void *data)
 {
    SceneResources *res = (SceneResources *) data;
+   bool has_updates  = false;
 
    // Auto-camera state update
-   if (ENABLE_AUTO_CAMERA)
+   if (ENABLE_AUTO_CAMERA) {
       update_auto_camera_state(res, cmd_buf);
+      has_updates = true;
+   }
 
    // Update camera view matrix
    VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
-   if (!vkdf_camera_is_dirty(camera))
-      return false;
-
-   glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
-   vkCmdUpdateBuffer(cmd_buf,
-                     res->ubos.camera_view.buf.buf,
-                     0, sizeof(glm::mat4), &view[0][0]);
+   if (vkdf_camera_is_dirty(camera)) {
+      glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
+      vkCmdUpdateBuffer(cmd_buf,
+                        res->ubos.camera_view.buf.buf,
+                        0, sizeof(glm::mat4), &view[0][0]);
+      has_updates = true;
+   }
 
    // Update light's eye-space view dir
    if (ENABLE_DEFERRED_RENDERING) {
+      glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
       glm::vec3 dir = vec3(view * res->light->origin);
       vkdf_vec3_normalize(&dir);
       glm::vec4 light_eye_dir = vec4(dir, res->light->origin.w);
       vkCmdUpdateBuffer(cmd_buf,
                         res->ubos.light_eye_dir.buf.buf,
                         0, sizeof(glm::vec4), &light_eye_dir);
+      has_updates = true;
    }
 
-   return true;
+   return has_updates;
 }
 
 static void
