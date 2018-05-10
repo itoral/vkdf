@@ -92,6 +92,11 @@ const float      FXAA_LUMA_MIN             = 0.1f;    // Min > 0.0, Max=1.0
 const float      FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
 const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
+/* Automatic camera */
+const bool       ENABLE_AUTO_CAMERA        = true;
+const float      AUTO_CAMERA_FADE_SPEED    = 0.005f;
+const uint32_t   AUTO_CAMERA_BLANK_FRAMES  = 90;
+
 // =============================== Declarations ===============================
 
 const uint32_t   SPONZA_FLOOR_MATERIAL_IDX = 10;
@@ -123,6 +128,14 @@ enum {
    OPACITY_TEX_BINDING  = 3,
 };
 
+typedef enum {
+   AUTO_CAM_SETUP_STATE    = 0,
+   AUTO_CAM_FADE_IN_STATE  = 1,
+   AUTO_CAM_STABLE_STATE   = 2,
+   AUTO_CAM_FADE_OUT_STATE = 3,
+   AUTO_CAM_BLANK_STATE    = 4
+} AutoCameraState;
+
 struct PCBDataProj {
    uint8_t proj[sizeof(glm::mat4)];
 };
@@ -139,6 +152,10 @@ typedef struct {
    VkdfScene *scene;
 
    VkdfCamera *camera;
+
+   float auto_camera_todo;
+   AutoCameraState auto_camera_state;
+   uint32_t auto_camera_blank_timeout;
 
    struct {
       VkDescriptorPool static_ubo_pool;
@@ -323,12 +340,59 @@ update_visible_sponza_meshes(SceneResources *res)
                                   res->sponza_mesh_visible);
 }
 
+static void
+update_auto_camera_state(SceneResources *res, VkCommandBuffer cmd_buf)
+{
+   float brightness = vkdf_scene_brightness_filter_get_brightness(res->scene);
+   switch(res->auto_camera_state) {
+   case AUTO_CAM_SETUP_STATE:
+      vkdf_scene_brightness_filter_set_brightness(res->scene, cmd_buf, 0.0f);
+      res->auto_camera_state = AUTO_CAM_FADE_IN_STATE;
+      break;
+   case AUTO_CAM_FADE_IN_STATE:
+      brightness = MIN2(brightness + AUTO_CAMERA_FADE_SPEED, 1.0f);
+      vkdf_scene_brightness_filter_set_brightness(res->scene,
+                                                     cmd_buf, brightness);
+      if (brightness >= 1.0f)
+         res->auto_camera_state = AUTO_CAM_STABLE_STATE;
+      break;
+   case AUTO_CAM_STABLE_STATE:
+      if (res->auto_camera_todo <= 200.0f)
+         res->auto_camera_state = AUTO_CAM_FADE_OUT_STATE;
+      break;
+   case AUTO_CAM_FADE_OUT_STATE:
+      brightness = MAX2(brightness - AUTO_CAMERA_FADE_SPEED, 0.0f);
+      vkdf_scene_brightness_filter_set_brightness(res->scene,
+                                                  cmd_buf, brightness);
+      if (brightness <= 0.0f) {
+         res->auto_camera_blank_timeout = AUTO_CAMERA_BLANK_FRAMES;
+         res->auto_camera_state = AUTO_CAM_BLANK_STATE;
+      }
+      break;
+   case AUTO_CAM_BLANK_STATE:
+      assert(brightness <= 0.0f);
+      if (res->auto_camera_blank_timeout == 0) {
+         vkdf_camera_next_program(res->camera);
+         res->auto_camera_state = AUTO_CAM_SETUP_STATE;
+      } else {
+         res->auto_camera_blank_timeout--;
+      }
+      break;
+   default:
+      assert(!"Invalid camera state");
+   }
+}
+
 static bool
 record_update_resources_command(VkdfContext *ctx,
                                 VkCommandBuffer cmd_buf,
                                 void *data)
 {
    SceneResources *res = (SceneResources *) data;
+
+   // Auto-camera state update
+   if (ENABLE_AUTO_CAMERA)
+      update_auto_camera_state(res, cmd_buf);
 
    // Update camera view matrix
    VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
@@ -451,6 +515,10 @@ record_forward_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
 
    SceneResources *res = (SceneResources *) data;
 
+   // Don't bother rendering if brightness is set to 0
+   if (vkdf_scene_brightness_filter_get_brightness(res->scene) == 0.0f)
+      return;
+
    // Push constants: camera projection matrix
    struct PCBDataProj pcb_data;
    glm::mat4 *proj = vkdf_camera_get_projection_ptr(res->scene->camera);
@@ -570,6 +638,10 @@ record_gbuffer_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
    assert(ENABLE_DEFERRED_RENDERING);
 
    SceneResources *res = (SceneResources *) data;
+
+   // Don't bother rendering if brightness is set to 0
+   if (vkdf_scene_brightness_filter_get_brightness(res->scene) == 0.0f)
+      return;
 
    // Push constants: camera projection matrix
    struct PCBDataProj pcb_data;
@@ -733,32 +805,40 @@ record_gbuffer_merge_commands(VkdfContext *ctx,
 static void
 update_camera(SceneResources *res)
 {
-   const float mov_speed = 0.15f;
-   const float rot_speed = 1.0f;
+   if (!ENABLE_AUTO_CAMERA) {
+      const float mov_speed = 0.15f;
+      const float rot_speed = 1.0f;
 
-   VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
-   GLFWwindow *window = res->ctx->window;
+      VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
+      GLFWwindow *window = res->ctx->window;
 
-   float base_speed = 1.0f;
+      float base_speed = 1.0f;
 
-   // Rotation
-   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
+      // Rotation
+      if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
+         vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
+      else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
+         vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
 
-   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
-      vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
+      if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
+         vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
+      else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
+         vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
 
-   // Stepping
-   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
-      float step_speed = base_speed * mov_speed;
-      vkdf_camera_step(cam, step_speed, 1, 1, 1);
-   } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
-      float step_speed = -base_speed * mov_speed;
-      vkdf_camera_step(cam, step_speed, 1, 1, 1);
+      // Stepping
+      if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
+         float step_speed = base_speed * mov_speed;
+         vkdf_camera_step(cam, step_speed, 1, 1, 1);
+      } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+         float step_speed = -base_speed * mov_speed;
+         vkdf_camera_step(cam, step_speed, 1, 1, 1);
+      }
+   } else {
+      if (res->auto_camera_state == AUTO_CAM_SETUP_STATE) {
+         vkdf_camera_program_reset(res->camera, true, true);
+      } else {
+         res->auto_camera_todo = vkdf_camera_program_update(res->camera);
+      }
    }
 }
 
@@ -771,6 +851,170 @@ scene_update(void *data)
       update_visible_sponza_meshes(res);
 }
 
+void
+auto_cam_dynamic_light_start_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   res->shadow_spec.skip_frames = 0;
+   vkdf_scene_light_update_shadow_spec(res->scene, 0, &res->shadow_spec);
+}
+
+void
+auto_cam_dynamic_light_update_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   VkdfLight *light =  res->scene->lights[0]->light;
+   glm::vec4 dir = light->origin + glm::vec4(0.01f, 0.0f, 0.002f, 0.0f);
+   vkdf_light_set_direction(light, dir);
+}
+
+void
+auto_cam_dynamic_light_2_update_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   VkdfLight *light =  res->scene->lights[0]->light;
+   glm::vec4 dir = light->origin + glm::vec4(-0.0020f, 0.0f, 0.0035f, 0.0f);
+   vkdf_light_set_direction(light, dir);
+}
+
+void
+auto_cam_dynamic_light_end_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+   VkdfLight *light =  res->scene->lights[0]->light;
+   vkdf_light_set_direction(light, SUN_DIRECTION);
+   res->shadow_spec.skip_frames = SHADOW_MAP_SKIP_FRAMES;
+   vkdf_scene_light_update_shadow_spec(res->scene, 0, &res->shadow_spec);
+   res->scene->lights[0]->shadow.frame_counter = -1;
+
+   /* Reset the camera to its default configuration so when the shadow map
+    * is next updated we get full scene coverage (useful when the nest
+    * camera program doesn't require dynamic light and thus only captures
+    * shadow map data once).
+    */
+   vkdf_camera_set_position(res->camera, -20.0f, 3.0f, -1.0f);
+   vkdf_camera_look_at(res->camera, 10.0f, 5.0f, 0.0f);
+}
+
+static void
+setup_automatic_camera(SceneResources *res)
+{
+   VkdfCameraProgramSpec prog;
+   memset(&prog, 0, sizeof(prog));
+
+   prog.callback_data = res;
+
+   /* Lower attrium */
+   prog.pos.start = glm::vec3(-30.0f, 3.0f, 3.0f);
+   prog.pos.end = glm::vec3(15.0f, 8.0f, 1.0f);
+   prog.pos.speed = 0.05f;
+   prog.rot.start = glm::vec3(20.0f, -90.0f, 0.0f);
+   prog.rot.end = glm::vec3(-20.0f, 75.0f, 0.0f);
+   prog.rot.speed = 0.185f;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   /* Upper attrium, columns */
+   prog.pos.start = glm::vec3(-25.0f, 10.0f, -11.0f);
+   prog.pos.end = glm::vec3(22.5f, 14.0f, -10.0f);
+   prog.pos.speed = 0.05f;
+   prog.rot.start = glm::vec3(0.0f, 270.0f, 0.0f);
+   prog.rot.end = glm::vec3(-20.0f, 180.0f, 0.0f);
+   prog.rot.speed = 0.1f;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   /* Roof view */
+   prog.pos.start = glm::vec3(20.0f, 35.0f, -20.0f);
+   prog.pos.end = glm::vec3(-30.0f, 35.0f, 5.0f);
+   prog.pos.speed = 0.05f;
+   prog.rot.start = glm::vec3(-45.0f, 160.0f, 0.0f);
+   prog.rot.end = glm::vec3(-45.0f, 300.0f, 0.0f);
+   prog.rot.speed = 0.15f;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   /* Lower attrium side-way */
+   prog.pos.start = glm::vec3(20.0f, 1.0f, -11.0f);
+   prog.pos.end = glm::vec3(-25.0f, 6.0f, -9.0f);
+   prog.pos.speed = 0.04f;
+   prog.rot.start = glm::vec3(-10.0f, 80.0f, 0.0f);
+   prog.rot.end = glm::vec3(0.0f, 160.0f, 0.0f);
+   prog.rot.speed = 0.07f;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   /* Lower attrium, lion */
+   prog.pos.start = glm::vec3(-20.0f, 3.0f, -1.0f);
+   prog.pos.end = glm::vec3(20.0f, 3.0f, -1.0f);
+   prog.pos.speed = 0.03f;
+   prog.rot.start = glm::vec3(0.0f, 270.0f, 0.0f);
+   prog.rot.end = glm::vec3(0.0f, 180.0f, 0.0f);
+   prog.rot.speed = 0.0f;
+   prog.min_steps = 0;
+   prog.start_cb = NULL;
+   prog.update_cb = NULL;
+   prog.end_cb = NULL;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   /* Lower attrium (dynamic light) */
+   prog.pos.start = glm::vec3(-20.0f, 5.0f, -3.0f);
+   prog.pos.end = glm::vec3(-20.0f, 5.0f, -3.0f);
+   prog.pos.speed = 0.0f;
+   prog.rot.start = glm::vec3(5.0f, 255.0f, 0.0f);
+   prog.rot.end = glm::vec3(5.0f, 255.0f, 0.0f);
+   prog.rot.speed = 0.0f;
+   prog.min_steps = 1000;
+   prog.start_cb = auto_cam_dynamic_light_start_cb;
+   prog.update_cb = auto_cam_dynamic_light_update_cb;
+   prog.end_cb = auto_cam_dynamic_light_end_cb;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   /* Upper attrium (dynamic light) */
+   prog.pos.start = glm::vec3(19.0f, 14.0f, -3.0f);
+   prog.pos.end = glm::vec3(-14.0f, 14.0f, -2.0f);
+   prog.pos.speed = 0.02f;
+   prog.rot.start = glm::vec3(-19.0f, 125.0f, 0.0f);
+   prog.rot.end = glm::vec3(-19.0f, 125.0f, 0.0f);
+   prog.rot.speed = 0.0f;
+   prog.min_steps = 0;
+   prog.start_cb = auto_cam_dynamic_light_start_cb;
+   prog.update_cb = auto_cam_dynamic_light_2_update_cb;
+   prog.end_cb = auto_cam_dynamic_light_end_cb;
+   vkdf_camera_add_program(res->camera, &prog);
+
+#if 0
+   /* Lower attrium,  courtyard 360º */
+   prog.pos.start = glm::vec3(0.0f, 2.0f, 0.0f);
+   prog.pos.end = glm::vec3(0.0f, 2.0f, 0.0f);
+   prog.pos.speed = 0.0f;
+   prog.rot.start = glm::vec3(0.0f, 0.0f, 0.0f);
+   prog.rot.end = glm::vec3(60.0f, 360.0f, 0.0f);
+   prog.rot.speed = 0.25f;
+   prog.min_steps = 0;
+   prog.start_cb = NULL;
+   prog.update_cb = NULL;
+   prog.end_cb = NULL;
+   vkdf_camera_add_program(res->camera, &prog);
+#endif
+
+   /* Lower attrium, walls */
+   prog.pos.start = glm::vec3(-24.0f, 0.0f, 2.0f);
+   prog.pos.end = glm::vec3(21.0f, 0.0f, 2.0f);
+   prog.pos.speed = 0.03f;
+   prog.rot.start = glm::vec3(55.0f, 0.0f, 0.0f);
+   prog.rot.end = glm::vec3(55.0f, 45.0f, 0.0f);
+   prog.rot.speed = 0.03f;
+   prog.min_steps = 0;
+   prog.start_cb = NULL;
+   prog.update_cb = NULL;
+   prog.end_cb = NULL;
+   vkdf_camera_add_program(res->camera, &prog);
+
+   prog.min_steps = 0;
+   prog.start_cb = NULL;
+   prog.update_cb = NULL;
+   prog.end_cb = NULL;
+
+   res->auto_camera_state = AUTO_CAM_SETUP_STATE;
+}
+
 static void
 init_scene(SceneResources *res)
 {
@@ -781,6 +1025,9 @@ init_scene(SceneResources *res)
                                  45.0f, 0.1f, 500.0f, WIN_WIDTH / WIN_HEIGHT);
 
    vkdf_camera_look_at(res->camera, 10.0f, 5.0f, 0.0f);
+
+   if (ENABLE_AUTO_CAMERA)
+      setup_automatic_camera(res);
 
    glm::vec3 scene_origin = glm::vec3(0.0f, 0.0f, 0.0f);
    glm::vec3 scene_size = glm::vec3(200.0f, 200.0f, 200.0f);
@@ -896,6 +1143,10 @@ init_scene(SceneResources *res)
 
    if (ENABLE_HDR) {
       vkdf_scene_enable_hdr(res->scene, HDR_EXPOSURE);
+   }
+
+   if (ENABLE_AUTO_CAMERA) {
+      vkdf_scene_enable_brightness_filter(res->scene, 1.0f);
    }
 
    if (ENABLE_FXAA) {
