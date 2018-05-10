@@ -838,6 +838,13 @@ update_camera(SceneResources *res)
          float step_speed = -base_speed * mov_speed;
          vkdf_camera_step(cam, step_speed, 1, 1, 1);
       }
+
+      if (glfwGetKey(window, GLFW_KEY_L) != GLFW_RELEASE) {
+         glm::vec3 pos = vkdf_camera_get_position(cam);
+         glm::vec3 rot = vkdf_camera_get_rotation(cam);
+         printf("Camera position: [%.2f, %.2f, %.2f]\n", pos.x, pos.y, pos.z);
+         printf("Camera rotation: [%.2f, %.2f, %.2f]\n", rot.x, rot.y, rot.z);
+      }
    } else {
       if (res->auto_camera_state == AUTO_CAM_SETUP_STATE) {
          vkdf_camera_program_reset(res->camera, true, true);
