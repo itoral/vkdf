@@ -6,6 +6,8 @@
 #include "vkdf-frustum.hpp"
 #include "vkdf-util.hpp"
 
+typedef void (*VkdfCameraProgramSpecCB)(void *data);
+
 enum {
    VKDF_CAMERA_DIRTY_PROJ        = (1 << 0),
    VKDF_CAMERA_DIRTY_POS         = (1 << 1),
@@ -18,6 +20,28 @@ enum {
    VKDF_CAMERA_CACHED_ROT_MAT    = (1 << 2),
    VKDF_CAMERA_CACHED_FRUSTUM    = (1 << 3),
 };
+
+typedef struct {
+   struct {
+      glm::vec3 start;
+      glm::vec3 end;
+      float speed;
+   } pos;
+
+   struct {
+      glm::vec3 start;
+      glm::vec3 end;
+      float speed;
+   } rot;
+
+   uint32_t min_steps;
+   uint32_t steps;
+
+   VkdfCameraProgramSpecCB start_cb;
+   VkdfCameraProgramSpecCB update_cb;
+   VkdfCameraProgramSpecCB end_cb;
+   void *callback_data;
+} VkdfCameraProgramSpec;
 
 typedef struct {
    struct {
@@ -39,6 +63,12 @@ typedef struct {
 
    uint32_t dirty;
    uint32_t cached;
+
+   struct {
+      VkdfCameraProgramSpec entries[16];
+      uint32_t total;
+      uint32_t current;
+   } prog;
 } VkdfCamera;
 
 VkdfCamera *
@@ -129,5 +159,25 @@ vkdf_camera_get_frustum_box(VkdfCamera *cam);
 
 const VkdfPlane *
 vkdf_camera_get_frustum_planes(VkdfCamera *cam);
+
+inline void
+vkdf_camera_add_program(VkdfCamera *cam, VkdfCameraProgramSpec *prog)
+{
+   cam->prog.entries[cam->prog.total++] = *prog;
+}
+
+inline bool
+vkdf_camera_next_program(VkdfCamera *cam)
+{
+   assert(cam->prog.total > 0);
+   cam->prog.current = (cam->prog.current + 1) % cam->prog.total;
+   return cam->prog.current == 0;
+}
+
+void
+vkdf_camera_program_reset(VkdfCamera *cam, bool pos, bool rot);
+
+float
+vkdf_camera_program_update(VkdfCamera *cam);
 
 #endif

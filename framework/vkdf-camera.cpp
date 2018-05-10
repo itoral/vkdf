@@ -260,3 +260,90 @@ vkdf_camera_get_frustum_planes(VkdfCamera *cam)
 
    return vkdf_frustum_get_planes(&cam->frustum);
 }
+
+void
+vkdf_camera_program_reset(VkdfCamera *cam, bool pos, bool rot)
+{
+   VkdfCameraProgramSpec *prog = &cam->prog.entries[cam->prog.current];
+
+   prog->steps = prog->min_steps;
+
+   if (pos) {
+      vkdf_camera_set_position(cam,
+                               prog->pos.start.x,
+                               prog->pos.start.y,
+                               prog->pos.start.z);
+   }
+
+   if (rot) {
+      vkdf_camera_set_rotation(cam,
+                               prog->rot.start.x,
+                               prog->rot.start.y,
+                               prog->rot.start.z);
+   }
+
+   if (prog->start_cb)
+      prog->start_cb(prog->callback_data);
+}
+
+float
+vkdf_camera_program_update(VkdfCamera *cam)
+{
+   float pos_todo = 0.0f;
+   float rot_todo = 0.0f;
+
+   VkdfCameraProgramSpec *prog = &cam->prog.entries[cam->prog.current];
+
+   if (prog->pos.speed != 0.0f) {
+      glm::vec3 pos = vkdf_camera_get_position(cam);
+      glm::vec3 dir = prog->pos.end - pos;
+      float dist = vkdf_vec3_module(dir, 1, 1, 1);
+      if (dist <= prog->pos.speed) {
+         if (dist > 0.0f) {
+            vkdf_camera_set_position(cam,
+                                     prog->pos.end.x,
+                                     prog->pos.end.y,
+                                     prog->pos.end.z);
+         }
+      } else {
+         vkdf_vec3_normalize(&dir);
+         dir = dir * prog->pos.speed;
+         vkdf_camera_move(cam, dir.x, dir.y, dir.z);
+      }
+
+      pos_todo = MAX2(dist / prog->pos.speed - 1.0f, 0.0f);
+   }
+
+   if (prog->rot.speed != 0.0f) {
+      glm::vec3 rot = vkdf_camera_get_rotation(cam);
+      glm::vec3 dir = prog->rot.end - rot;
+      float dist = vkdf_vec3_module(dir, 1, 1, 1);
+      if (dist <= prog->rot.speed) {
+         if (dist > 0.0f) {
+            vkdf_camera_set_rotation(cam,
+                                     prog->rot.end.x,
+                                     prog->rot.end.y,
+                                     prog->rot.end.z);
+         }
+      } else {
+         vkdf_vec3_normalize(&dir);
+         dir = dir * prog->rot.speed;
+         vkdf_camera_rotate(cam, dir.x, dir.y, dir.z);
+      }
+
+      rot_todo = MAX2(dist / prog->rot.speed - 1.0f, 0.0f);
+   }
+
+   float todo = MAX2(pos_todo, rot_todo);
+   if (prog->steps > 0) {
+      prog->steps--;
+      todo = MAX2(todo, prog->steps);
+   }
+
+   if (todo > 0.0f && prog->update_cb) {
+      prog->update_cb(prog->callback_data);
+   } else if (todo <= 0.0f && prog->end_cb)
+      prog->end_cb(prog->callback_data);
+
+   return todo;
+}
