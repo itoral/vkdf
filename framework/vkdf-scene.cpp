@@ -36,6 +36,9 @@
 #define SSR_BLEND_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr-blend.vert.spv")
 #define SSR_BLEND_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/ssr-blend.frag.spv")
 
+#define BRIGHTNESS_VS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/brightness.vert.spv")
+#define BRIGHTNESS_FS_SHADER_PATH JOIN(VKDF_DATA_DIR, "spirv/brightness.frag.spv")
+
 /**
  * Input texture bindings for deferred SSAO base pass
  */
@@ -694,6 +697,41 @@ destroy_hdr_resources(VkdfScene *s)
 }
 
 static void
+destroy_brightness_filter_resources(VkdfScene *s)
+{
+   assert(s->brightness.enabled);
+
+   /* Pipeline layouts and descriptor sets  */
+   vkDestroyPipeline(s->ctx->device, s->brightness.pipeline.pipeline, NULL);
+   vkDestroyPipelineLayout(s->ctx->device, s->brightness.pipeline.layout, NULL);
+
+   vkFreeDescriptorSets(s->ctx->device, s->sampler.pool,
+                        1, &s->brightness.pipeline.tex_set);
+   vkFreeDescriptorSets(s->ctx->device, s->ubo.static_pool,
+                        1, &s->brightness.pipeline.ubo_set);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->brightness.pipeline.tex_set_layout, NULL);
+   vkDestroyDescriptorSetLayout(s->ctx->device,
+                                s->brightness.pipeline.ubo_set_layout, NULL);
+
+   /* UBO buffer */
+   vkdf_destroy_buffer(s->ctx, &s->brightness.buf);
+
+   /* Source image sampler */
+   vkDestroySampler(s->ctx->device, s->brightness.input_sampler, NULL);
+
+   /* Shaders */
+   vkDestroyShaderModule(s->ctx->device, s->brightness.pipeline.shader.vs, NULL);
+   vkDestroyShaderModule(s->ctx->device, s->brightness.pipeline.shader.fs, NULL);
+
+
+   /* Render target */
+   vkDestroyRenderPass(s->ctx->device, s->brightness.rp.renderpass, NULL);
+   vkDestroyFramebuffer(s->ctx->device, s->brightness.rp.framebuffer, NULL);
+   vkdf_destroy_image(s->ctx, &s->brightness.output);
+}
+
+static void
 destroy_fxaa_resources(VkdfScene *s)
 {
    assert(s->fxaa.enabled);
@@ -844,6 +882,9 @@ vkdf_scene_free(VkdfScene *s)
 
    if (s->hdr.enabled)
       destroy_hdr_resources(s);
+
+   if (s->brightness.enabled)
+      destroy_brightness_filter_resources(s);
 
    if (s->fxaa.enabled)
       destroy_fxaa_resources(s);
@@ -5176,6 +5217,202 @@ prepare_ssr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
    return s->ssr.blend.output;
 }
 
+
+static void
+record_brightness_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
+{
+   VkImageSubresourceRange subresource_range =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                          0, 1, 0, 1);
+
+   vkdf_image_set_layout(cmd_buf,
+                         s->brightness.input.image,
+                         subresource_range,
+                         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+   VkRenderPassBeginInfo rp_begin =
+      vkdf_renderpass_begin_new(s->brightness.rp.renderpass,
+                                s->brightness.rp.framebuffer,
+                                0, 0, s->rt.width, s->rt.height,
+                                0, NULL);
+
+   vkCmdBeginRenderPass(cmd_buf,
+                        &rp_begin,
+                        VK_SUBPASS_CONTENTS_INLINE);
+
+   record_viewport_and_scissor_commands(cmd_buf, s->rt.width, s->rt.height);
+
+   vkCmdBindPipeline(cmd_buf,
+                     VK_PIPELINE_BIND_POINT_GRAPHICS,
+                     s->brightness.pipeline.pipeline);
+
+
+   VkDescriptorSet descriptor_sets[] = {
+      s->brightness.pipeline.ubo_set,
+      s->brightness.pipeline.tex_set,
+   };
+
+   vkCmdBindDescriptorSets(cmd_buf,
+                           VK_PIPELINE_BIND_POINT_GRAPHICS,
+                           s->brightness.pipeline.layout,
+                           0, 2, descriptor_sets,  // First, count, sets
+                           0, NULL);               // Dynamic offsets
+
+   vkCmdDraw(cmd_buf, 4, 1, 0, 0);
+
+   vkCmdEndRenderPass(cmd_buf);
+}
+
+void
+vkdf_scene_brightness_filter_set_brightness(VkdfScene *s,
+                                            VkCommandBuffer cmd_buf,
+                                            float brightness)
+{
+   s->brightness.value = brightness;
+   vkCmdUpdateBuffer(cmd_buf,
+                     s->brightness.buf.buf,
+                     0, sizeof(float), &s->brightness.value);
+}
+
+static VkdfImage
+prepare_brightness_filter(VkdfScene *s,
+                          VkCommandBuffer cmd_buf,
+                          const VkdfImage *input)
+{
+   /* Output image */
+   s->brightness.output = create_color_framebuffer_image(s, false);
+
+   /* Render pass */
+   s->brightness.rp.renderpass =
+      vkdf_renderpass_simple_new(s->ctx,
+                                 s->brightness.output.format,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_STORE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                 VK_FORMAT_UNDEFINED,
+                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                                 VK_IMAGE_LAYOUT_UNDEFINED,
+                                 VK_IMAGE_LAYOUT_UNDEFINED);
+
+   /* Framebuffer */
+   s->brightness.rp.framebuffer =
+      vkdf_create_framebuffer(s->ctx,
+                              s->brightness.rp.renderpass,
+                              s->brightness.output.view,
+                              s->rt.width, s->rt.height,
+                              0, NULL);
+
+   /* Pipeline */
+   s->brightness.pipeline.ubo_set_layout =
+      vkdf_create_ubo_descriptor_set_layout(s->ctx, 0, 1,
+                                            VK_SHADER_STAGE_VERTEX_BIT, false);
+
+   s->brightness.pipeline.tex_set_layout =
+      vkdf_create_sampler_descriptor_set_layout(s->ctx, 0, 1,
+                                                VK_SHADER_STAGE_FRAGMENT_BIT);
+
+   VkDescriptorSetLayout layouts[] = {
+      s->brightness.pipeline.ubo_set_layout,
+      s->brightness.pipeline.tex_set_layout,
+   };
+
+   VkPipelineLayoutCreateInfo info;
+   info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   info.pNext = NULL;
+   info.pushConstantRangeCount = 0;
+   info.pPushConstantRanges = NULL;
+   info.setLayoutCount = 2;
+   info.pSetLayouts = layouts;
+   info.flags = 0;
+
+   VK_CHECK(vkCreatePipelineLayout(s->ctx->device, &info, NULL,
+                                   &s->brightness.pipeline.layout));
+
+   s->brightness.pipeline.shader.vs =
+      vkdf_create_shader_module(s->ctx, BRIGHTNESS_VS_SHADER_PATH);
+
+   s->brightness.pipeline.shader.fs =
+      vkdf_create_shader_module(s->ctx, BRIGHTNESS_FS_SHADER_PATH);
+
+   s->brightness.pipeline.pipeline =
+      vkdf_create_gfx_pipeline(s->ctx,
+                               NULL,
+                               0,
+                               NULL,
+                               0,
+                               NULL,
+                               false,
+                               VK_COMPARE_OP_ALWAYS,
+                               s->brightness.rp.renderpass,
+                               s->brightness.pipeline.layout,
+                               VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                               VK_CULL_MODE_BACK_BIT,
+                               1,
+                               s->brightness.pipeline.shader.vs,
+                               s->brightness.pipeline.shader.fs);
+
+   /* Descriptor sets */
+   s->brightness.input_sampler =
+         vkdf_create_sampler(s->ctx,
+                             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+                             VK_FILTER_NEAREST,
+                             VK_SAMPLER_MIPMAP_MODE_NEAREST,
+                             0.0f);
+
+   s->brightness.pipeline.ubo_set =
+      create_descriptor_set(s->ctx,
+                            s->ubo.static_pool,
+                            s->brightness.pipeline.ubo_set_layout);
+
+   s->brightness.pipeline.tex_set =
+      create_descriptor_set(s->ctx,
+                            s->sampler.pool,
+                            s->brightness.pipeline.tex_set_layout);
+
+   s->brightness.input = *input;
+   vkdf_descriptor_set_sampler_update(s->ctx,
+                                      s->brightness.pipeline.tex_set,
+                                      s->brightness.input_sampler,
+                                      s->brightness.input.view,
+                                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                      0, 1);
+
+   s->brightness.buf =
+      vkdf_create_buffer(s->ctx, 0,
+                         sizeof(float),
+                         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+   float *mem;
+   vkdf_memory_map(s->ctx, s->brightness.buf.mem,
+                   0, VK_WHOLE_SIZE, (void **) &mem);
+
+   *mem = s->brightness.value;
+
+   vkdf_memory_unmap(s->ctx,
+                     s->brightness.buf.mem,
+                     s->brightness.buf.mem_props,
+                     0, VK_WHOLE_SIZE);
+
+   VkDeviceSize ubo_offset = 0;
+   VkDeviceSize ubo_size = sizeof(float);
+   vkdf_descriptor_set_buffer_update(s->ctx,
+                                     s->brightness.pipeline.ubo_set,
+                                     s->brightness.buf.buf,
+                                     0, 1, &ubo_offset, &ubo_size,
+                                     false, true);
+
+   /* Command buffer */
+   record_brightness_cmd_buf(s, cmd_buf);
+
+   return s->brightness.output;
+}
+
 static void
 prepare_post_processing_render_passes(VkdfScene *s)
 {
@@ -5216,6 +5453,11 @@ prepare_post_processing_render_passes(VkdfScene *s)
    if (s->ssr.enabled) {
       has_post_processing = true;
       output = prepare_ssr(s, cmd_buf, &output);
+   }
+
+   if (s->brightness.enabled) {
+      has_post_processing = true;
+      output = prepare_brightness_filter(s, cmd_buf, &output);
    }
 
    if (s->fxaa.enabled) {

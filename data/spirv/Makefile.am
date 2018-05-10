@@ -14,6 +14,8 @@ BUILT_SOURCES = \
     ssr-blend.frag.spv \
     tone-map.vert.spv \
     tone-map.frag.spv \
+    brightness.vert.spv \
+    brightness.frag.spv \
     fxaa.vert.spv \
     fxaa.frag.spv
 
@@ -72,6 +74,14 @@ tone-map.vert.spv: tone-map.vert
 
 tone-map.frag.spv: tone-map.frag
 	$(top_srcdir)/$(GLSLANG) -V tone-map.frag -o tone-map.frag.spv
+
+
+# Brightness
+brightness.vert.spv: brightness.vert
+	$(top_srcdir)/$(GLSLANG) -V brightness.vert -o brightness.vert.spv
+
+brightness.frag.spv: brightness.frag
+	$(top_srcdir)/$(GLSLANG) -V brightness.frag -o brightness.frag.spv
 
 
 # FXAA

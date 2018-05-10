@@ -462,6 +462,37 @@ struct _VkdfScene {
       } pipeline;
    } hdr;
 
+   /* Brightness */
+   struct {
+      bool enabled;
+
+      VkdfImage input;
+      VkdfImage output;
+
+      float value;
+      VkdfBuffer buf;
+
+      struct {
+         VkRenderPass renderpass;
+         VkFramebuffer framebuffer;
+      } rp;
+
+      VkSampler input_sampler;
+
+      struct {
+         VkPipeline pipeline;
+         VkPipelineLayout layout;
+         VkDescriptorSetLayout ubo_set_layout;
+         VkDescriptorSet ubo_set;
+         VkDescriptorSetLayout tex_set_layout;
+         VkDescriptorSet tex_set;
+         struct {
+            VkShaderModule vs;
+            VkShaderModule fs;
+         } shader;
+      } pipeline;
+   } brightness;
+
    /* FXAA renderpass */
    struct {
       bool enabled;
@@ -1018,6 +1049,24 @@ vkdf_scene_ssr_spec_init_defaults(VkdfSceneSsrSpec *spec)
 
    spec->min_dot_reflection_view = -1;
    spec->att_dot_reflection_view_start = -1;
+}
+
+void
+vkdf_scene_brightness_filter_set_brightness(VkdfScene *s,
+                                            VkCommandBuffer cmd_buf,
+                                            float brightness);
+
+inline float
+vkdf_scene_brightness_filter_get_brightness(VkdfScene *s)
+{
+   return s->brightness.enabled ? s->brightness.value : 1.0f;
+}
+
+inline void
+vkdf_scene_enable_brightness_filter(VkdfScene *s, float brightness)
+{
+   s->brightness.enabled = true;
+   s->brightness.value = brightness;
 }
 
 #endif
