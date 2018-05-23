@@ -93,9 +93,10 @@ const float      FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
 const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
 /* Automatic camera */
-const bool       ENABLE_AUTO_CAMERA        = true;
+const bool       AUTO_CAMERA_START_ENABLED = false;
 const float      AUTO_CAMERA_FADE_SPEED    = 0.005f;
 const uint32_t   AUTO_CAMERA_BLANK_FRAMES  = 90;
+const uint32_t   AUTO_CAMERA_ENABLE_KEY    = GLFW_KEY_A;
 
 // =============================== Declarations ===============================
 
@@ -156,6 +157,7 @@ typedef struct {
    float auto_camera_todo;
    AutoCameraState auto_camera_state;
    uint32_t auto_camera_blank_timeout;
+   bool auto_camera_enabled;
 
    struct {
       VkDescriptorPool static_ubo_pool;
@@ -392,9 +394,13 @@ record_update_resources_command(VkdfContext *ctx,
    bool has_updates  = false;
 
    // Auto-camera state update
-   if (ENABLE_AUTO_CAMERA) {
+   if (res->auto_camera_enabled) {
       update_auto_camera_state(res, cmd_buf);
       has_updates = true;
+   } else {
+      // Restore brightness if we've just come out of auto-camera mode
+      if (vkdf_scene_brightness_filter_get_brightness(res->scene) != 1.0f)
+         vkdf_scene_brightness_filter_set_brightness(res->scene, cmd_buf, 1.0f);
    }
 
    // Update camera view matrix
@@ -808,14 +814,29 @@ record_gbuffer_merge_commands(VkdfContext *ctx,
 }
 
 static void
+auto_camera_disable(SceneResources *res)
+{
+   res->auto_camera_enabled = false;
+}
+
+static void
+auto_camera_enable(SceneResources *res)
+{
+   res->auto_camera_enabled = true;
+   res->auto_camera_state = AUTO_CAM_SETUP_STATE;
+   vkdf_camera_program_reset(res->camera, true, true);
+}
+
+static void
 update_camera(SceneResources *res)
 {
-   if (!ENABLE_AUTO_CAMERA) {
+   GLFWwindow *window = res->ctx->window;
+
+   if (!res->auto_camera_enabled) {
       const float mov_speed = 0.15f;
       const float rot_speed = 1.0f;
 
       VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
-      GLFWwindow *window = res->ctx->window;
 
       float base_speed = 1.0f;
 
@@ -845,11 +866,22 @@ update_camera(SceneResources *res)
          printf("Camera position: [%.2f, %.2f, %.2f]\n", pos.x, pos.y, pos.z);
          printf("Camera rotation: [%.2f, %.2f, %.2f]\n", rot.x, rot.y, rot.z);
       }
+
+      if (glfwGetKey(window, AUTO_CAMERA_ENABLE_KEY) != GLFW_RELEASE) {
+         auto_camera_enable(res);
+      }
    } else {
-      if (res->auto_camera_state == AUTO_CAM_SETUP_STATE) {
-         vkdf_camera_program_reset(res->camera, true, true);
+      /* Resume manual mode if any of the directional keys are pressed */
+      if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE ||
+          glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE ||
+          glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE ||
+          glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+         auto_camera_disable(res);
       } else {
-         res->auto_camera_todo = vkdf_camera_program_update(res->camera);
+         if (res->auto_camera_state == AUTO_CAM_SETUP_STATE)
+            vkdf_camera_program_reset(res->camera, true, true);
+         else
+            res->auto_camera_todo = vkdf_camera_program_update(res->camera);
       }
    }
 }
@@ -909,7 +941,7 @@ auto_cam_dynamic_light_end_cb(void *data)
 }
 
 static void
-setup_automatic_camera(SceneResources *res)
+init_automatic_camera(SceneResources *res)
 {
    VkdfCameraProgramSpec prog;
    memset(&prog, 0, sizeof(prog));
@@ -1024,7 +1056,8 @@ setup_automatic_camera(SceneResources *res)
    prog.update_cb = NULL;
    prog.end_cb = NULL;
 
-   res->auto_camera_state = AUTO_CAM_SETUP_STATE;
+   if (AUTO_CAMERA_START_ENABLED)
+      auto_camera_enable(res);
 }
 
 static void
@@ -1038,8 +1071,7 @@ init_scene(SceneResources *res)
 
    vkdf_camera_look_at(res->camera, 10.0f, 5.0f, 0.0f);
 
-   if (ENABLE_AUTO_CAMERA)
-      setup_automatic_camera(res);
+   init_automatic_camera(res);
 
    glm::vec3 scene_origin = glm::vec3(0.0f, 0.0f, 0.0f);
    glm::vec3 scene_size = glm::vec3(200.0f, 200.0f, 200.0f);
@@ -1157,9 +1189,7 @@ init_scene(SceneResources *res)
       vkdf_scene_enable_hdr(res->scene, HDR_EXPOSURE);
    }
 
-   if (ENABLE_AUTO_CAMERA) {
-      vkdf_scene_enable_brightness_filter(res->scene, 1.0f);
-   }
+   vkdf_scene_enable_brightness_filter(res->scene, 1.0f);
 
    if (ENABLE_FXAA) {
       vkdf_scene_enable_fxaa(res->scene,
