@@ -34,6 +34,6 @@
 #include <assimp/postprocess.h>
 
 // SDL2 Image
-#include <SDL/SDL_image.h>
+#include <SDL2/SDL_image.h>
 
 #endif
