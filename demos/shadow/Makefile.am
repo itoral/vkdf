@@ -42,6 +42,7 @@ shadow_CXXFLAGS = \
 shadow_LDADD = \
     $(abs_top_builddir)/framework/.libs/libvkdf.so \
     @DEMO_DEPS_LIBS@ \
+    @PLATFORM_LIBS@ \
     -lvulkan \
     -lm
 

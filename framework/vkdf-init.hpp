@@ -3,6 +3,7 @@
 
 #include "vkdf-deps.hpp"
 #include "vkdf-error.hpp"
+#include "vkdf-platform.hpp"
 
 typedef struct {
    VkImage image;
@@ -51,8 +52,7 @@ struct _VkdfContext {
    VkPhysicalDeviceFeatures device_features;        // Enabled features
 
    // Window and surface
-   GLFWwindow *window;
-   VkSurfaceKHR surface;
+   VkdfPlatform platform;
    VkSurfaceCapabilitiesKHR surface_caps;
    VkSurfaceFormatKHR surface_format;
    uint32_t width;

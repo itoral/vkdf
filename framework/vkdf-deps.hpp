@@ -1,6 +1,8 @@
 #ifndef __VKDF_DEPS_H__
 #define __VKDF_DEPS_H__
 
+#include "config.h"
+
 // LIBC
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,9 +18,24 @@
 // GLIB
 #include <glib.h>
 
+// Vulkan
+#ifdef VKDF_PLATFORM_SDL
+#define VK_USE_PLATFORM_XLIB_KHR
+#endif
+#include <vulkan/vulkan.h>
+
 // GLFW3
-#define GLFW_INCLUDE_VULKAN
+#ifdef VKDF_PLATFORM_GLFW
 #include <GLFW/glfw3.h>
+#endif
+
+// SDL2
+#ifdef VKDF_PLATFORM_SDL
+#include <SDL2/SDL.h>
+#endif
+
+// SDL2 Image
+#include <SDL2/SDL_image.h>
 
 // GLM
 #define GLM_ENABLE_EXPERIMENTAL
@@ -32,8 +49,5 @@
 #include <assimp/cimport.h>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-
-// SDL2 Image
-#include <SDL2/SDL_image.h>
 
 #endif

@@ -282,26 +282,25 @@ update_camera(SceneResources *res)
    const float rot_speed = 1.0f;
 
    VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
-   GLFWwindow *window = res->ctx->window;
-
+   VkdfPlatform *platform = &res->ctx->platform;
    float base_speed = 1.0f;
 
    // Rotation
-   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
+   if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT))
       vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
+   else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT))
       vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
 
-   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
+   if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_UP))
       vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
+   else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_DOWN))
       vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
 
    // Stepping
-   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
+   if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP)) {
       float step_speed = base_speed * mov_speed;
       vkdf_camera_step(cam, step_speed, 1, 1, 1);
-   } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+   } else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
       float step_speed = -base_speed * mov_speed;
       vkdf_camera_step(cam, step_speed, 1, 1, 1);
    }

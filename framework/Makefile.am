@@ -1,4 +1,4 @@
-AM_CPPFLAGS = @VKDF_DEPS_CFLAGS@
+AM_CPPFLAGS = @PLATFORM_CFLAGS@ @VKDF_DEPS_CFLAGS@
 
 lib_LTLIBRARIES = libvkdf.la
 
@@ -10,6 +10,7 @@ libvkdf_la_SOURCES = \
     vkdf-frustum.hpp vkdf-frustum.cpp \
     vkdf-plane.hpp vkdf-plane.cpp \
     vkdf-error.hpp vkdf-error.cpp \
+    vkdf-platform.hpp vkdf-platform.cpp \
     vkdf-init.hpp vkdf-init-priv.hpp vkdf-init.cpp \
     vkdf-event-loop.hpp vkdf-event-loop.cpp \
     vkdf-cmd-buffer.hpp vkdf-cmd-buffer.cpp \
@@ -36,9 +37,11 @@ libvkdf_la_CXXFLAGS = \
     -DPREFIX=$(prefix) \
     -D_GNU_SOURCE \
     @VKDF_DEFINES@ \
+    @DEFS@ \
     -DVKDF_DATA_DIR=\"$(abs_top_builddir)/data/\"
 
 libvkdf_la_LIBADD = \
+    @PLATFORM_LIBS@ \
     @VKDF_DEPS_LIBS@ \
     -lvulkan \
     -lm

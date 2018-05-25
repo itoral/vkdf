@@ -45,14 +45,54 @@ AM_CONDITIONAL([DEBUG], [test "x$enable_debug" = "xyes"])
 # DEPENDENCIES
 # ----------------------------------------------------------
 
-PKG_CHECK_MODULES(VKDF_DEPS, glib-2.0 vulkan glm glfw3 assimp SDL2_image)
+# Choose platform: SDL2 or GLFW3
+PKG_CHECK_MODULES(SDL2, sdl2, [VKDF_PLATFORM_SDL=yes], [VKDF_PLATFORM_SDL=no])
+PKG_CHECK_MODULES(GLFW3, glfw3, [VKDF_PLATFORM_GLFW=yes], [VKDF_PLATFORM_GLFW=no])
+
+AC_ARG_ENABLE(platform,
+   [AS_HELP_STRING([--enable-plaform=sdl2|glfw3], [Select SDL2 or GLFW3 platform])],
+   [with_platform=$enableval], [with_platform=auto])
+
+if test "$with_platform" = "sdl2"; then
+   VKDF_PLATFORM_GLFW="no"
+   if test "x$VKDF_PLATFORM_SDL" == "xno"; then
+      AC_MSG_ERROR([SDL2 platform not available])
+   fi
+fi
+
+if test "$with_platform" = "glfw3"; then
+   VKDF_PLATFORM_SDL="no"
+   if test "x$VKDF_PLATFORM_GLFW" == "xno"; then
+      AC_MSG_ERROR([GLFW3 platform not available])
+   fi
+fi
+
+if test "$VKDF_PLATFORM_SDL" == "yes"; then
+   AC_DEFINE(VKDF_PLATFORM_SDL, [1], [Have SDL2])
+   PLATFORM_CFLAGS="$SDL2_CFLAGS"
+   PLATFORM_LIBS="$SDL2_LIBS"
+elif test "$VKDF_PLATFORM_GLFW" == "yes"; then
+   AC_DEFINE(VKDF_PLATFORM_GLFW, [1], [Have GLFW3])
+   PLATFORM_CFLAGS="$GLFW3_CFLAGS"
+   PLATFORM_LIBS="$GLFW3_LIBS"
+else
+   AC_MSG_ERROR([VKDF requires SDL2 or GLFW3])
+fi
+
+AC_SUBST(PLATFORM_CFLAGS)
+AC_SUBST(PLATFORM_LIBS)
+
+# Framework dependencies
+PKG_CHECK_MODULES(VKDF_DEPS, glib-2.0 vulkan glm assimp SDL2_image)
 AC_SUBST(VKDF_DEPS_CFLAGS)
 AC_SUBST(VKDF_DEPS_LIBS)
 
-PKG_CHECK_MODULES(DEMO_DEPS, glib-2.0 vulkan glfw3)
+# Demo dependencies
+PKG_CHECK_MODULES(DEMO_DEPS, glib-2.0 vulkan glm)
 AC_SUBST(DEMO_DEPS_CFLAGS)
 AC_SUBST(DEMO_DEPS_LIBS)
 
+# GLSLlang binary
 GLSLANG="external/glslang/glslangValidator"
 AC_SUBST(GLSLANG)
 

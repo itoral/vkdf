@@ -2,6 +2,10 @@
 #include "vkdf-init-priv.hpp"
 #include "vkdf-semaphore.hpp"
 
+// SDL BEGIN
+#include <SDL2/SDL_syswm.h>
+// SDL END
+
 static VkResult
 CreateDebugReportCallbackEXT(VkInstance instance,
                              const VkDebugReportCallbackCreateInfoEXT* pCreateInfo,
@@ -49,26 +53,23 @@ create_debug_callback(VkdfContext *ctx,
 static void
 get_required_extensions(VkdfContext *ctx, bool enable_validation)
 {
-   uint32_t glfw_ext_count;
-   const char **glfw_extensions =
-      glfwGetRequiredInstanceExtensions(&glfw_ext_count);
-   if (!glfw_extensions)
-      vkdf_fatal("Required GLFW instance extensions not available");
+   ctx->inst_extension_count = enable_validation ? 1 : 0;
 
-   ctx->inst_extension_count = glfw_ext_count;
-   if (enable_validation)
-      ctx->inst_extension_count++;
+   uint32_t platform_extension_count;
+   const char **platform_extensions =
+      vkdf_platform_get_required_extensions(&platform_extension_count);
+
+   ctx->inst_extension_count += platform_extension_count;
 
    ctx->inst_extensions = g_new(char *, ctx->inst_extension_count);
-   for (uint32_t i = 0; i < glfw_ext_count; i++) {
-      ctx->inst_extensions[i] = g_strdup(glfw_extensions[i]);
-   }
+   for (uint32_t i = 0; i < platform_extension_count; i++)
+      ctx->inst_extensions[i] = g_strdup(platform_extensions[i]);
+
    if (enable_validation) {
       ctx->inst_extensions[ctx->inst_extension_count - 1] =
          g_strdup(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
    }
 }
-
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 debug_cb(VkDebugReportFlagsEXT flags,
@@ -190,7 +191,7 @@ init_queues(VkdfContext *ctx)
       // can_present[i] =
       //    glfwGetPhysicalDevicePresentationSupport(ctx->inst, ctx->phy_device, i);
       vkGetPhysicalDeviceSurfaceSupportKHR(ctx->phy_device,
-                                           i, ctx->surface,
+                                           i, ctx->platform.surface,
                                            (VkBool32 *) &can_present[i]);
    }
 
@@ -346,90 +347,28 @@ init_logical_device(VkdfContext *ctx)
    g_free(extension_names);
 }
 
-static bool
-wait_for_window_resize(GLFWwindow *window, int32_t width, int32_t height)
-{
-   int32_t last_fb_width, last_fb_height;
-
-   bool still_resizing = true;
-   int32_t tries = 0;
-   do {
-      int32_t fb_width, fb_height;
-      glfwGetFramebufferSize(window, &fb_width, &fb_height);
-
-      if (width == fb_width && height == fb_height) {
-         still_resizing = false;
-      } else if (last_fb_width == fb_width && last_fb_height == fb_height) {
-         /* Window size has not changed */
-         tries++;
-         if (tries == 3) {
-            still_resizing = false;
-         } else {
-            /* Wait for 100 ms and query again */
-            struct timespec wait_time = { 0, 100000000l };
-            nanosleep(&wait_time, NULL);
-         }
-      } else {
-         /* Window size has changed, start over */
-         tries = 0;
-         last_fb_width = fb_width;
-         last_fb_height = fb_height;
-      }
-   } while (still_resizing);
-}
-
 static void
 init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
                     bool fullscreen, bool resizable)
 {
-   // Create window
-   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-
-   if (!resizable)
-      glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+   VkResult res;
 
    ctx->width = width;
    ctx->height = height;
 
-   ctx->window = glfwCreateWindow(width, height, "VKDF",
-                                  fullscreen ? glfwGetPrimaryMonitor() : NULL,
-                                  NULL);
-   if (!ctx->window)
-      vkdf_fatal("Failed to create window");
+   vkdf_platform_create_window(&ctx->platform, ctx->inst,
+                               width, height, fullscreen, resizable);
 
-   glfwSetWindowSizeLimits(ctx->window,
-                           resizable ? 1 : width,
-                           resizable ? 1 : height,
-                           resizable ? GLFW_DONT_CARE : width,
-                           resizable ? GLFW_DONT_CARE : height);
-
-   /* Specially in fullscreen mode, the size of the window may change a few
-    * times before it gets to its final size. This means that it can take
-    * some time until the window surface we create below reaches its final
-    * size. If we ignore this, by the time we init our swapchin we may
-    * find that the reported surface size is smaller and initialize a
-    * swapchain with smaller images than we should. Also, since we store that
-    * size in the VkdfContext instance and we typically use this to define
-    * our viewport/scissor rectangles it means that we end up rendering to
-    * a smaller area. When this happens, we also get very noticeable screen
-    * tearing even in vsync presentation modes like FIFO or MAILBOX.
-    */
-   wait_for_window_resize(ctx->window, width, height);
-
-   VkResult res =
-      glfwCreateWindowSurface(ctx->inst, ctx->window, NULL, &ctx->surface);
-   if (res != VK_SUCCESS)
-      vkdf_fatal("Failed to create window surface");
-
-   // Create surface
    uint32_t num_formats;
-   res = vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->phy_device, ctx->surface,
+   res = vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->phy_device,
+                                              ctx->platform.surface,
                                               &num_formats, NULL);
    if (res != VK_SUCCESS)
       vkdf_fatal("Failed to query surface formats");
 
    VkSurfaceFormatKHR *formats = g_new(VkSurfaceFormatKHR, num_formats);
-   res = vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->phy_device, ctx->surface,
+   res = vkGetPhysicalDeviceSurfaceFormatsKHR(ctx->phy_device,
+                                              ctx->platform.surface,
                                               &num_formats, formats);
    if (res != VK_SUCCESS)
       vkdf_fatal("Failed to query surface formats\n");
@@ -525,7 +464,7 @@ override_present_mode_from_env(VkdfContext *ctx, VkPresentModeKHR *mode)
    // Override presentation mode if requested mode is supported
    uint32_t mode_count;
    res = vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->phy_device,
-                                                   ctx->surface,
+                                                   ctx->platform.surface,
                                                    &mode_count, NULL);
    if (res != VK_SUCCESS) {
       vkdf_error("Failed to query available presentation modes.\n");
@@ -534,7 +473,7 @@ override_present_mode_from_env(VkdfContext *ctx, VkPresentModeKHR *mode)
 
    VkPresentModeKHR *modes = g_new(VkPresentModeKHR, mode_count);
    res = vkGetPhysicalDeviceSurfacePresentModesKHR(ctx->phy_device,
-                                                   ctx->surface,
+                                                   ctx->platform.surface,
                                                    &mode_count, modes);
    if (res != VK_SUCCESS) {
       g_free(modes);
@@ -571,7 +510,7 @@ _init_swap_chain(VkdfContext *ctx)
 
    // Query surface capabilities
    res = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->phy_device,
-                                                   ctx->surface,
+                                                   ctx->platform.surface,
                                                    &ctx->surface_caps);
    if (res != VK_SUCCESS)
       vkdf_fatal("Failed to query surface capabilities");
@@ -620,7 +559,7 @@ _init_swap_chain(VkdfContext *ctx)
    VkSwapchainCreateInfoKHR swap_chain_info;
    swap_chain_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
    swap_chain_info.pNext = NULL;
-   swap_chain_info.surface = ctx->surface;
+   swap_chain_info.surface = ctx->platform.surface;
    swap_chain_info.minImageCount = swap_chain_size;
    swap_chain_info.imageFormat = ctx->surface_format.format;
    swap_chain_info.imageExtent.width = swap_chain_ext.width;
@@ -745,11 +684,7 @@ vkdf_init(VkdfContext *ctx,
 {
    memset(ctx, 0, sizeof(VkdfContext));
 
-   if (!glfwInit())
-      vkdf_fatal("Failed to initialize GLFW");
-
-   if (!glfwVulkanSupported())
-      vkdf_fatal("Vulkan support unavailable");
+   vkdf_platform_init();
 
    init_instance(ctx, enable_validation);
    init_physical_device(ctx);
@@ -757,9 +692,6 @@ vkdf_init(VkdfContext *ctx,
    init_queues(ctx);
    init_logical_device(ctx);
    _init_swap_chain(ctx);
-
-   // Initialize SDL2 Image library
-   IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG | IMG_INIT_TIF);
 
    set_fps_target_from_env(ctx);
 }
@@ -783,8 +715,7 @@ vkdf_cleanup(VkdfContext *ctx)
 {
    destroy_swap_chain(ctx);
    destroy_device(ctx);
-   vkDestroySurfaceKHR(ctx->inst, ctx->surface, NULL);
+   vkDestroySurfaceKHR(ctx->inst, ctx->platform.surface, NULL);
+   vkdf_platform_finish(&ctx->platform);
    destroy_instance(ctx);
-   glfwDestroyWindow(ctx->window);
-   glfwTerminate();
 }

@@ -96,7 +96,7 @@ const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 const bool       AUTO_CAMERA_START_ENABLED = false;
 const float      AUTO_CAMERA_FADE_SPEED    = 0.005f;
 const uint32_t   AUTO_CAMERA_BLANK_FRAMES  = 90;
-const uint32_t   AUTO_CAMERA_ENABLE_KEY    = GLFW_KEY_A;
+const VkdfKey    AUTO_CAMERA_ENABLE_KEY    = VKDF_KEY_A;
 
 // =============================== Declarations ===============================
 
@@ -830,7 +830,7 @@ auto_camera_enable(SceneResources *res)
 static void
 update_camera(SceneResources *res)
 {
-   GLFWwindow *window = res->ctx->window;
+   VkdfPlatform *platform = &res->ctx->platform;
 
    if (!res->auto_camera_enabled) {
       const float mov_speed = 0.15f;
@@ -841,41 +841,41 @@ update_camera(SceneResources *res)
       float base_speed = 1.0f;
 
       // Rotation
-      if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
+      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT))
          vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-      else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
+      else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT))
          vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
 
-      if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
+      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_UP))
          vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-      else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
+      else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_DOWN))
          vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
 
       // Stepping
-      if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE) {
+      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP)) {
          float step_speed = base_speed * mov_speed;
          vkdf_camera_step(cam, step_speed, 1, 1, 1);
-      } else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+      } else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
          float step_speed = -base_speed * mov_speed;
          vkdf_camera_step(cam, step_speed, 1, 1, 1);
       }
 
-      if (glfwGetKey(window, GLFW_KEY_L) != GLFW_RELEASE) {
+      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_L)) {
          glm::vec3 pos = vkdf_camera_get_position(cam);
          glm::vec3 rot = vkdf_camera_get_rotation(cam);
          printf("Camera position: [%.2f, %.2f, %.2f]\n", pos.x, pos.y, pos.z);
          printf("Camera rotation: [%.2f, %.2f, %.2f]\n", rot.x, rot.y, rot.z);
       }
 
-      if (glfwGetKey(window, AUTO_CAMERA_ENABLE_KEY) != GLFW_RELEASE) {
+      if (vkdf_platform_key_is_pressed(platform, AUTO_CAMERA_ENABLE_KEY)) {
          auto_camera_enable(res);
       }
    } else {
       /* Resume manual mode if any of the directional keys are pressed */
-      if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE ||
-          glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE ||
-          glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE ||
-          glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE) {
+      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT) ||
+          vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT) ||
+          vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP) ||
+          vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
          auto_camera_disable(res);
       } else {
          if (res->auto_camera_state == AUTO_CAM_SETUP_STATE)

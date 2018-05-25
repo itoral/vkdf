@@ -1840,7 +1840,7 @@ init_resources(VkdfContext *ctx, SceneResources *res)
 }
 
 static void
-update_camera(GLFWwindow *window, VkdfCamera *cam)
+update_camera(VkdfContext *ctx, VkdfCamera *cam)
 {
    const float mov_speed = 0.15f;
    const float rot_speed = 1.0f;
@@ -1848,21 +1848,21 @@ update_camera(GLFWwindow *window, VkdfCamera *cam)
    float base_speed = 1.0f;
 
    /* Rotation */
-   if (glfwGetKey(window, GLFW_KEY_LEFT) != GLFW_RELEASE)
+   if (vkdf_platform_key_is_pressed(&ctx->platform, VKDF_KEY_LEFT))
       vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_RIGHT) != GLFW_RELEASE)
+   else if (vkdf_platform_key_is_pressed(&ctx->platform, VKDF_KEY_RIGHT))
       vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
 
-   if (glfwGetKey(window, GLFW_KEY_PAGE_UP) != GLFW_RELEASE)
+   if (vkdf_platform_key_is_pressed(&ctx->platform, VKDF_KEY_PAGE_UP))
       vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-   else if (glfwGetKey(window, GLFW_KEY_PAGE_DOWN) != GLFW_RELEASE)
+   else if (vkdf_platform_key_is_pressed(&ctx->platform, VKDF_KEY_PAGE_DOWN))
       vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
 
    /* Stepping */
    float step_speed = base_speed;
-   if (glfwGetKey(window, GLFW_KEY_UP) != GLFW_RELEASE)
+   if (vkdf_platform_key_is_pressed(&ctx->platform, VKDF_KEY_UP))
       step_speed *= mov_speed;
-   else if (glfwGetKey(window, GLFW_KEY_DOWN) != GLFW_RELEASE)
+   else if (vkdf_platform_key_is_pressed(&ctx->platform, VKDF_KEY_DOWN))
       step_speed *= -mov_speed;
    else
       return; /* Not stepping */
@@ -1911,7 +1911,7 @@ scene_update(VkdfContext *ctx, void *data)
 
    // Animate camera
    {
-      update_camera(ctx->window, res->camera);
+      update_camera(ctx, res->camera);
       res->view = vkdf_camera_get_view_matrix(res->camera);
       vkdf_buffer_map_and_fill(ctx, res->VP_ubo,
                                0, sizeof(glm::mat4), &res->view[0][0]);
@@ -2155,6 +2155,7 @@ after_rebuild_swap_chain_cb(VkdfContext *ctx, void *user_data)
    create_scene_sync_objects(ctx, res);
 }
 
+#ifdef VKDF_PLATFORM_GLFW
 static void
 window_resize_cb(GLFWwindow* window, int width, int height)
 {
@@ -2164,6 +2165,7 @@ window_resize_cb(GLFWwindow* window, int width, int height)
    VkdfContext *ctx = (VkdfContext *) glfwGetWindowUserPointer(window);
    vkdf_rebuild_swap_chain(ctx);
 }
+#endif
 
 int
 main()
@@ -2181,8 +2183,10 @@ main()
                                   after_rebuild_swap_chain_cb,
                                   &resources);
 
-   glfwSetWindowSizeCallback(ctx.window, window_resize_cb);
-   glfwSetWindowUserPointer(ctx.window, &ctx);
+#ifdef VKDF_PLATFORM_GLFW
+   glfwSetWindowSizeCallback(ctx.platform.window, window_resize_cb);
+   glfwSetWindowUserPointer(ctx.platform.window, &ctx);
+#endif
 
    init_resources(&ctx, &resources);
 

@@ -3,6 +3,7 @@
 #include "vkdf-util.hpp"
 #include "vkdf-error.hpp"
 #include "vkdf-cmd-buffer.hpp"
+#include "vkdf-platform.hpp"
 
 #define VKDF_LOG_FPS_ENABLE 1
 
@@ -19,7 +20,7 @@ static double _frame_max_time = 0.0;
 static inline void
 frame_start(VkdfContext *ctx)
 {
-   _frame_start_time = glfwGetTime();
+   _frame_start_time = vkdf_platform_get_time();
 }
 
 static inline void
@@ -28,7 +29,7 @@ frame_end(VkdfContext *ctx)
    _frames++;
 
    /* Compute frame time */
-   double frame_end_time = glfwGetTime();
+   double frame_end_time = vkdf_platform_get_time();
    _last_frame_time = frame_end_time - _frame_start_time;
 
    /* If we have a FPS target set and we are early for it we wait until
@@ -76,7 +77,7 @@ vkdf_rebuild_swap_chain(VkdfContext *ctx)
       return;
    }
 
-   glfwGetWindowSize(ctx->window, &width, &height);
+   vkdf_platform_get_window_size(&ctx->platform, &width, &height);
 
    vkDeviceWaitIdle(ctx->device);
 
@@ -155,11 +156,10 @@ vkdf_event_loop_run(VkdfContext *ctx,
 
       present_image(ctx);
 
-      glfwPollEvents();
+      vkdf_platform_poll_events();
 
       frame_end(ctx);
-   } while (glfwGetKey(ctx->window, GLFW_KEY_ESCAPE) != GLFW_PRESS &&
-            glfwWindowShouldClose(ctx->window) == 0);
+   } while (!vkdf_platform_should_quit(&ctx->platform));
 
    vkDeviceWaitIdle(ctx->device);
 }
