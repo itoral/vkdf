@@ -3143,7 +3143,6 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 
    VkdfScene *s = data->s;
    VkdfSceneLight *sl = data->sl;
-   VkdfLight *l = sl->light;
 
    // FIXME: for spolights, if neither the spotlight nor its area of
    // influence are visible to the camera, then we can skip shadow map
@@ -3187,7 +3186,7 @@ directional_light_has_dirty_shadow_map(VkdfScene *s, VkdfSceneLight *sl)
       return true;
 
    glm::vec3 cam_pos = vkdf_camera_get_position(cam);
-   if (cam->pos != sl->shadow.directional.cam_pos)
+   if (cam_pos != sl->shadow.directional.cam_pos)
       return true;
 
    glm::vec3 cam_rot = vkdf_camera_get_rotation(cam);
