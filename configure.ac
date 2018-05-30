@@ -120,3 +120,22 @@ AC_CONFIG_FILES([
 
 AC_OUTPUT
 
+# Configuration summary
+echo ""
+echo "Configuration:"
+echo "---------------------------------"
+echo ""
+
+if test "$VKDF_PLATFORM_SDL" = "yes"; then
+   echo "Platform:    sdl2"
+else
+   echo "Platform:    glfw3"
+fi
+
+if test "$enable_debug" = "yes"; then
+   echo "   Debug:    enabled"
+else
+   echo "   Debug:    disabled"
+fi
+
+echo ""
