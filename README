@@ -7,7 +7,7 @@ Build requirements
 You need the following dependencies installed on your system:
 
 - Glib
-- GLFW3 (with Vulkan support)
+- SDL2 or GLFW3
 - glm
 - Assimp
 - SDL2 image
@@ -16,17 +16,15 @@ You need the following dependencies installed on your system:
 
 In Ubuntu, these are provided by the following packages:
 
+- SDL2:             libsdl2-dev
+- GLFW3:            libglfw3-dev
 - Glib:             libglib2.0-dev
 - glm:              libglm-dev
 - Assimp:           libassimp-dev
 - SDL2 image:       libsdl2-image-dev
+- Vulkan SDK:       libvulkan-dev
 
-You need a version of GLFW3 that supports Vulkan. It may be possible that
-your distro doesn't provide it yet, in that case you will need to build it
-from sources [1] (be sure to configure the build so it produces a shared
-library).
-
-The Vulkan SDK can be obtained from the LunarG website [2].
+The Vulkan SDK can also be obtained from the LunarG website [2].
 
 The glslangValidator binary for Linux is included under external/glslang/
 for convenience. A more up-to-date binary can be obtained by building it
@@ -45,32 +43,31 @@ Bulding and executing
 
 Building:
 
-$ ./autogen.sh
-$ make
+$ ./autogen.sh [--enable-debug] [--enable-platform=sdl2|glfw3]
+$ make -j
 
 Executing:
 
 You will need a valid Vulkan driver for your target GPU in order to execute
 any of the demos. Your distro may not be providing this yet, but there are open
 source Mesa Vulkan drivers for Linux for Intel and AMD GPUs available that you
-can built from sources.
+can build from sources.
 
 If you have a compatible Vulkan driver installed but the Vulkan loader doesn't
-it you may need to indicate its location via the VK_ICD_FILENAMES environment
-variable:
+find it, you may need to indicate its location via the VK_ICD_FILENAMES
+environment variable. For example, for the Intel Mesa Vulkan driver:
 
-$ export VK_ICD_FILENAMES="<path-to-mesa-install-dir>/intel_icd.x86_64.json"
+$ export VK_ICD_FILENAMES="<path-to-install-dir>/intel_icd.x86_64.json"
 
 The build will produce a shared library that demos will dynamically link
 against at run-time. Unless you install the library to a path visible to
-the dynamic linker you will need to include it in the LD_LIBRARY_PATH. For
-example, to run the demos without installing at all, from the root of the
-repository execute the following:
+the dynamic linker you will need to include it in the LD_LIBRARY_PATH. To
+do this, from the root diectory of the VKDF source, do:
 
 $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD/framework/.libs
 
 All the demos are under the demos/ directory. For example, to execute the
-'triangle' demo:
+'triangle' demo you should do:
 
 $ cd demos/triangle
 $ ./triangle
