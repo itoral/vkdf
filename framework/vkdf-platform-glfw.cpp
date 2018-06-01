@@ -13,7 +13,7 @@ static const uint32_t glfw_key_map[] = {
 };
 
 static void
-platform_init()
+platform_init(VkdfPlatform *platform)
 {
    if (!glfwInit())
       vkdf_fatal("Failed to initialize GLFW platforms");
@@ -116,7 +116,7 @@ vkdf_platform_should_quit(VkdfPlatform *platform)
 }
 
 void
-vkdf_platform_poll_events()
+vkdf_platform_poll_events(VkdfPlatform *platform)
 {
    glfwPollEvents();
 }
@@ -125,4 +125,24 @@ bool
 vkdf_platform_key_is_pressed(VkdfPlatform *platform, VkdfKey key)
 {
    return glfwGetKey(platform->window, glfw_key_map[key]) == GLFW_PRESS;
+}
+
+bool
+vkdf_platform_joy_enabled(VkdfPlatform *platform)
+{
+   return false;
+}
+
+float
+vkdf_platform_joy_check_axis(VkdfPlatform *platform, VkdfJoyAxis axis)
+{
+   vkdf_error("Platform GLFW3: joystick support not implemented.\n");
+   return false;
+}
+
+bool
+vkdf_platform_joy_check_button(VkdfPlatform *platform, VkdfJoyButton btn)
+{
+   vkdf_error("Platform GLFW3: joystick support not implemented.\n");
+   return false;
 }

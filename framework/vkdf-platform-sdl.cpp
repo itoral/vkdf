@@ -15,10 +15,28 @@ static const uint32_t sdl_key_map[] = {
 };
 
 static void
-platform_init()
+platform_init(VkdfPlatform *platform)
 {
    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0)
       vkdf_fatal("Failed to initialize SDL2 platform");
+
+   if (SDL_NumJoysticks() > 0) {
+      SDL_Joystick *joy = SDL_JoystickOpen(0);
+      if (!joy) {
+         vkdf_error("Failed to initialize joystick 0\n");
+      } else {
+         platform->sdl.joy.joy = joy;
+         platform->sdl.joy.num_axes = SDL_JoystickNumAxes(joy);
+         platform->sdl.joy.num_buttons = SDL_JoystickNumButtons(joy);
+
+         vkdf_info("Found joystick: '%s' with %d axes and %d buttons.\n",
+                   SDL_JoystickNameForIndex(0),
+                   platform->sdl.joy.num_axes,
+                   platform->sdl.joy.num_buttons);
+
+         SDL_JoystickEventState(SDL_ENABLE);
+      }
+   }
 }
 
 void
@@ -89,6 +107,8 @@ vkdf_platform_get_required_extensions(uint32_t *count)
 void
 vkdf_platform_finish(VkdfPlatform *platform)
 {
+   if (platform->sdl.joy.joy)
+      SDL_JoystickClose(platform->sdl.joy.joy);
    SDL_DestroyRenderer(platform->sdl.renderer);
    SDL_DestroyWindow(platform->window);
    SDL_Quit();
@@ -122,7 +142,7 @@ vkdf_platform_should_quit(VkdfPlatform *platform)
 }
 
 void
-vkdf_platform_poll_events()
+vkdf_platform_poll_events(VkdfPlatform *platform)
 {
    SDL_PumpEvents();
 }
@@ -132,4 +152,24 @@ vkdf_platform_key_is_pressed(VkdfPlatform *platform, VkdfKey key)
 {
    const uint8_t *keys = SDL_GetKeyboardState(NULL);
    return keys[sdl_key_map[key]] != 0;
+}
+
+bool
+vkdf_platform_joy_enabled(VkdfPlatform *platform)
+{
+   return platform->sdl.joy.joy != NULL;
+}
+
+float
+vkdf_platform_joy_check_axis(VkdfPlatform *platform, VkdfJoyAxis axis)
+{
+   assert(axis < platform->sdl.joy.num_axes);
+   return SDL_JoystickGetAxis(platform->sdl.joy.joy, axis) / (-32768.0f);
+}
+
+bool
+vkdf_platform_joy_check_button(VkdfPlatform *platform, VkdfJoyButton btn)
+{
+   assert(btn < platform->sdl.joy.num_buttons);
+   return SDL_JoystickGetButton(platform->sdl.joy.joy, btn);
 }

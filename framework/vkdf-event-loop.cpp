@@ -156,7 +156,7 @@ vkdf_event_loop_run(VkdfContext *ctx,
 
       present_image(ctx);
 
-      vkdf_platform_poll_events();
+      vkdf_platform_poll_events(&ctx->platform);
 
       frame_end(ctx);
    } while (!vkdf_platform_should_quit(&ctx->platform));

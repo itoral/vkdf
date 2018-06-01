@@ -684,7 +684,7 @@ vkdf_init(VkdfContext *ctx,
 {
    memset(ctx, 0, sizeof(VkdfContext));
 
-   vkdf_platform_init();
+   vkdf_platform_init(&ctx->platform);
 
    init_instance(ctx, enable_validation);
    init_physical_device(ctx);
