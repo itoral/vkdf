@@ -833,33 +833,67 @@ update_camera(SceneResources *res)
    VkdfPlatform *platform = &res->ctx->platform;
 
    if (!res->auto_camera_enabled) {
-      const float mov_speed = 0.15f;
-      const float rot_speed = 1.0f;
-
       VkdfCamera *cam = vkdf_scene_get_camera(res->scene);
 
-      float base_speed = 1.0f;
+      // Joystick input
+      if (vkdf_platform_joy_enabled(platform)) {
+         /* Rotation (right thumbstick) */
+         const float joy_rot_speed = 2.0f;
 
-      // Rotation
-      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT))
-         vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
-      else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT))
-         vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
+         float axis_pos;
+         axis_pos = vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_RC_H);
+         if (axis_pos != 0.0f)
+            vkdf_camera_rotate(cam, 0.0f, joy_rot_speed * axis_pos, 0.0f);
 
-      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_UP))
-         vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
-      else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_DOWN))
-         vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
+         axis_pos = vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_RC_V);
+         if (axis_pos != 0.0f)
+            vkdf_camera_rotate(cam, joy_rot_speed * axis_pos, 0.0f, 0.0f);
 
-      // Stepping
-      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP)) {
-         float step_speed = base_speed * mov_speed;
-         vkdf_camera_step(cam, step_speed, 1, 1, 1);
-      } else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
-         float step_speed = -base_speed * mov_speed;
-         vkdf_camera_step(cam, step_speed, 1, 1, 1);
+         /* Movement (left thumbstick) */
+         const float joy_step_speed = 0.20f;
+         const float joy_strafe_speed = 0.15f;
+         bool l3_pressed =
+            vkdf_platform_joy_check_button(platform, VKDF_JOY_BTN_L3);
+
+         axis_pos = joy_strafe_speed *
+                    vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_H);
+         if (axis_pos != 0.0f)
+            vkdf_camera_strafe(cam, axis_pos);
+
+         axis_pos = joy_step_speed *
+                    vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_V);
+         if (axis_pos != 0.0f)
+            vkdf_camera_step(cam, (l3_pressed ? 2.0f : 1.0f) * axis_pos, 1, 1, 1);
       }
 
+      // Keyboard input
+      {
+         float base_speed = 1.0f;
+         const float mov_speed = 0.15f;
+         const float rot_speed = 1.0f;
+
+         // Rotation
+         if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT))
+            vkdf_camera_rotate(cam, 0.0f, base_speed * rot_speed, 0.0f);
+         else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT))
+            vkdf_camera_rotate(cam, 0.0f, -base_speed * rot_speed, 0.0f);
+
+         if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_UP))
+            vkdf_camera_rotate(cam, base_speed * rot_speed, 0.0f, 0.0f);
+         else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_PAGE_DOWN))
+            vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
+
+         // Stepping
+         if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP)) {
+            float step_speed = base_speed * mov_speed;
+            vkdf_camera_step(cam, step_speed, 1, 1, 1);
+         } else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
+            float step_speed = -base_speed * mov_speed;
+            vkdf_camera_step(cam, step_speed, 1, 1, 1);
+         }
+      }
+
+      // Other keyboad bindings
       if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_L)) {
          glm::vec3 pos = vkdf_camera_get_position(cam);
          glm::vec3 rot = vkdf_camera_get_rotation(cam);
@@ -871,11 +905,23 @@ update_camera(SceneResources *res)
          auto_camera_enable(res);
       }
    } else {
-      /* Resume manual mode if any of the directional keys are pressed */
-      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT) ||
-          vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT) ||
-          vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP) ||
-          vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
+      /* Resume manual mode if any of the directional keys are pressed
+       * or the joystick thumbsticks are used
+       */
+      bool keyboard_break =
+         vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT) ||
+         vkdf_platform_key_is_pressed(platform, VKDF_KEY_RIGHT) ||
+         vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP) ||
+         vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN);
+
+      bool joy_break =
+         vkdf_platform_joy_enabled(platform) &&
+         (fabs(vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_H)) > 0.5f ||
+          fabs(vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_H)) > 0.5f ||
+          fabs(vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_RC_H)) > 0.5f ||
+          fabs(vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_RC_H)) > 0.5f);
+
+      if (keyboard_break || joy_break) {
          auto_camera_disable(res);
       } else {
          if (res->auto_camera_state == AUTO_CAM_SETUP_STATE)
