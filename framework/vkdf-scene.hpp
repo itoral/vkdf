@@ -1074,6 +1074,9 @@ vkdf_scene_enable_brightness_filter(VkdfScene *s, float brightness)
    s->brightness.value = brightness;
 }
 
+bool
+vkdf_scene_check_camera_collision(VkdfScene *s);
+
 inline void
 vkdf_scene_add_invisible_wall(VkdfScene *s, VkdfBox *box)
 {

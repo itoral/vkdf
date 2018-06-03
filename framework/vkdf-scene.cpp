@@ -6110,3 +6110,100 @@ vkdf_scene_event_loop_run(VkdfScene *s)
                       event_loop_render,
                       s);
 }
+
+bool
+check_collision_with_object(VkdfBox *box,
+                            VkdfObject *obj,
+                            bool do_mesh_check)
+{
+   /* TODO: implement collision against rotated models */
+   assert(obj->rot == glm::vec3(0.0f));
+
+   /* If there is no collision against the top-level box, we are certain there
+    * is no collision at all.
+    */
+   VkdfBox *obj_box = vkdf_object_get_box(obj);
+   if (!vkdf_box_collision(box, obj_box))
+      return false;
+
+   /* If we detected collision, refine the test by testing against individual
+    * meshes.
+    */
+   if (!do_mesh_check)
+      return true;
+
+   const VkdfBox *mesh_boxes = vkdf_object_get_mesh_boxes(obj);
+   const VkdfModel *model = obj->model;
+
+   if (!vkdf_model_uses_collison_meshes(obj->model)) {
+      /* Test collision against all active meshes */
+      for (uint32_t i = 0; i < model->meshes.size(); i++) {
+         VkdfMesh *mesh = model->meshes[i];
+         if (!mesh->active)
+            continue;
+
+         const VkdfBox *mesh_box = &mesh_boxes[i];
+         if (vkdf_box_collision(box, mesh_box))
+            return true;
+      }
+   } else {
+      /* Test collision against selected meshes only */
+      for (uint32_t i = 0; i < model->collision_meshes.size(); i++) {
+         uint32_t mesh_idx = model->collision_meshes[i];
+         if (model->meshes[mesh_idx]->active) {
+            const VkdfBox *mesh_box = &mesh_boxes[mesh_idx];
+            if (vkdf_box_collision(box, mesh_box))
+               return true;
+         }
+      }
+   }
+
+   return false;
+}
+
+bool
+vkdf_scene_check_camera_collision(VkdfScene *s)
+{
+   VkdfBox *cam_box = vkdf_camera_get_collision_box(s->camera);
+
+   /* TODO: implement collision testing against static geometry*/
+#if 0
+   /* Check collision against static geometry */
+   for (uint32_t i = 0; i < s->num_tiles.total; i++) {
+      VkdfSceneTile *t = &s->tiles[i];
+      if (vkdf_box_collision(cam_box, &t->box)) {
+         // TODO: check subtiles recursively, then check objects
+      }
+   }
+#endif
+
+   /* Check collision against dynamic geometry */
+   GHashTableIter iter;
+   char *id;
+   VkdfSceneSetInfo *info;
+   g_hash_table_iter_init(&iter, s->dynamic.sets);
+   while (g_hash_table_iter_next(&iter, (void **)&id, (void **)&info)) {
+      if (!info || info->count == 0)
+         continue;
+
+      GList *obj_iter = info->objs;
+      while (obj_iter) {
+         VkdfObject *obj = (VkdfObject *) obj_iter->data;
+         if (check_collision_with_object(cam_box, obj, true))
+            return true;
+         obj_iter = g_list_next(obj_iter);
+      }
+   }
+
+   /* Check collision against invisible walls
+    *
+    * TODO: handle rotation for invisible walls?
+    */
+   for (uint32_t i = 0; i < s->wall.list.size(); i++) {
+      VkdfBox *box = &s->wall.list[i];
+      if (vkdf_box_collision(cam_box, box))
+         return true;
+   }
+
+   return false;
+}
