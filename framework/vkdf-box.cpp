@@ -79,9 +79,9 @@ vkdf_box_transform(VkdfBox *box, glm::mat4 *transform)
 
    /* Transform the box vertices */
    int n = 0;
-   for (float w = -box->w; w <= box->w; w += 2.0f * box->w) {
-      for (float h = -box->h; h <= box->h; h += 2.0f * box->h) {
-         for (float d = -box->d; d <= box->d; d += 2.0f * box->d) {
+   for (float w = -box->w; w <= box->w; w += 2.0f * MAX2(box->w, 0.0001f)) {
+      for (float h = -box->h; h <= box->h; h += 2.0f * MAX2(box->h, 0.0001f)) {
+         for (float d = -box->d; d <= box->d; d += 2.0f * MAX2(box->d, 0.0001f)) {
             glm::vec4 v = vec4(box->center + glm::vec3(w, h, d), 1.0f);
             v = (*transform) * v;
             vertices[n++] = vec3(v);
