@@ -31,6 +31,7 @@ typedef enum {
    VKDF_KEY_LEFT,
    VKDF_KEY_PAGE_UP,
    VKDF_KEY_PAGE_DOWN,
+   VKDF_KEY_SPACE,
    VKDF_KEY_A,
    VKDF_KEY_L,
 } VkdfKey;
