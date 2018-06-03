@@ -5,6 +5,8 @@
 #include "vkdf-box.hpp"
 #include "vkdf-frustum.hpp"
 #include "vkdf-util.hpp"
+#include "vkdf-object.hpp"
+#include "vkdf-mesh.hpp"
 
 typedef void (*VkdfCameraProgramSpecCB)(void *data);
 
@@ -60,6 +62,9 @@ typedef struct {
    glm::mat4 rot_matrix;
 
    VkdfFrustum frustum;
+
+   /* We use a VkdfObject for collision testing */
+   VkdfObject *collision_obj;
 
    uint32_t dirty;
    uint32_t cached;
@@ -159,6 +164,12 @@ vkdf_camera_get_frustum_box(VkdfCamera *cam);
 
 const VkdfPlane *
 vkdf_camera_get_frustum_planes(VkdfCamera *cam);
+
+void
+vkdf_camera_set_collision_mesh(VkdfCamera *cam, VkdfMesh *mesh, glm::vec3 scale);
+
+VkdfBox *
+vkdf_camera_get_collision_box(VkdfCamera *cam);
 
 inline void
 vkdf_camera_add_program(VkdfCamera *cam, VkdfCameraProgramSpec *prog)

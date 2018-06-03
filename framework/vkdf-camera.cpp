@@ -1,4 +1,5 @@
 #include "vkdf-camera.hpp"
+#include "vkdf-model.hpp"
 
 VkdfCamera *
 vkdf_camera_new(float px, float py, float pz,
@@ -15,6 +16,8 @@ vkdf_camera_new(float px, float py, float pz,
 void
 vkdf_camera_free(VkdfCamera *cam)
 {
+   if (cam->collision_obj)
+      vkdf_object_free(cam->collision_obj);
    g_free(cam);
 }
 
@@ -346,4 +349,31 @@ vkdf_camera_program_update(VkdfCamera *cam)
       prog->end_cb(prog->callback_data);
 
    return todo;
+}
+
+VkdfBox *
+vkdf_camera_get_collision_box(VkdfCamera *cam)
+{
+   /* First, set the collision object at the camera's position. We only do this
+    * if the position's don't match, to avoid invalidating the box if it hasn't
+    * changed.
+    */
+   glm::vec3 *collision_pos = &cam->collision_obj->pos;
+   if (*collision_pos != cam->pos)
+      vkdf_object_set_position(cam->collision_obj, cam->pos);
+
+   /* Get the collision box */
+   return vkdf_object_get_box(cam->collision_obj);
+}
+
+void
+vkdf_camera_set_collision_mesh(VkdfCamera *cam,
+                               VkdfMesh *mesh,
+                               glm::vec3 scale)
+{
+   VkdfModel *model = vkdf_model_new();
+   vkdf_model_add_mesh(model, mesh);
+   vkdf_model_compute_box(model);
+   cam->collision_obj = vkdf_object_new(cam->pos, model);
+   vkdf_object_set_scale(cam->collision_obj, scale);
 }
