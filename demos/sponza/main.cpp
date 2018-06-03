@@ -103,6 +103,14 @@ const VkdfKey    AUTO_CAMERA_ENABLE_KEY    = VKDF_KEY_A;
 
 // =============================== Declarations ===============================
 
+/* Used to render individual meshes and inspect their IDs. Use SPACE to
+ * iterate the mesh to render.
+ */
+#define DEBUG_MESH_IDX 0
+#if DEBUG_MESH_IDX
+static uint32_t cur_mesh_idx = 0;
+#endif
+
 const uint32_t   SPONZA_FLOOR_MATERIAL_IDX = 10;
 
 const bool       SHOW_SPONZA_VASE_MESHES   = true;
@@ -477,6 +485,11 @@ record_instanced_draw(VkCommandBuffer cmd_buf,
 
       if (mesh_visible[i] == false)
          continue;
+
+#if DEBUG_MESH_IDX
+      if (i != cur_mesh_idx)
+         continue;
+#endif
 
       bool has_opacity =
          model->materials[mesh->material_idx].opacity_tex_count > 0;
@@ -966,6 +979,16 @@ update_camera(SceneResources *res)
          printf("Camera position: [%.2f, %.2f, %.2f]\n", pos.x, pos.y, pos.z);
          printf("Camera rotation: [%.2f, %.2f, %.2f]\n", rot.x, rot.y, rot.z);
       }
+
+#if DEBUG_MESH_IDX
+      if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_SPACE)) {
+         if (cur_mesh_idx < res->sponza_model->meshes.size() - 1)
+            cur_mesh_idx++;
+         else
+            cur_mesh_idx = 0;
+         printf("Current mesh: %d\n", cur_mesh_idx);
+      }
+#endif
 
       if (vkdf_platform_key_is_pressed(platform, AUTO_CAMERA_ENABLE_KEY)) {
          auto_camera_enable(res);
