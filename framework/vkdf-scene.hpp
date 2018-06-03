@@ -690,6 +690,11 @@ struct _VkdfScene {
          } shadow_map;
       } ubo;
    } dynamic;
+
+   /* List of invisibl walls in this scene */
+   struct {
+      std::vector<VkdfBox> list;
+   } wall;
 };
 
 VkdfScene *
@@ -1067,6 +1072,21 @@ vkdf_scene_enable_brightness_filter(VkdfScene *s, float brightness)
 {
    s->brightness.enabled = true;
    s->brightness.value = brightness;
+}
+
+inline void
+vkdf_scene_add_invisible_wall(VkdfScene *s, VkdfBox *box)
+{
+   s->wall.list.push_back(*box);
+}
+
+inline void
+vkdf_scene_add_invisible_wall_list(VkdfScene *s,
+                                   uint32_t num_boxes,
+                                   VkdfBox *box_list)
+{
+   for (uint32_t i = 0; i < num_boxes; i++)
+      vkdf_scene_add_invisible_wall(s, &box_list[i]);
 }
 
 #endif
