@@ -92,6 +92,9 @@ const float      FXAA_LUMA_MIN             = 0.1f;    // Min > 0.0, Max=1.0
 const float      FXAA_LUMA_RANGE_MIN       = 0.1312f; // Min > 0.0, Max=1.0
 const float      FXAA_SUBPX_AA             = 0.5f;    // Min=0.0 (disabled)
 
+/* Collision detection */
+const bool       ENABLE_COLLISIONS         = true;
+
 /* Automatic camera */
 const bool       AUTO_CAMERA_START_ENABLED = false;
 const float      AUTO_CAMERA_FADE_SPEED    = 0.005f;
@@ -120,6 +123,26 @@ const uint32_t   SPONZA_SUPPORT_MESH_IDX[] = {
    341, 342, 343, 344, 345, 346, 347, 348, 349,
    351, 352, 353, 354, 355, 356, 357, 358, 359,
    360, 361, 362, 363, 364, 365, 366, 367, 368
+};
+
+/* Indices of meshes for which we do mesh-level collision detection.
+ * Collision for other parts of the model is done through invisible walls.
+ */
+const uint32_t SPONZA_COLLISION_MESH_IDX[] = {
+   /* Vases */
+   2, 369, 371, 373, 375, 377, 379, 381,
+
+   /* Columns */
+   9, 10, 11, 12, 13, 14, 15, 16,
+   22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+   120, 121, 122, 123,
+   127, 138, 149, 160, 171, 182, 193, 204, 215, 226, 237, 248,
+
+   /* Water pools  */
+   382, 383, 384, 385,
+
+   /* Curtains */
+   322, 323, 324, 325, 326, 327, 328, 329, 330, 331
 };
 
 enum {
@@ -158,6 +181,8 @@ typedef struct {
    AutoCameraState auto_camera_state;
    uint32_t auto_camera_blank_timeout;
    bool auto_camera_enabled;
+
+   bool collisions_enabled;
 
    struct {
       VkDescriptorPool static_ubo_pool;
@@ -817,6 +842,7 @@ static void
 auto_camera_disable(SceneResources *res)
 {
    res->auto_camera_enabled = false;
+   res->collisions_enabled = ENABLE_COLLISIONS;
 }
 
 static void
@@ -825,6 +851,33 @@ auto_camera_enable(SceneResources *res)
    res->auto_camera_enabled = true;
    res->auto_camera_state = AUTO_CAM_SETUP_STATE;
    vkdf_camera_program_reset(res->camera, true, true);
+   res->collisions_enabled = false;
+}
+
+static void
+check_camera_collision(VkdfScene *s, VkdfCamera *cam, glm::vec3 prev_pos)
+{
+   if (prev_pos == cam->pos)
+      return;
+
+   if (!vkdf_scene_check_camera_collision(s))
+      return;
+
+   /* Otherwise, try to move in each axis separately so we can slide along
+    * collision planes
+    */
+   glm::vec3 diff = cam->pos - prev_pos;
+   cam->pos = prev_pos;
+   for (uint32_t i = 0; i < 3; i++) {
+      cam->pos += glm::vec3(diff.x * (i == 0 ? 1.0f : 0.0f),
+                            diff.y * (i == 1 ? 1.0f : 0.0f),
+                            diff.z * (i == 2 ? 1.0f : 0.0f));
+
+      if (prev_pos != cam->pos && vkdf_scene_check_camera_collision(s))
+         cam->pos = prev_pos;
+
+      prev_pos = cam->pos;
+   }
 }
 
 static void
@@ -855,6 +908,7 @@ update_camera(SceneResources *res)
          bool l3_pressed =
             vkdf_platform_joy_check_button(platform, VKDF_JOY_BTN_L3);
 
+         glm::vec3 prev_pos = cam->pos;
          axis_pos = joy_strafe_speed *
                     vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_H);
          if (axis_pos != 0.0f)
@@ -864,6 +918,10 @@ update_camera(SceneResources *res)
                     vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_V);
          if (axis_pos != 0.0f)
             vkdf_camera_step(cam, (l3_pressed ? 2.0f : 1.0f) * axis_pos, 1, 1, 1);
+
+         if (res->collisions_enabled)
+            check_camera_collision(res->scene, cam, prev_pos);
+
          if (vkdf_platform_joy_check_button(platform, VKDF_JOY_BTN_START)) {
             auto_camera_enable(res);
          }
@@ -887,13 +945,18 @@ update_camera(SceneResources *res)
             vkdf_camera_rotate(cam, -base_speed * rot_speed, 0.0f, 0.0f);
 
          // Stepping
+         glm::vec3 prev_pos = cam->pos;
+         float step_speed;
          if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_UP)) {
-            float step_speed = base_speed * mov_speed;
+            step_speed = base_speed * mov_speed;
             vkdf_camera_step(cam, step_speed, 1, 1, 1);
          } else if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_DOWN)) {
-            float step_speed = -base_speed * mov_speed;
+            step_speed = -base_speed * mov_speed;
             vkdf_camera_step(cam, step_speed, 1, 1, 1);
          }
+
+         if (res->collisions_enabled)
+            check_camera_collision(res->scene, cam, prev_pos);
       }
 
       // Other keyboad bindings
@@ -1120,6 +1183,10 @@ init_scene(SceneResources *res)
 
    vkdf_camera_look_at(res->camera, 10.0f, 5.0f, 0.0f);
 
+   VkdfMesh *cam_mesh = vkdf_cube_mesh_new(res->ctx);
+   vkdf_camera_set_collision_mesh(res->camera, cam_mesh, glm::vec3(0.25f));
+
+   res->collisions_enabled = ENABLE_COLLISIONS;
    init_automatic_camera(res);
 
    glm::vec3 scene_origin = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -2122,6 +2189,54 @@ init_objects(SceneResources *res)
    vkdf_scene_add_object(res->scene, "sponza", obj);
 
    res->sponza_obj = obj;
+
+   /* Add a bunch of invisible walls to simplify collision testing */
+   VkdfBox walls[] = {
+#if 0
+      { glm::vec3( -1.50f,   5.25f,  -5.25f), 19.0f, 50.0f,  0.5f }, // Inner wall (left)
+      { glm::vec3( -1.50f,   5.25f,   3.75f), 19.0f, 50.0f,  0.5f }, // Inner wall (right)
+#endif
+      { glm::vec3(  0.00f,   0.00f,   0.00f), 50.0f,   0.5f, 50.0f }, // Lower floor
+      { glm::vec3( 17.50f,   9.00f,  -1.00f),  1.0f,   1.0f,  5.5f }, // Upper inner wall (front)
+      { glm::vec3(-20.50f,   9.0f,   -1.00f),  1.0f,   1.0f,  5.5f }, // Upper inner wall (back)
+      { glm::vec3( -1.50f,   9.00,   -5.50f),  20.0f,  2.0f,  1.0f }, // Upper inner wall (left)
+      { glm::vec3( -1.50f,   9.00f,   4.00f),  20.0f,  2.0f,  1.0f }, // Upper inner wall (right)
+      { glm::vec3(-28.00f,   0.00f,   0.00f),   1.0f, 50.0f, 50.0f }, // External wall (back)
+      { glm::vec3( 25.50f,   0.00f,   0.00f),   1.0f, 50.0f, 50.0f }, // External wall (front)
+      { glm::vec3(  0.00f,   0.00f, -14.00f),  50.0f, 50.0f,  2.0f }, // External wall (left)
+      { glm::vec3(  0.00f,   0.00f,  12.50f),  50.0f, 50.0f,  2.0f }, // External wall (right)
+      { glm::vec3( 23.00f,   7.50f,   0.00f),   5.0f,  2.0f, 50.0f }, // Upper floor (front)
+      { glm::vec3(-25.00f,   7.50f,   0.00f),   5.0f,  2.0f, 50.0f }, // Upper floor (back)
+      { glm::vec3(  0.00f,   7.50f, -11.50f),  50.0f,  2.0f,  5.0f }, // Upper floor (left)
+      { glm::vec3(  0.00f,   7.50f,  10.00f),  50.0f,  2.0f,  5.0f }, // Upper floor (right)
+      { glm::vec3(-20.50f,   5.50f,  -5.50f),   1.5f,  2.0f,  1.5f }, // Wall columns left (0)
+      { glm::vec3(-12.50f,   5.50f,  -5.50f),   1.5f, 20.0f,  1.0f }, // Wall columns left (1)
+      { glm::vec3( -4.75f,   5.50f,  -5.50f),   1.5f, 20.0f,  1.0f }, // Wall columns left (2)
+      { glm::vec3(  2.25f,   5.50f,  -5.50f),   1.5f, 20.0f,  1.0f }, // Wall columns left (3)
+      { glm::vec3(  9.25f,   5.50f,  -5.50f),   1.5f, 20.0f,  1.0f }, // Wall columns left (4)
+      { glm::vec3( 17.50f,   5.50f,  -5.50f),   1.5f,  2.0f,  1.5f }, // Wall columns left (5)
+      { glm::vec3(-20.50f,   5.50f,   4.00f),   1.5f,  2.0f,  1.5f }, // Wall columns right (0)
+      { glm::vec3(-12.50f,   5.50f,   4.00f),   1.5f, 20.0f,  1.0f }, // Wall columns right (1)
+      { glm::vec3( -4.75f,   5.50f,   4.00f),   1.5f, 20.0f,  1.0f }, // Wall columns right (2)
+      { glm::vec3(  2.25f,   5.50f,   4.00f),   1.5f, 20.0f,  1.0f }, // Wall columns right (3)
+      { glm::vec3(  9.25f,   5.50f,   4.00f),   1.5f, 20.0f,  1.0f }, // Wall columns right (4)
+      { glm::vec3( 17.50f,   5.50f,   4.00f),   1.5f,  2.0f,  1.5f }, // Wall columns right (5)
+      { glm::vec3(  0.00f,  15.50f,   0.00f),  50.0f,  1.0f, 50.0f }, // Top
+   };
+
+   vkdf_scene_add_invisible_wall_list(res->scene,
+                                      sizeof(walls) / sizeof(VkdfBox),
+                                      walls);
+
+   /* And enable mesh-level collision testing only for a handful of
+    * selected meshes
+    */
+   const uint32_t num_collision_meshes =
+      sizeof(SPONZA_COLLISION_MESH_IDX) / sizeof(uint32_t);
+   for (uint32_t i = 0; i < num_collision_meshes; i++) {
+      vkdf_model_add_collison_mesh(res->sponza_model,
+                                   SPONZA_COLLISION_MESH_IDX[i]);
+   }
 }
 
 static void
