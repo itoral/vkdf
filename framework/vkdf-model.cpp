@@ -301,6 +301,9 @@ vkdf_model_free(VkdfContext *ctx, VkdfModel *model)
    model->meshes.clear();
    std::vector<VkdfMesh *>(model->meshes).swap(model->meshes);
 
+   model->collision_meshes.clear();
+   std::vector<uint32_t>(model->collision_meshes).swap(model->collision_meshes);
+
    model->materials.clear();
    std::vector<VkdfMaterial>(model->materials).swap(model->materials);
 

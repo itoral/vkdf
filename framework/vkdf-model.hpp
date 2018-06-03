@@ -52,6 +52,11 @@ typedef struct {
 
    // Bounding box (in model-space coordinates)
    VkdfBox box;
+
+   // If this is TRUE, then collision against this model is only tested
+   // against the meshes indexed in this array
+   bool use_collision_meshes;
+   std::vector<uint32_t> collision_meshes;
 } VkdfModel;
 
 VkdfModel *
@@ -82,6 +87,20 @@ vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
 
 void
 vkdf_model_compute_box(VkdfModel *model);
+
+inline void
+vkdf_model_add_collison_mesh(VkdfModel *model, uint32_t mesh_idx)
+{
+   assert(mesh_idx < model->meshes.size());
+   model->use_collision_meshes = true;
+   model->collision_meshes.push_back(mesh_idx);
+}
+
+inline bool
+vkdf_model_uses_collison_meshes(VkdfModel *model)
+{
+   return model->use_collision_meshes;
+}
 
 void
 vkdf_model_load_textures(VkdfContext *ctx,
