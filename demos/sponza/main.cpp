@@ -864,6 +864,9 @@ update_camera(SceneResources *res)
                     vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_LC_V);
          if (axis_pos != 0.0f)
             vkdf_camera_step(cam, (l3_pressed ? 2.0f : 1.0f) * axis_pos, 1, 1, 1);
+         if (vkdf_platform_joy_check_button(platform, VKDF_JOY_BTN_START)) {
+            auto_camera_enable(res);
+         }
       }
 
       // Keyboard input
