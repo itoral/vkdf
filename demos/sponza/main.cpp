@@ -292,6 +292,10 @@ typedef struct {
    VkdfSceneShadowSpec shadow_spec;
 
    struct {
+      int32_t mesh_count;
+   } iterative_rendering;
+
+   struct {
       VkdfImage image;
       VkSampler sampler;
       struct {
@@ -1075,6 +1079,45 @@ auto_cam_dynamic_light_end_cb(void *data)
    vkdf_camera_look_at(res->camera, 10.0f, 5.0f, 0.0f);
 }
 
+void
+auto_cam_iterative_rendering_start_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+
+   res->iterative_rendering.mesh_count = -50;
+   for (uint32_t i = 0; i < res->sponza_model->meshes.size(); i++)
+      res->sponza_model->meshes[i]->active = false;
+
+   auto_cam_dynamic_light_start_cb(data);
+}
+
+void
+auto_cam_iterative_rendering_update_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+
+   res->iterative_rendering.mesh_count++;
+   uint32_t mesh_idx = res->iterative_rendering.mesh_count / 4;
+   if (mesh_idx >= 0 && mesh_idx < res->sponza_model->meshes.size()) {
+      if (mesh_idx != SPONZA_FLAG_MESH_IDX || SHOW_SPONZA_FLAG_MESH) {
+         res->sponza_model->meshes[mesh_idx]->active = true;
+
+         /* Mark dirty so the new active mesh makes it to the shadow map */
+         vkdf_object_set_dirty(res->sponza_obj, true);
+      }
+   }
+}
+
+void
+auto_cam_iterative_rendering_end_cb(void *data)
+{
+   SceneResources *res = (SceneResources *) data;
+
+   uint32_t mesh_idx = res->iterative_rendering.mesh_count / 4;
+   if (mesh_idx >= res->sponza_model->meshes.size())
+      auto_cam_dynamic_light_end_cb(data);
+}
+
 static void
 init_automatic_camera(SceneResources *res)
 {
@@ -1082,6 +1125,27 @@ init_automatic_camera(SceneResources *res)
    memset(&prog, 0, sizeof(prog));
 
    prog.callback_data = res;
+
+   /* Iterative rendering of the model
+    *
+    * This uses the auto-camera program callbacks to activate progressive
+    * rendering of the meshes over time rather than animating the camera.
+    */
+   prog.pos.start = glm::vec3(-28.0f, 1.0f, -2.0f);
+   prog.pos.end = glm::vec3(-28.0f, 1.0f, -2.0f);
+   prog.pos.speed = 0.0f;
+   prog.rot.start = glm::vec3(18.0f, 260.0f, 0.0f);
+   prog.rot.end = glm::vec3(18.0f, 260.0f, 0.0f);
+   prog.rot.speed = 0.0f;
+   prog.min_steps = 1850; /* Num meshes * 4 + some margin */
+   prog.start_cb = auto_cam_iterative_rendering_start_cb;
+   prog.update_cb = auto_cam_iterative_rendering_update_cb;
+   prog.end_cb = auto_cam_iterative_rendering_end_cb;
+   vkdf_camera_add_program(res->camera, &prog);
+   prog.min_steps = 0;
+   prog.start_cb = NULL;
+   prog.update_cb = NULL;
+   prog.end_cb = NULL;
 
    /* Lower attrium */
    prog.pos.start = glm::vec3(-30.0f, 3.0f, 3.0f);
