@@ -1190,9 +1190,6 @@ init_automatic_camera(SceneResources *res)
    prog.start_cb = NULL;
    prog.update_cb = NULL;
    prog.end_cb = NULL;
-
-   if (AUTO_CAMERA_START_ENABLED)
-      auto_camera_enable(res);
 }
 
 static void
@@ -2517,6 +2514,9 @@ init_resources(VkdfContext *ctx, SceneResources *res)
     */
    vkdf_scene_prepare(res->scene);
    init_pipelines(res);
+
+   if (AUTO_CAMERA_START_ENABLED)
+      auto_camera_enable(res);
 }
 
 static void
