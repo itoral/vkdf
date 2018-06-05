@@ -27,3 +27,8 @@ demos/model/model
 demos/offscreen/offscreen
 demos/texture/texture
 demos/triangle/triangle
+demos/sponza/sponza
+demos/scene/scene
+demos/scenelight/scene
+demos/shadow/shadow
+demos/sponza/textures
