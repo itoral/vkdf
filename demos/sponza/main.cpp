@@ -1131,11 +1131,11 @@ init_automatic_camera(SceneResources *res)
     * This uses the auto-camera program callbacks to activate progressive
     * rendering of the meshes over time rather than animating the camera.
     */
-   prog.pos.start = glm::vec3(-28.0f, 1.0f, -2.0f);
-   prog.pos.end = glm::vec3(-28.0f, 1.0f, -2.0f);
+   prog.pos.start = glm::vec3(-25.0f, 14.0f, -3.0f);
+   prog.pos.end = glm::vec3(-25.0f, 14.0f, -3.0f);
    prog.pos.speed = 0.0f;
-   prog.rot.start = glm::vec3(18.0f, 260.0f, 0.0f);
-   prog.rot.end = glm::vec3(18.0f, 260.0f, 0.0f);
+   prog.rot.start = glm::vec3(-15.0f, 260.0f, 0.0f);
+   prog.rot.end = glm::vec3(-15.0f, 260.0f, 0.0f);
    prog.rot.speed = 0.0f;
    prog.min_steps = 1850; /* Num meshes * 4 + some margin */
    prog.start_cb = auto_cam_iterative_rendering_start_cb;
