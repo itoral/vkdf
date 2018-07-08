@@ -14,10 +14,12 @@ vkdf_camera_new(float px, float py, float pz,
 }
 
 void
-vkdf_camera_free(VkdfCamera *cam)
+vkdf_camera_free(VkdfContext *ctx, VkdfCamera *cam)
 {
-   if (cam->collision_obj)
+   if (cam->collision_obj) {
       vkdf_object_free(cam->collision_obj);
+      vkdf_model_free(ctx, cam->collision_model); /* models are not own by objects */
+   }
    g_free(cam);
 }
 
@@ -371,9 +373,10 @@ vkdf_camera_set_collision_mesh(VkdfCamera *cam,
                                VkdfMesh *mesh,
                                glm::vec3 scale)
 {
-   VkdfModel *model = vkdf_model_new();
-   vkdf_model_add_mesh(model, mesh);
-   vkdf_model_compute_box(model);
-   cam->collision_obj = vkdf_object_new(cam->pos, model);
+    /* Camera takes ownership of the mesh */
+   cam->collision_model = vkdf_model_new();
+   vkdf_model_add_mesh(cam->collision_model, mesh);
+   vkdf_model_compute_box(cam->collision_model);
+   cam->collision_obj = vkdf_object_new(cam->pos, cam->collision_model);
    vkdf_object_set_scale(cam->collision_obj, scale);
 }

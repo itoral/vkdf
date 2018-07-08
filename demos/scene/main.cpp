@@ -545,7 +545,7 @@ destroy_ubos(SceneResources *res)
 }
 
 void
-cleanup_resources(SceneResources *res)
+cleanup_resources(VkdfContext *ctx, SceneResources *res)
 {
    vkdf_scene_free(res->scene);
    destroy_models(res);
@@ -553,7 +553,7 @@ cleanup_resources(SceneResources *res)
    destroy_pipelines(res);
    destroy_ubos(res);
 
-   vkdf_camera_free(res->camera);
+   vkdf_camera_free(ctx, res->camera);
 }
 
 int
@@ -567,7 +567,7 @@ main()
 
    vkdf_scene_event_loop_run(resources.scene);
 
-   cleanup_resources(&resources);
+   cleanup_resources(&ctx, &resources);
    vkdf_cleanup(&ctx);
 
    return 0;

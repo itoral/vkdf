@@ -2091,7 +2091,7 @@ destroy_scene_sync_objects(VkdfContext *ctx, SceneResources *res)
 void
 cleanup_resources(VkdfContext *ctx, SceneResources *res)
 {
-   vkdf_camera_free(res->camera);
+   vkdf_camera_free(ctx, res->camera);
    for (uint32_t i = 0; i < ROOM_WIDTH * ROOM_DEPTH; i++)
       vkdf_object_free(res->tiles[i]);
    for (uint32_t i = 0; i < NUM_CUBES; i++)

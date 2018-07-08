@@ -65,6 +65,7 @@ typedef struct {
 
    /* We use a VkdfObject for collision testing */
    VkdfObject *collision_obj;
+   VkdfModel *collision_model;
 
    uint32_t dirty;
    uint32_t cached;
@@ -82,7 +83,7 @@ vkdf_camera_new(float px, float py, float pz,
                 float fov, float near, float far, float aspect_ratio);
 
 void
-vkdf_camera_free(VkdfCamera *cam);
+vkdf_camera_free(VkdfContext *ctx, VkdfCamera *cam);
 
 void
 vkdf_camera_set_projection(VkdfCamera *cam,
