@@ -417,6 +417,7 @@ destroy_swap_chain(VkdfContext *ctx)
    g_free(ctx->acquired_sem);
    g_free(ctx->draw_sem);
    vkDestroySwapchainKHR(ctx->device, ctx->swap_chain, NULL);
+   g_free(ctx->swap_chain_images);
 }
 
 static bool
@@ -710,11 +711,41 @@ destroy_device(VkdfContext *ctx)
    vkDestroyDevice(ctx->device, NULL);
 }
 
+static void
+destroy_physical_device_list(VkdfContext *ctx)
+{
+   g_free(ctx->phy_devices);
+}
+
+static void
+destroy_queue_list(VkdfContext *ctx)
+{
+   g_free(ctx->queues);
+}
+
+static void
+destroy_instance_extension_list(VkdfContext *ctx)
+{
+   for (uint32_t i = 0; i < ctx->inst_extension_count; i++)
+      g_free(ctx->inst_extensions[i]);
+   g_free(ctx->inst_extensions);
+}
+
+static void
+destroy_physical_device_extension_list(VkdfContext *ctx)
+{
+   g_free(ctx->phy_device_extensions);
+}
+
 void
 vkdf_cleanup(VkdfContext *ctx)
 {
    destroy_swap_chain(ctx);
    destroy_device(ctx);
+   destroy_physical_device_list(ctx);
+   destroy_queue_list(ctx);
+   destroy_instance_extension_list(ctx);
+   destroy_physical_device_extension_list(ctx);
    vkDestroySurfaceKHR(ctx->inst, ctx->platform.surface, NULL);
    vkdf_platform_finish(&ctx->platform);
    destroy_instance(ctx);
