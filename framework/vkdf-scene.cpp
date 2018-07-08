@@ -518,6 +518,10 @@ free_dynamic_objects(VkdfScene *s)
    g_hash_table_foreach(s->dynamic.sets, destroy_set_full, NULL);
    g_hash_table_destroy(s->dynamic.sets);
    s->dynamic.sets = NULL;
+
+   g_hash_table_foreach(s->dynamic.visible, destroy_set, NULL);
+   g_hash_table_destroy(s->dynamic.visible);
+   s->dynamic.visible = NULL;
 }
 
 static void
