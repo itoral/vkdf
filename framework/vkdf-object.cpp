@@ -57,9 +57,9 @@ void
 vkdf_object_free(VkdfObject *obj)
 {
    // Models are not owned by the objects
-   g_free(obj);
    if (obj->mesh_boxes)
       g_free(obj->mesh_boxes);
+   g_free(obj);
 }
 
 glm::mat4
