@@ -21,6 +21,8 @@ install-sh
 libtool
 ltmain.sh
 missing
+data/spirv/ssao-blur.deferred.frag
+data/spirv/ssao.deferred.frag
 demos/depth/depth
 demos/mesh/mesh
 demos/model/model
@@ -32,3 +34,15 @@ demos/scene/scene
 demos/scenelight/scene
 demos/shadow/shadow
 demos/sponza/textures
+demos/model/shader.frag
+demos/scenelight/floor.frag
+demos/scenelight/obj.frag
+demos/shadow/shader.frag
+demos/sponza/gbuffer-merge.frag
+demos/sponza/gbuffer-merge.ssao.frag
+demos/sponza/obj.deferred.frag
+demos/sponza/obj.deferred.vert
+demos/sponza/obj.frag
+demos/sponza/obj.vert
+demos/sponza/obj_opacity.deferred.frag
+demos/sponza/obj_opacity.frag
