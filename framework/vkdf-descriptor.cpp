@@ -194,3 +194,18 @@ vkdf_descriptor_set_sampler_update(VkdfContext *ctx,
    vkUpdateDescriptorSets(ctx->device, 1, &writes, 0, NULL);
 }
 
+VkDescriptorSet
+vkdf_descriptor_set_create(VkdfContext *ctx,
+                           VkDescriptorPool pool,
+                           VkDescriptorSetLayout layout)
+{
+   VkDescriptorSet set;
+   VkDescriptorSetAllocateInfo alloc_info[1];
+   alloc_info[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+   alloc_info[0].pNext = NULL;
+   alloc_info[0].descriptorPool = pool;
+   alloc_info[0].descriptorSetCount = 1;
+   alloc_info[0].pSetLayouts = &layout;
+   VK_CHECK(vkAllocateDescriptorSets(ctx->device, alloc_info, &set));
+   return set;
+}

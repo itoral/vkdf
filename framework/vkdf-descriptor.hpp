@@ -49,4 +49,9 @@ vkdf_descriptor_set_sampler_update(VkdfContext *ctx,
                                    uint32_t binding,
                                    uint32_t count);
 
+VkDescriptorSet
+vkdf_descriptor_set_create(VkdfContext *ctx,
+                           VkDescriptorPool pool,
+                           VkDescriptorSetLayout layout);
+
 #endif

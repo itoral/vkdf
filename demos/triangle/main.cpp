@@ -210,26 +210,6 @@ create_pipeline_layout(VkdfContext *ctx, VkDescriptorSetLayout set_layout)
    return pipeline_layout;
 }
 
-static VkDescriptorSet
-create_descriptor_set(VkdfContext *ctx,
-                      VkDescriptorPool pool,
-                      VkDescriptorSetLayout layout)
-{
-   VkDescriptorSet set;
-   VkDescriptorSetAllocateInfo alloc_info[1];
-   alloc_info[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-   alloc_info[0].pNext = NULL;
-   alloc_info[0].descriptorPool = pool;
-   alloc_info[0].descriptorSetCount = 1;
-   alloc_info[0].pSetLayouts = &layout;
-   VkResult res = vkAllocateDescriptorSets(ctx->device, alloc_info, &set);
-
-   if (res != VK_SUCCESS)
-      vkdf_fatal("Failed to allocate descriptor set");
-
-   return set;
-}
-
 static void
 init_matrices(DemoResources *res)
 {
@@ -280,7 +260,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             VK_SHADER_STAGE_VERTEX_BIT, false);
 
    res->descriptor_set =
-      create_descriptor_set(ctx, res->descriptor_pool, res->set_layout);
+      vkdf_descriptor_set_create(ctx, res->descriptor_pool, res->set_layout);
 
    VkDeviceSize ubo_offset = 0;
    VkDeviceSize ubo_size = sizeof(res->mvp);

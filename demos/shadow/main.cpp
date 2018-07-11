@@ -845,23 +845,6 @@ create_ui_tile_pipeline_layout(VkdfContext *ctx, SceneResources *res)
    return pipeline_layout;
 }
 
-static VkDescriptorSet
-create_descriptor_set(VkdfContext *ctx,
-                      VkDescriptorPool pool,
-                      VkDescriptorSetLayout layout)
-{
-   VkDescriptorSet set;
-   VkDescriptorSetAllocateInfo alloc_info[1];
-   alloc_info[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-   alloc_info[0].pNext = NULL;
-   alloc_info[0].descriptorPool = pool;
-   alloc_info[0].descriptorSetCount = 1;
-   alloc_info[0].pSetLayouts = &layout;
-   VK_CHECK(vkAllocateDescriptorSets(ctx->device, alloc_info, &set));
-
-   return set;
-}
-
 static inline float
 vec3_module(glm::vec3 p, int xaxis, int yaxis, int zaxis)
 {
@@ -1494,7 +1477,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
 
    // Cubes descriptor set
    res->MVP_cubes_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->MVP_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool, res->MVP_set_layout);
 
    VkDeviceSize VP_offset = 0;
    VkDeviceSize VP_size = 2 * sizeof(glm::mat4);
@@ -1510,7 +1493,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
 
    // Tiles descriptor set
    res->MVP_tiles_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->MVP_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool, res->MVP_set_layout);
 
    VP_offset = 0;
    VP_size = 2 * sizeof(glm::mat4);
@@ -1530,7 +1513,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                             VK_SHADER_STAGE_FRAGMENT_BIT,
                                             false);
    res->tile_materials_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->Materials_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool, res->Materials_set_layout);
 
    VkDeviceSize Mat_offset = 0;
    VkDeviceSize Mat_size = 2 * sizeof(VkdfMaterial);
@@ -1539,7 +1522,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                      0, 1, &Mat_offset, &Mat_size, false, true);
 
    res->cube_materials_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->Materials_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool, res->Materials_set_layout);
 
    Mat_offset = 0;
    Mat_size = NUM_CUBES * sizeof(VkdfMaterial);
@@ -1559,7 +1542,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                             false);
 
    res->Light_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->Light_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool, res->Light_set_layout);
 
    // Light description
    VkDeviceSize Light_offset = 0;
@@ -1586,7 +1569,7 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                             VK_SHADER_STAGE_VERTEX_BIT, false);
 
    res->shadow_map_mvp_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->shadow_map_mvp_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool, res->shadow_map_mvp_set_layout);
 
    VP_offset = 0;
    VP_size = sizeof(glm::mat4);
@@ -1611,9 +1594,9 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                                 VK_SHADER_STAGE_FRAGMENT_BIT);
 
    res->shadow_sampler_descriptor_set =
-      create_descriptor_set(ctx,
-                            res->sampler_pool,
-                            res->shadow_sampler_set_layout);
+      vkdf_descriptor_set_create(ctx,
+                                 res->sampler_pool,
+                                 res->shadow_sampler_set_layout);
    vkdf_descriptor_set_sampler_update(ctx,
                                       res->shadow_sampler_descriptor_set,
                                       res->shadow_map_sampler,
@@ -1629,7 +1612,8 @@ setup_descriptor_sets(VkdfContext *ctx, SceneResources *res)
                                             VK_SHADER_STAGE_VERTEX_BIT, false);
 
    res->ui_tile_mvp_descriptor_set =
-      create_descriptor_set(ctx, res->ubo_pool, res->ui_tile_mvp_set_layout);
+      vkdf_descriptor_set_create(ctx, res->ubo_pool,
+                                 res->ui_tile_mvp_set_layout);
 
    VkDeviceSize ui_tile_mvp_offset = 0;
    VkDeviceSize ui_tile_mvp_size = sizeof(glm::mat4);

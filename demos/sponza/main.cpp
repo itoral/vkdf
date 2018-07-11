@@ -327,23 +327,6 @@ create_ubo(VkdfContext *ctx, uint32_t size, uint32_t usage, uint32_t mem_props)
    return buf;
 }
 
-static VkDescriptorSet
-create_descriptor_set(VkdfContext *ctx,
-                      VkDescriptorPool pool,
-                      VkDescriptorSetLayout layout)
-{
-   VkDescriptorSet set;
-   VkDescriptorSetAllocateInfo alloc_info[1];
-   alloc_info[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-   alloc_info[0].pNext = NULL;
-   alloc_info[0].descriptorPool = pool;
-   alloc_info[0].descriptorSetCount = 1;
-   alloc_info[0].pSetLayouts = &layout;
-   VK_CHECK(vkAllocateDescriptorSets(ctx->device, alloc_info, &set));
-
-   return set;
-}
-
 static void
 init_ubos(SceneResources *res)
 {
@@ -1466,22 +1449,22 @@ create_sponza_texture_descriptor_sets(SceneResources *res)
        */
       if (m->opacity_tex_count == 0 || ENABLE_DEPTH_PREPASS) {
          res->pipelines.descr.obj_tex_set[i] =
-            create_descriptor_set(res->ctx,
-                                  res->descriptor_pool.sampler_pool,
-                                  res->pipelines.descr.obj_tex_layout);
+            vkdf_descriptor_set_create(res->ctx,
+                                       res->descriptor_pool.sampler_pool,
+                                       res->pipelines.descr.obj_tex_layout);
       } else {
          res->pipelines.descr.obj_tex_set[i] =
-            create_descriptor_set(res->ctx,
-                                  res->descriptor_pool.sampler_pool,
-                                  res->pipelines.descr.obj_tex_opacity_layout);
+            vkdf_descriptor_set_create(res->ctx,
+                                       res->descriptor_pool.sampler_pool,
+                                       res->pipelines.descr.obj_tex_opacity_layout);
       }
 
       if (ENABLE_DEPTH_PREPASS) {
          if (m->opacity_tex_count > 0) {
             res->pipelines.descr.depth_prepass_tex_set[i] =
-               create_descriptor_set(res->ctx,
-                                     res->descriptor_pool.sampler_pool,
-                                     res->pipelines.descr.depth_prepass_tex_layout);
+               vkdf_descriptor_set_create(res->ctx,
+                                          res->descriptor_pool.sampler_pool,
+                                          res->pipelines.descr.depth_prepass_tex_layout);
          }
       }
 
@@ -1682,9 +1665,9 @@ init_pipeline_descriptors(SceneResources *res,
 
    /* Camera view matrix */
    res->pipelines.descr.camera_view_set =
-      create_descriptor_set(res->ctx,
-                            res->descriptor_pool.static_ubo_pool,
-                            res->pipelines.descr.camera_view_layout);
+      vkdf_descriptor_set_create(res->ctx,
+                                 res->descriptor_pool.static_ubo_pool,
+                                 res->pipelines.descr.camera_view_layout);
 
    VkDeviceSize ubo_offset = 0;
    VkDeviceSize ubo_size = res->ubos.camera_view.size;
@@ -1695,9 +1678,9 @@ init_pipeline_descriptors(SceneResources *res,
 
    /* Object data */
    res->pipelines.descr.obj_set =
-      create_descriptor_set(res->ctx,
-                            res->descriptor_pool.static_ubo_pool,
-                            res->pipelines.descr.obj_layout);
+      vkdf_descriptor_set_create(res->ctx,
+                                 res->descriptor_pool.static_ubo_pool,
+                                 res->pipelines.descr.obj_layout);
 
    VkdfBuffer *obj_ubo = vkdf_scene_get_dynamic_object_ubo(res->scene);
    VkDeviceSize obj_ubo_size = vkdf_scene_get_dynamic_object_ubo_size(res->scene);
@@ -1720,9 +1703,9 @@ init_pipeline_descriptors(SceneResources *res,
 
    /* Light and shadow map descriptions */
    res->pipelines.descr.light_set =
-      create_descriptor_set(res->ctx,
-                            res->descriptor_pool.static_ubo_pool,
-                            res->pipelines.descr.light_layout);
+      vkdf_descriptor_set_create(res->ctx,
+                                 res->descriptor_pool.static_ubo_pool,
+                                 res->pipelines.descr.light_layout);
 
    VkdfBuffer *light_ubo = vkdf_scene_get_light_ubo(res->scene);
    vkdf_scene_get_light_ubo_range(res->scene, &ubo_offset, &ubo_size);
@@ -1742,9 +1725,9 @@ init_pipeline_descriptors(SceneResources *res,
 
    /* Shadow map sampler */
    res->pipelines.descr.shadow_map_sampler_set =
-      create_descriptor_set(res->ctx,
-                            res->descriptor_pool.sampler_pool,
-                            res->pipelines.descr.shadow_map_sampler_layout);
+      vkdf_descriptor_set_create(res->ctx,
+                                 res->descriptor_pool.sampler_pool,
+                                 res->pipelines.descr.shadow_map_sampler_layout);
 
    VkSampler sm_sampler;
    VkdfImage *sm_image;
@@ -1794,9 +1777,9 @@ init_pipeline_descriptors(SceneResources *res,
                                                    VK_SHADER_STAGE_FRAGMENT_BIT);
 
       res->pipelines.descr.gbuffer_tex_set =
-         create_descriptor_set(res->ctx,
-                               res->descriptor_pool.sampler_pool,
-                               res->pipelines.descr.gbuffer_tex_layout);
+         vkdf_descriptor_set_create(res->ctx,
+                                    res->descriptor_pool.sampler_pool,
+                                    res->pipelines.descr.gbuffer_tex_layout);
 
       res->gbuffer_sampler =
          vkdf_create_sampler(res->ctx,
@@ -2346,9 +2329,9 @@ create_debug_tile_pipeline(SceneResources *res)
                                                 VK_SHADER_STAGE_FRAGMENT_BIT);
 
    res->debug.pipeline.sampler_set =
-      create_descriptor_set(res->ctx,
-                            res->descriptor_pool.sampler_pool,
-                            res->debug.pipeline.sampler_set_layout);
+      vkdf_descriptor_set_create(res->ctx,
+                                 res->descriptor_pool.sampler_pool,
+                                 res->debug.pipeline.sampler_set_layout);
 
    res->debug.sampler =
          vkdf_create_sampler(res->ctx,
