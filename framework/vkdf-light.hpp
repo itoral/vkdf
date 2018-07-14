@@ -104,10 +104,17 @@ vkdf_light_set_position(VkdfLight *l, glm::vec3 pos)
 }
 
 glm::vec4 inline
-vkdf_light_get_position(VkdfLight *l)
+vkdf_light_get_position_and_type(VkdfLight *l)
 {
    assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
    return l->origin;
+}
+
+glm::vec3 inline
+vkdf_light_get_position(VkdfLight *l)
+{
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
+   return vec3(l->origin);
 }
 
 void inline
