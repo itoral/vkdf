@@ -437,6 +437,7 @@ struct _VkdfScene {
    /* HDR & Tone Mapping */
    struct {
       bool enabled;
+      bool tone_mapping_enabled;
 
       VkdfImage input;
       VkdfImage output;
@@ -1013,10 +1014,12 @@ vkdf_scene_enable_fxaa(VkdfScene *s,
 }
 
 inline void
-vkdf_scene_enable_hdr(VkdfScene *s, float exposure)
+vkdf_scene_enable_hdr(VkdfScene *s, bool enable_tone_mapping, float exposure)
 {
    s->hdr.enabled = true;
+   s->hdr.tone_mapping_enabled = enable_tone_mapping;
 
+   assert(enable_tone_mapping || exposure == 0.0f);
    assert(exposure >= 0.0f);
    s->hdr.exposure = exposure;
 }

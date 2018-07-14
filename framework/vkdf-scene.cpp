@@ -166,6 +166,7 @@ create_color_framebuffer_image(VkdfScene *s, bool hdr)
                             VK_IMAGE_ASPECT_COLOR_BIT,
                             VK_IMAGE_VIEW_TYPE_2D);
 }
+
 static VkdfImage
 create_depth_framebuffer_image(VkdfScene *s)
 {
@@ -4077,12 +4078,12 @@ prepare_scene_ssao(VkdfScene *s)
    prepare_ssao_rendering(s);
 }
 
-struct HdrPCB {
+struct ToneMappingPCB {
    float exposure;
 };
 
 static void
-record_hdr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
+record_tone_mapping_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
 {
    VkImageSubresourceRange subresource_range =
       vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
@@ -4113,13 +4114,13 @@ record_hdr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
                      s->hdr.pipeline.pipeline);
 
 
-   struct HdrPCB pcb;
+   struct ToneMappingPCB pcb;
    pcb.exposure = s->hdr.exposure;
 
    vkCmdPushConstants(cmd_buf,
                       s->hdr.pipeline.layout,
                       VK_SHADER_STAGE_FRAGMENT_BIT,
-                      0, sizeof(struct HdrPCB), &pcb);
+                      0, sizeof(struct ToneMappingPCB), &pcb);
 
    VkDescriptorSet descriptor_sets[] = {
       s->hdr.pipeline.input_set,
@@ -4136,10 +4137,24 @@ record_hdr_cmd_buf(VkdfScene *s, VkCommandBuffer cmd_buf)
    vkCmdEndRenderPass(cmd_buf);
 }
 
-static VkdfImage
-prepare_hdr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
+/**
+ * The post-processing pipeline should use HDR color buffers if HDR
+ * is enabled, but only if the HDR pass doesn't incorporate tone mapping,
+ * since in that case we expect to work with an LDR color buffer right
+ * after the tone-mapping pass.
+ */
+static inline bool
+should_use_hdr_color_buffer(VkdfScene *s)
 {
-   assert(s->hdr.enabled);
+   return s->hdr.enabled && !s->hdr.tone_mapping_enabled;
+}
+
+static VkdfImage
+prepare_tone_mapping(VkdfScene *s,
+                     VkCommandBuffer cmd_buf,
+                     const VkdfImage *input)
+{
+   assert(s->hdr.tone_mapping_enabled);
 
    /* Output image (tone mapping output) */
    s->hdr.output = create_color_framebuffer_image(s, false);
@@ -4171,7 +4186,7 @@ prepare_hdr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
    VkPushConstantRange pcb_range;
    pcb_range.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
    pcb_range.offset = 0;
-   pcb_range.size = sizeof(struct HdrPCB);
+   pcb_range.size = sizeof(struct ToneMappingPCB);
 
    VkPushConstantRange pcb_ranges[] = {
       pcb_range,
@@ -4242,7 +4257,7 @@ prepare_hdr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
                                       0, 1);
 
    /* Command buffer */
-   record_hdr_cmd_buf(s, cmd_buf);
+   record_tone_mapping_cmd_buf(s, cmd_buf);
 
    return s->hdr.output;
 }
@@ -4316,7 +4331,8 @@ prepare_fxaa(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
    assert(s->fxaa.enabled);
 
    /* Output image */
-   s->fxaa.output = create_color_framebuffer_image(s, false);
+   bool use_hdr = should_use_hdr_color_buffer(s);
+   s->fxaa.output = create_color_framebuffer_image(s, use_hdr);
 
    /* Render pass */
    s->fxaa.rp.renderpass =
@@ -4903,9 +4919,11 @@ prepare_ssr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
 
    /* ====== Base pass ====== */
 
-   /* Output image */
    s->ssr.base.input = *input;
-   s->ssr.base.output = create_color_framebuffer_image(s, false);
+
+   /* Output image */
+   bool use_hdr = should_use_hdr_color_buffer(s);
+   s->ssr.base.output = create_color_framebuffer_image(s, use_hdr);
 
    /* Texture samplers */
    s->ssr.linear_sampler =
@@ -5026,8 +5044,8 @@ prepare_ssr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
    /* ====== Blur pass ====== */
 
    s->ssr.blur.input = s->ssr.base.output;
-   s->ssr.blur.output_x = create_color_framebuffer_image(s, false);
-   s->ssr.blur.output = create_color_framebuffer_image(s, false);
+   s->ssr.blur.output_x = create_color_framebuffer_image(s, use_hdr);
+   s->ssr.blur.output = create_color_framebuffer_image(s, use_hdr);
 
    /* Render pass */
    s->ssr.blur.rp.renderpass =
@@ -5286,7 +5304,8 @@ prepare_brightness_filter(VkdfScene *s,
                           const VkdfImage *input)
 {
    /* Output image */
-   s->brightness.output = create_color_framebuffer_image(s, false);
+   bool use_hdr = should_use_hdr_color_buffer(s);
+   s->brightness.output = create_color_framebuffer_image(s, use_hdr);
 
    /* Render pass */
    s->brightness.rp.renderpass =
@@ -5448,9 +5467,9 @@ prepare_post_processing_render_passes(VkdfScene *s)
          output = *s->callbacks.postprocess_output;
    }
 
-   if (s->hdr.enabled) {
+   if (s->hdr.tone_mapping_enabled) {
       has_post_processing = true;
-      output = prepare_hdr(s, cmd_buf, &output);
+      output = prepare_tone_mapping(s, cmd_buf, &output);
    }
 
    if (s->ssr.enabled) {

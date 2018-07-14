@@ -1369,7 +1369,7 @@ init_scene(SceneResources *res)
    }
 
    if (ENABLE_HDR) {
-      vkdf_scene_enable_hdr(res->scene, HDR_EXPOSURE);
+      vkdf_scene_enable_hdr(res->scene, true, HDR_EXPOSURE);
    }
 
    vkdf_scene_enable_brightness_filter(res->scene, 1.0f);
