@@ -131,14 +131,14 @@ vkdf_light_set_direction(VkdfLight *l, glm::vec3 dir)
                   VKDF_LIGHT_CACHED_VIEW | VKDF_LIGHT_CACHED_VIEW_INV);
 }
 
-glm::vec4 inline
+glm::vec3 inline
 vkdf_light_get_direction(VkdfLight *l)
 {
    uint32_t light_type = vkdf_light_get_type(l);
    if (light_type == VKDF_LIGHT_DIRECTIONAL)
-      return l->origin;
+      return vec3(l->origin);
    else if (light_type == VKDF_LIGHT_SPOTLIGHT)
-      return l->spot.priv.dir;
+      return vec3(l->spot.priv.dir);
    assert(!"Light type does not have a direction vector");
 }
 
