@@ -1395,13 +1395,16 @@ init_light_sources(VkdfContext *ctx, SceneResources *res)
 {
    glm::vec4 pos = glm::vec4(-15.0f, 2.0f, -15.0f, 2.0f);
    glm::vec4 diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
-   glm::vec4 ambient = glm::vec4(0.02f, 0.02f, 0.02f, 1.0f);
+   glm::vec4 ambient = glm::vec4(0.01f, 0.01f, 0.01f, 1.0f);
    glm::vec4 specular = glm::vec4(1.0f, 1.0f, 1.0f, 0.0f);
    glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.01f, 0.0f);
+   glm::vec4 angle_attenuation = glm::vec4(1.0f, 0.01f, 0.001f, 0.0f);
 
    res->light =
       vkdf_light_new_spotlight(pos, DEG_TO_RAD(22.5f),
-                               diffuse, ambient, specular, attenuation);
+                               diffuse, ambient, specular,
+                               attenuation, angle_attenuation);
+
    vkdf_light_look_at(res->light, glm::vec3(0.0f, 0.0f, 0.0f));
 }
 

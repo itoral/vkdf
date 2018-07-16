@@ -815,12 +815,13 @@ init_lights(SceneResources *res)
    glm::vec4 ambient = glm::vec4(0.01f, 0.04f, 0.01f, 1.0f);
    glm::vec4 specular = glm::vec4(0.7f, 1.0f, 0.7f, 0.0f);
    glm::vec4 attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
+   glm::vec4 angle_attenuation = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
    float cutoff_angle = DEG_TO_RAD(45.0f);
 
    res->lights[idx] =
       vkdf_light_new_spotlight(origin, cutoff_angle,
                                diffuse, ambient, specular,
-                               attenuation);
+                               attenuation, angle_attenuation);
 
    vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 0.0f));
 
@@ -838,12 +839,13 @@ init_lights(SceneResources *res)
    ambient = glm::vec4(0.04f, 0.01f, 0.01f, 1.0f);
    specular = glm::vec4(1.0f, 0.7f, 0.7f, 0.0f);
    attenuation = glm::vec4(0.1f, 0.05f, 0.005f, 0.0f);
+   angle_attenuation = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
    cutoff_angle = DEG_TO_RAD(25.0f);
 
    res->lights[idx] =
       vkdf_light_new_spotlight(origin, cutoff_angle,
                                diffuse, ambient, specular,
-                               attenuation);
+                               attenuation, angle_attenuation);
 
    vkdf_light_look_at(res->lights[idx], glm::vec3(0.0f, 0.0f, 10.0f));
 

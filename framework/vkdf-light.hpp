@@ -35,11 +35,10 @@ typedef struct {
          glm::vec4 rot;
          glm::vec4 dir;            // Computed from rotation
       } priv;
+      glm::vec4 angle_attenuation; // .x = constant, .y = linear, .z = quadratic
       float cutoff;                // cosine of the spotlight's cutoff angle (half of apeture angle)
       float cutoff_angle;          // spotlight's cutoff angle (half of aperture angle)
-      float angle_dist_factor;     // angular distance to distance translation factor. Affects ambient light.
-      float ambient_clamp_factor;  // clamp factor for ambient light based on angular distance
-      float padding[0];            // Keep this struct 16-byte aligned
+      float padding[2];            // Keep this struct 16-byte aligned
    } spot;
 
    glm::mat4 view_matrix;       // View matrix for the light
@@ -72,7 +71,8 @@ vkdf_light_new_spotlight(glm::vec4 pos,
                          glm::vec4 diffuse,
                          glm::vec4 ambient,
                          glm::vec4 specular,
-                         glm::vec4 attenuation);
+                         glm::vec4 attenuation,
+                         glm::vec4 angle_attenuation);
 
 void inline
 vkdf_light_set_type(VkdfLight *l, uint32_t light_type)
@@ -203,6 +203,25 @@ vkdf_light_get_attenuation(VkdfLight *l)
 }
 
 void inline
+vkdf_light_set_angle_attenuation(VkdfLight *l, glm::vec4 attenuation)
+{
+   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
+
+   l->spot.angle_attenuation = attenuation;
+
+   uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
+   bitfield_set(&l->dirty, dirty_bits);
+}
+
+glm::vec4 inline
+vkdf_light_get_angle_attenuation(VkdfLight *l)
+{
+   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
+
+   return l->spot.angle_attenuation;
+}
+
+void inline
 vkdf_light_set_cutoff_angle(VkdfLight *l, float angle)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
@@ -269,40 +288,6 @@ vkdf_light_get_rotation(VkdfLight *l)
 {
    assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
    return l->spot.priv.rot;
-}
-
-void inline
-vkdf_light_set_angle_dist_factor(VkdfLight *l, float factor)
-{
-   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   l->spot.angle_dist_factor = factor;
-
-   uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
-   bitfield_set(&l->dirty, dirty_bits);
-}
-
-float inline
-vkdf_light_get_angle_dist_factor(VkdfLight *l)
-{
-   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   return l->spot.angle_dist_factor;
-}
-
-void inline
-vkdf_light_set_ambient_clamp_factor(VkdfLight *l, float factor)
-{
-   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   l->spot.ambient_clamp_factor = factor;
-
-   uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
-   bitfield_set(&l->dirty, dirty_bits);
-}
-
-float inline
-vkdf_light_get_ambient_clamp_factor(VkdfLight *l)
-{
-   assert(vkdf_light_get_type(l) == VKDF_LIGHT_SPOTLIGHT);
-   return l->spot.ambient_clamp_factor;
 }
 
 void inline

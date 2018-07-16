@@ -52,17 +52,17 @@ vkdf_light_new_spotlight(glm::vec4 pos,
                          glm::vec4 diffuse,
                          glm::vec4 ambient,
                          glm::vec4 specular,
-                         glm::vec4 attenuation)
+                         glm::vec4 attenuation,
+                         glm::vec4 angle_attenuation)
 {
    VkdfLight *l = g_new0(VkdfLight, 1);
    init_light(l, diffuse, ambient, specular, attenuation);
    l->origin = pos;
    l->origin.w = VKDF_LIGHT_SPOTLIGHT;
+   l->spot.angle_attenuation = angle_attenuation;
    l->spot.priv.rot = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
    l->spot.priv.dir =
       glm::vec4(vkdf_compute_viewdir(glm::vec3(l->spot.priv.rot)), 0.0f);
-   l->spot.angle_dist_factor = 50.0f;
-   l->spot.ambient_clamp_factor = 2.0f;
    vkdf_light_set_cutoff_angle(l, cutoff_angle);
    return l;
 }
