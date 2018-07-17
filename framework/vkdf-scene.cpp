@@ -6139,9 +6139,6 @@ check_collision_with_object(VkdfBox *box,
                             VkdfObject *obj,
                             bool do_mesh_check)
 {
-   /* TODO: implement collision against rotated models */
-   assert(obj->rot == glm::vec3(0.0f));
-
    /* If there is no collision against the top-level box, we are certain there
     * is no collision at all.
     */
