@@ -6184,21 +6184,63 @@ check_collision_with_object(VkdfBox *box,
    return false;
 }
 
+static bool
+check_tile_collision(VkdfScene *s, VkdfSceneTile *t, VkdfBox *box)
+{
+   if (t->obj_count == 0)
+      return false;
+
+   if (!vkdf_box_collision(box, &t->box))
+      return false;
+
+   /* The tile has subtiles. Keep going until we find the bottom-most
+    * sub-tiles that produce the collision.
+    */
+   if (t->subtiles) {
+      for (uint32_t i = 0; i < 8; i++) {
+         bool has_collision = check_tile_collision(s, &t->subtiles[i], box);
+         if (has_collision)
+            return true;
+      }
+
+      return false;
+   }
+
+   /* Found a collision in a bottom-most tile, now check for actual
+    * collision against the objects in it.
+    */
+   assert(!t->subtiles);
+
+   GList *set_iter = s->set_ids;
+   while (set_iter) {
+      const char *set_id = (const char *) set_iter->data;
+      VkdfSceneSetInfo *set_info =
+         (VkdfSceneSetInfo *) g_hash_table_lookup(t->sets, set_id);
+
+      GList *obj_iter = set_info->objs;
+      while (obj_iter) {
+         VkdfObject *obj = (VkdfObject *) obj_iter->data;
+         if (check_collision_with_object(box, obj, true))
+            return true;
+         obj_iter = g_list_next(obj_iter);
+      }
+
+      set_iter = g_list_next(set_iter);
+   }
+
+   return false;
+}
+
 bool
 vkdf_scene_check_camera_collision(VkdfScene *s)
 {
    VkdfBox *cam_box = vkdf_camera_get_collision_box(s->camera);
 
-   /* TODO: implement collision testing against static geometry*/
-#if 0
    /* Check collision against static geometry */
-   for (uint32_t i = 0; i < s->num_tiles.total; i++) {
-      VkdfSceneTile *t = &s->tiles[i];
-      if (vkdf_box_collision(cam_box, &t->box)) {
-         // TODO: check subtiles recursively, then check objects
-      }
+   for (uint32_t ti = 0; ti < s->num_tiles.total; ti++) {
+      if (check_tile_collision(s, &s->tiles[ti], cam_box))
+         return true;
    }
-#endif
 
    /* Check collision against dynamic geometry */
    GHashTableIter iter;
