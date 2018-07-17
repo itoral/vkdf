@@ -255,6 +255,9 @@ vkdf_scene_enable_deferred_rendering(VkdfScene *s,
 
       va_end(ap);
    }
+
+   /* Always compute eye-space light data in deferred mode */
+   s->compute_eye_space_light = true;
 }
 
 void
@@ -2002,6 +2005,12 @@ struct _shadow_map_ubo_data {
    uint32_t padding[2]; // Keep this struct 16-byte aligned
 };
 
+struct _light_eye_space_ubo_data {
+   glm::vec4 eye_pos;
+   glm::vec4 eye_dir;
+   uint32_t padding[0]; // Keep this struct 16-byte aligned
+};
+
 static void
 create_light_ubo(VkdfScene *s)
 {
@@ -2014,18 +2023,32 @@ create_light_ubo(VkdfScene *s)
    const uint32_t shadow_map_data_size =
       ALIGN(sizeof(struct _shadow_map_ubo_data) , 16);
 
-   /* Since our shadow map data comes after the light data, make sure it
-    * starts at a valid offset.
+   const uint32_t eye_space_data_size =
+      ALIGN(sizeof(struct _light_eye_space_ubo_data), 16);
+
+   /* Since we pack multiple data segments into the UBO we need to make sure
+    * theit offsets are properly aligned
     */
    VkDeviceSize ubo_offset_alignment =
       s->ctx->phy_device_props.limits.minUniformBufferOffsetAlignment;
 
    s->ubo.light.light_data_size = num_lights * light_data_size;
-   s->ubo.light.shadow_map_data_offset =
-      ALIGN(s->ubo.light.light_data_size, ubo_offset_alignment);
+   uint32_t buf_size = s->ubo.light.light_data_size;
+
+   s->ubo.light.shadow_map_data_offset = ALIGN(buf_size, ubo_offset_alignment);
    s->ubo.light.shadow_map_data_size = num_lights * shadow_map_data_size;
-   s->ubo.light.size = s->ubo.light.shadow_map_data_offset +
-                       s->ubo.light.shadow_map_data_size;
+   buf_size = s->ubo.light.shadow_map_data_offset +
+              s->ubo.light.shadow_map_data_size;
+
+   if (s->compute_eye_space_light) {
+      s->ubo.light.eye_space_data_offset = ALIGN(buf_size, ubo_offset_alignment);
+      s->ubo.light.eye_space_data_size = num_lights * eye_space_data_size;
+      buf_size = s->ubo.light.eye_space_data_offset +
+                 s->ubo.light.eye_space_data_size;
+   }
+
+   s->ubo.light.size = buf_size;
+
    s->ubo.light.buf = vkdf_create_buffer(s->ctx, 0,
                                          s->ubo.light.size,
                                          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
@@ -2949,6 +2972,17 @@ vkdf_scene_light_has_dirty_shadows(VkdfSceneLight *sl)
    return !skip_shadow_map_frame(sl);
 }
 
+static inline bool
+light_has_dirty_eye_space_data(VkdfLight *l, VkdfCamera *cam)
+{
+   /* FIXME: we can optimize this by type light:
+    * - directional only need eye-space updates for direction (origin)
+    * - positional only need eye-space updates for position (origin)
+    * - spotlights only need eye-space updates for position and direction
+    */
+   return vkdf_light_is_dirty(l) || vkdf_camera_is_dirty(cam);
+}
+
 static void
 record_dirty_light_resource_updates(VkdfScene *s)
 {
@@ -2956,19 +2990,56 @@ record_dirty_light_resource_updates(VkdfScene *s)
 
    uint32_t num_lights = s->lights.size();
 
+   VkdfCamera *cam = vkdf_scene_get_camera(s);
+   glm::mat4 view = vkdf_camera_get_view_matrix(cam);
+
    // FIXME: maybe a single update of the entire buffer is faster if we have
    // too many dirty lights
    VkDeviceSize light_inst_size = ALIGN(sizeof(VkdfLight), 16);
+   VkDeviceSize light_eye_space_size =
+      ALIGN(sizeof(struct _light_eye_space_ubo_data), 16);
+
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
-      if (!vkdf_light_is_dirty(sl->light))
-         continue;
 
-      assert(light_inst_size < 64 * 1024);
-      vkCmdUpdateBuffer(s->cmd_buf.update_resources,
-                        s->ubo.light.buf.buf,
-                        i * light_inst_size, light_inst_size,
-                        sl->light);
+      /* Base light data */
+      if (vkdf_light_is_dirty(sl->light)) {
+         assert(light_inst_size < 64 * 1024);
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->ubo.light.buf.buf,
+                           i * light_inst_size, light_inst_size,
+                           sl->light);
+      }
+
+      /* Eye-space light data */
+      if (s->compute_eye_space_light &&
+          light_has_dirty_eye_space_data(sl->light, cam)) {
+
+         struct _light_eye_space_ubo_data data;
+
+         glm::vec3 pos;
+         if (vkdf_light_get_type(sl->light) != VKDF_LIGHT_DIRECTIONAL) {
+            pos = vkdf_light_get_position(sl->light);
+            data.eye_pos = vec4(view * vec4(pos, 1.0f), sl->light->origin.w);
+         } else {
+            pos = vkdf_light_get_direction(sl->light);
+            data.eye_pos = vec4(view * vec4(pos, 0.0f), sl->light->origin.w);
+         }
+
+         if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT) {
+            glm::vec3 dir = vkdf_light_get_direction(sl->light);
+            data.eye_dir = vec4(view * vec4(dir, 0.0f), 0.0f);
+         }
+
+         VkDeviceSize offset =
+            s->ubo.light.eye_space_data_offset + i * light_eye_space_size;
+
+         assert(light_eye_space_size < 64 * 1024);
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->ubo.light.buf.buf,
+                           offset, light_eye_space_size,
+                           &data);
+      }
    }
 
    s->cmd_buf.have_resource_updates = true;
@@ -3211,6 +3282,8 @@ update_dirty_lights(VkdfScene *s)
    if (num_lights == 0)
       return;
 
+   VkdfCamera *cam = vkdf_scene_get_camera(s);
+
    // Go through the list of lights and check if they are dirty and if they
    // require new shadow maps. If they require new shadow maps, record
    // the command buffers for them. We thread the shadow map checks per light.
@@ -3235,8 +3308,10 @@ update_dirty_lights(VkdfScene *s)
          vkdf_light_set_dirty_shadows(l, true);
       }
 
-      if (vkdf_light_is_dirty(l))
+      if (vkdf_light_is_dirty(l) ||
+          (s->compute_eye_space_light && light_has_dirty_eye_space_data(l, cam))) {
          s->lights_dirty = true;
+      }
 
       if (vkdf_scene_light_has_dirty_shadows(sl))
          sl->dirty_frustum = true;

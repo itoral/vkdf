@@ -32,9 +32,10 @@ layout(std140, set = 0, binding = 1) uniform ubo_shadow_map_data {
    ShadowMapData shadow_map_data;
 } SMD;
 
-layout(std140, set = 0, binding = 2) uniform ubo_light_eye_dir {
+layout(std140, set = 0, binding = 2) uniform ubo_light_eye_space_data {
+   vec4 eye_pos;
    vec4 eye_dir;
-} LD;
+} LESD;
 
 layout(set = 1, binding = 0) uniform sampler2DShadow shadow_map;
 

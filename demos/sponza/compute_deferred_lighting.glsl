@@ -5,7 +5,7 @@
       out_color = vec4(0.2, 0.4, 0.8, 1.0);
    } else {
       Light light = L.sun;
-      light.pos = LD.eye_dir;
+      light.pos = LESD.eye_pos;
 
       // Reconstruct eye-space position from depth buffer
       float eye_position_z = compute_eye_z_from_depth(tex_depth, in_uv, PCB.Proj);

@@ -557,6 +557,8 @@ struct _VkdfScene {
    uint32_t static_shadow_caster_count; // Number of static objects that are shadow casters
    bool has_shadow_caster_lights;       // If we have any static objects that can cast shadows
 
+   bool compute_eye_space_light;        // Produce and update eye-space light UBO data
+
    /** 
     * active    : list of secondary command buffers that are active (that is,
     *             they are associated with a currently visible tile).
@@ -648,6 +650,8 @@ struct _VkdfScene {
          VkDeviceSize light_data_size;
          VkDeviceSize shadow_map_data_offset;
          VkDeviceSize shadow_map_data_size;
+         VkDeviceSize eye_space_data_offset;
+         VkDeviceSize eye_space_data_size;
          VkDeviceSize size;
       } light;
       struct {
@@ -846,6 +850,15 @@ vkdf_scene_get_shadow_map_ubo_range(VkdfScene *s,
 {
    *offset = s->ubo.light.shadow_map_data_offset;
    *size = s->ubo.light.shadow_map_data_size;
+}
+
+inline void
+vkdf_scene_get_light_eye_space_data_ubo_range(VkdfScene *s,
+                                              VkDeviceSize *offset,
+                                              VkDeviceSize *size)
+{
+   *offset = s->ubo.light.eye_space_data_offset;
+   *size = s->ubo.light.eye_space_data_size;
 }
 
 inline VkSampler
@@ -1095,4 +1108,9 @@ vkdf_scene_add_invisible_wall_list(VkdfScene *s,
       vkdf_scene_add_invisible_wall(s, &box_list[i]);
 }
 
+inline void
+vkdf_scene_enable_eye_space_light_data(VkdfScene *s)
+{
+   s->compute_eye_space_light = true;
+}
 #endif

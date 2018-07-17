@@ -246,10 +246,6 @@ typedef struct {
          VkdfBuffer buf;
          VkDeviceSize size;
       } camera_view;
-      struct {
-         VkdfBuffer buf;
-         VkDeviceSize size;
-      } light_eye_dir;
    } ubos;
 
    struct {
@@ -336,16 +332,6 @@ init_ubos(SceneResources *res)
                                           res->ubos.camera_view.size,
                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-
-   // Light's direction in eye space (deferred only)
-   if (ENABLE_DEFERRED_RENDERING) {
-      res->ubos.light_eye_dir.size = sizeof(glm::vec4);
-      res->ubos.light_eye_dir.buf =
-         create_ubo(res->ctx,
-                    res->ubos.light_eye_dir.size,
-                    VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-   }
 }
 
 void
@@ -430,18 +416,6 @@ record_update_resources_command(VkdfContext *ctx,
       vkCmdUpdateBuffer(cmd_buf,
                         res->ubos.camera_view.buf.buf,
                         0, sizeof(glm::mat4), &view[0][0]);
-      has_updates = true;
-   }
-
-   // Update light's eye-space view dir
-   if (ENABLE_DEFERRED_RENDERING) {
-      glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
-      glm::vec3 dir = vec3(view * res->light->origin);
-      vkdf_vec3_normalize(&dir);
-      glm::vec4 light_eye_dir = vec4(dir, res->light->origin.w);
-      vkCmdUpdateBuffer(cmd_buf,
-                        res->ubos.light_eye_dir.buf.buf,
-                        0, sizeof(glm::vec4), &light_eye_dir);
       has_updates = true;
    }
 
@@ -1758,11 +1732,12 @@ init_pipeline_descriptors(SceneResources *res,
       pcb_recons_range.size = sizeof(PCBDataPosRecons);
 
       /* Light eye-space direction */
-      ubo_offset = 0;
-      ubo_size = res->ubos.light_eye_dir.size;
+      vkdf_scene_get_light_eye_space_data_ubo_range(res->scene,
+                                                    &ubo_offset, &ubo_size);
+
       vkdf_descriptor_set_buffer_update(res->ctx,
                                         res->pipelines.descr.light_set,
-                                        res->ubos.light_eye_dir.buf.buf,
+                                        light_ubo->buf,
                                         2, 1, &ubo_offset, &ubo_size, false, true);
 
       /* textures: depth + gbuffer + ssao */
@@ -2723,11 +2698,6 @@ destroy_ubos(SceneResources *res)
 {
    vkDestroyBuffer(res->ctx->device, res->ubos.camera_view.buf.buf, NULL);
    vkFreeMemory(res->ctx->device, res->ubos.camera_view.buf.mem, NULL);
-
-   if (ENABLE_DEFERRED_RENDERING) {
-      vkDestroyBuffer(res->ctx->device, res->ubos.light_eye_dir.buf.buf, NULL);
-      vkFreeMemory(res->ctx->device, res->ubos.light_eye_dir.buf.mem, NULL);
-   }
 }
 
 static void
