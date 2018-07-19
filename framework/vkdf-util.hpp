@@ -94,6 +94,9 @@ vkdf_compute_rotation_matrix(glm::vec3 rot);
 glm::vec3
 vkdf_compute_viewdir(glm::vec3 rot);
 
+glm::mat4
+vkdf_compute_model_matrix(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale);
+
 inline void
 vkdf_color_clear_set(VkClearValue *value, const glm::vec4 &color)
 {

@@ -139,3 +139,26 @@ vkdf_compute_viewdir(glm::vec3 rot)
 
    return v2;
 }
+
+/**
+ * Computes a model matrix
+ */
+glm::mat4
+vkdf_compute_model_matrix(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale)
+{
+   glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
+
+   if (rot.x != 0.0f || rot.y != 0.0f || rot.z != 0.0f) {
+      glm::vec3 rot_rad = glm::vec3(DEG_TO_RAD(rot.x),
+                                    DEG_TO_RAD(rot.y),
+                                    DEG_TO_RAD(rot.z));
+      glm::tquat<float> quat = glm::quat(rot_rad);
+      glm::mat4 rot_matrix = glm::toMat4(quat);
+      m = m * rot_matrix;
+   }
+
+   if (scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f)
+      m = glm::scale(m, scale);
+
+   return m;
+}
