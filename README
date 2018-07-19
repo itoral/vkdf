@@ -77,4 +77,18 @@ All the demos are under the demos/ directory. For example, to execute the
 $ cd demos/triangle
 $ ./triangle
 
+Troubleshooting
+-----------------------------------
+
+Many shaders are generated with a python script which implements a rudimentary
+form of #include for GLSL shaders. This feature is very basic and won't
+detect the case where the included file has been modified and regenerate the
+the shader during the make stage, which can lead to broken rendering. To avoid
+this, after pulling updates from the repository (or modifying included GLSL
+files), it is recommended to clean the build and re-build the project so the
+generated shader files are re-generated again:
+
+$ make clean
+$ make -j
+
 Enjoy!
