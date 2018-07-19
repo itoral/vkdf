@@ -2011,6 +2011,16 @@ struct _light_eye_space_ubo_data {
    uint32_t padding[0]; // Keep this struct 16-byte aligned
 };
 
+/**
+ * Creates a UBO with information about light sources, including:
+ * 1. General light source description information (type, position, etc)
+ * 2. Information about shadow mapping for each ligh source
+ * 3. Eye-space light information (position, direction).
+ *
+ * Each of these is stored is put at a different offset in the UBO. Applications
+ * can ask via API about the start offset and size of each segment of data
+ * so they can bind the parts they want in shaders.
+ */
 static void
 create_light_ubo(VkdfScene *s)
 {
