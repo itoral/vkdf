@@ -68,19 +68,8 @@ vkdf_object_get_model_matrix(VkdfObject *obj)
    if (!obj->dirty_model_matrix)
       return obj->model_matrix;
 
-   obj->model_matrix = glm::translate(glm::mat4(1.0f), obj->pos);
-
-   if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
-      glm::vec3 rot = glm::vec3(DEG_TO_RAD(obj->rot.x),
-                                DEG_TO_RAD(obj->rot.y),
-                                DEG_TO_RAD(obj->rot.z));
-      glm::tquat<float> quat = glm::quat(rot);
-      glm::mat4 rot_matrix = glm::toMat4(quat);
-      obj->model_matrix = obj->model_matrix * rot_matrix;
-   }
-
-   if (obj->scale.x != 1.0f || obj->scale.y != 1.0f || obj->scale.z != 1.0f)
-      obj->model_matrix = glm::scale(obj->model_matrix, obj->scale);
+   obj->model_matrix =
+      vkdf_compute_model_matrix(obj->pos, obj->rot, obj->scale);
 
    vkdf_object_set_dirty_model_matrix(obj, false);
    return obj->model_matrix;
