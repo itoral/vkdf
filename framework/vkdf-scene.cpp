@@ -2015,8 +2015,7 @@ static void
 create_light_ubo(VkdfScene *s)
 {
    uint32_t num_lights = s->lights.size();
-   if (num_lights == 0)
-      return;
+   assert(num_lights > 0);
 
    const uint32_t light_data_size = ALIGN(sizeof(VkdfLight), 16);
 
@@ -2065,7 +2064,7 @@ create_light_ubo(VkdfScene *s)
  * draw correct instance counts when we render each set to the the shadow map.
  */
 static void
-create_static_shadow_map_ubo(VkdfScene *s)
+create_static_object_shadow_map_ubo(VkdfScene *s)
 {
    if (s->static_shadow_caster_count == 0)
       return;
@@ -2120,7 +2119,7 @@ create_static_shadow_map_ubo(VkdfScene *s)
 }
 
 static void
-create_dynamic_shadow_map_ubo(VkdfScene *s)
+create_dynamic_object_shadow_map_ubo(VkdfScene *s)
 {
    s->dynamic.ubo.shadow_map.inst_size = ALIGN(sizeof(glm::mat4), 16);
 
@@ -2251,12 +2250,6 @@ prepare_scene_objects(VkdfScene *s)
 
    create_dynamic_object_ubo(s);
    create_dynamic_material_ubo(s);
-
-   create_light_ubo(s);
-   if (s->has_shadow_caster_lights) {
-      create_static_shadow_map_ubo(s);
-      create_dynamic_shadow_map_ubo(s);
-   }
 
    s->dirty = false;
 }
@@ -3394,19 +3387,33 @@ update_dirty_lights(VkdfScene *s)
 
 /**
  * Prepares state and resources required by light sources:
- * - Prepares rendering resources for shadow maps
+ * - Creates UBO data for light sources
+ * - Setups static and dynamic object UBOs for shadow map rendering
+ * - Creates rendering ersources for shadow maps (pipelines, render passes,
+ *   framebuffers, etc).
  */
 static void
 prepare_scene_lights(VkdfScene *s)
 {
+   uint32_t num_lights = s->lights.size();
+   if (num_lights == 0)
+      return;
+
+   // Create light source data UBO
+   create_light_ubo(s);
+
    if (!s->has_shadow_caster_lights)
       return;
+
+   // Create static & dynamic shadow map object UBOs
+   create_static_object_shadow_map_ubo(s);
+   create_dynamic_object_shadow_map_ubo(s);
 
    // Create shared rendering resources for shadow maps
    create_shadow_map_renderpass(s);
    create_shadow_map_pipelines(s);
 
-   // Create per-light resources
+   // Create per-light shadow map resources
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
       if (vkdf_light_casts_shadows(s->lights[i]->light))
