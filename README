@@ -66,6 +66,11 @@ do this, from the root diectory of the VKDF source, do:
 
 $ export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$PWD/framework/.libs
 
+It is also necessary to export an environment variable with the path to the
+vkdf directory:
+
+export VKDF_HOME="<path-to-vkdf-directory>"
+
 All the demos are under the demos/ directory. For example, to execute the
 'triangle' demo you should do:
 

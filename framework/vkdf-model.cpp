@@ -9,6 +9,44 @@ vkdf_model_new()
    return model;
 }
 
+static VkdfModel *
+create_model_with_mesh(VkdfContext *ctx, VkdfMesh *mesh)
+{
+   mesh->material_idx = -1;
+   VkdfModel *model = vkdf_model_new();
+   vkdf_model_add_mesh(model, mesh);
+   return model;
+}
+
+VkdfModel *
+vkdf_cube_model_new(VkdfContext *ctx)
+{
+   VkdfMesh *mesh = vkdf_cube_mesh_new(ctx);
+   return create_model_with_mesh(ctx, mesh);
+}
+
+VkdfModel *
+vkdf_sphere_model_new(VkdfContext *ctx)
+{
+   const char *vkdf_path = getenv("VKDF_HOME");
+   char *path = g_strdup_printf("%s/data/models/sphere.obj", vkdf_path);
+   VkdfModel *model = vkdf_model_load(path);
+   model->materials.clear();
+   g_free(path);
+   return model;
+}
+
+VkdfModel *
+vkdf_cone_model_new(VkdfContext *ctx)
+{
+   const char *vkdf_path = getenv("VKDF_HOME");
+   char *path = g_strdup_printf("%s/data/models/cone.obj", vkdf_path);
+   VkdfModel *model = vkdf_model_load(path);
+   model->materials.clear();
+   g_free(path);
+   return model;
+}
+
 static VkdfMesh *
 process_mesh(const aiScene *scene, const aiMesh *mesh)
 {

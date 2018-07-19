@@ -681,6 +681,9 @@ vkdf_init(VkdfContext *ctx,
           bool resizable,
           bool enable_validation)
 {
+   if (getenv("VKDF_HOME") == NULL)
+      vkdf_fatal("VKDF_HOME environment variable is not set.");
+
    memset(ctx, 0, sizeof(VkdfContext));
 
    vkdf_platform_init(&ctx->platform);

@@ -65,6 +65,15 @@ vkdf_model_load(const char *file);
 VkdfModel *
 vkdf_model_new();
 
+VkdfModel *
+vkdf_cube_model_new(VkdfContext *ctx);
+
+VkdfModel *
+vkdf_sphere_model_new(VkdfContext *ctx);
+
+VkdfModel *
+vkdf_cone_model_new(VkdfContext *ctx);
+
 void
 vkdf_model_free(VkdfContext *ctx, VkdfModel *model);
 
