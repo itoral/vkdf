@@ -86,6 +86,7 @@ vkdf_model_add_mesh(VkdfModel *model, VkdfMesh *mesh)
 inline void
 vkdf_model_add_material(VkdfModel *model, VkdfMaterial *material)
 {
+   assert(material->shininess >= 1.0f);
    model->materials.push_back(*material);
 }
 
