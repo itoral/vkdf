@@ -113,6 +113,69 @@ vkdf_light_get_view_matrix_inv(VkdfLight *l)
    return &l->view_matrix_inv;
 }
 
+/**
+ * Gets the scale that we need to apply to a unit-sized model to represent
+ * the geometry of the 3D space volume affected by a light source.
+ *
+ * The unit model for point lights is a sphere with radius=1.0 positioned
+ * at the light's origin.
+ *
+ * The unit model for a spotlight is a cone with height=1.0 and base
+ * radius=1.0 with the tip of the cone positioned at the light's origin.
+ *
+ * Since directional light's reach everywhere their volume is infinite. We
+ * could represent this with a cube or a sphere and a very large scale
+ * but instead we simply do not provide a volume for them. Applications already
+ * know that their reach is infinite so they don't need us to provide a volume
+ * for them.
+ */
+glm::vec3
+vkdf_light_get_volume_scale(VkdfLight *l)
+{
+   const float constant  = l->attenuation.x;
+   const float linear    = l->attenuation.y;
+   const float quadratic = l->attenuation.z;
+
+   const glm::vec4 color = l->diffuse;
+   const float light_max = l->intensity * MAX2(MAX2(color.r, color.g), color.b);
+   const float light_cutoff = 0.01f; // The volume extends up to this intensity
+
+   const float distance =
+      (-linear + sqrtf(linear * linear - 4.0f * quadratic *
+                       (constant - (1.0f / light_cutoff) * light_max))) /
+      (2.0f * quadratic);
+
+   switch (vkdf_light_get_type(l)) {
+   case VKDF_LIGHT_POINT:
+      return glm::vec3(distance);
+   case VKDF_LIGHT_SPOTLIGHT: {
+      /* The height of the cone (Z-scale) is determined by attenuation. Scale
+       * XY is determined by the radius of the cone (which is function of the
+       * cone's height) at its base:
+       *
+       * tan(ang) = radius(height) / height
+       * radius(height) = tan(ang) * height
+       *
+       * For the unit (non-scaled) cone, the angle is 45 grad and the height
+       * is the same as the radius for all values of height.
+       *
+       * Therefore, the scale we need to apply to the radius is:
+       *
+       * scale = radius_cone(distance) / radius_unit_cone(distance)
+       * scale = tan(ang) * distance / distance = tan(ang)
+       *
+       * FIXME: We should incorporate the angle attenuation here to reduce
+       *        XY scale.
+       */
+      float t = tanf(l->spot.cutoff_angle);
+      return glm::vec3(t * distance, t * distance, distance);
+   }
+   default:
+      assert(!"Invalid light type");
+      break;
+   }
+}
+
 void
 vkdf_light_free(VkdfLight *light)
 {

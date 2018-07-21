@@ -369,6 +369,9 @@ vkdf_light_get_intensity(VkdfLight *l)
    return l->intensity;
 }
 
+glm::vec3
+vkdf_light_get_volume_scale(VkdfLight *l);
+
 void
 vkdf_light_free(VkdfLight *light);
 
