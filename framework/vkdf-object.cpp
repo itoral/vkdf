@@ -8,6 +8,8 @@ init_object(VkdfObject *obj, const glm::vec3 &pos)
    obj->rot = glm::vec3(0.0f, 0.0f, 0.0f);
    obj->scale = glm::vec3(1.0f, 1.0f, 1.0f);
 
+   memset(obj->priv_data.i32, -1, sizeof(obj->priv_data));
+
    obj->dirty = true;
    obj->dirty_model_matrix = true;
    obj->dirty_box = true;

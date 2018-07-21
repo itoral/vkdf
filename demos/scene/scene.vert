@@ -14,6 +14,10 @@ layout(std140, set = 0, binding = 0) uniform ubo_camera {
 struct ObjData {
    mat4 Model;
    uint mat_idx;
+   uint model_idx;
+   uint receives_shadows;
+   uint padding;
+   uvec4 priv_data;
 };
 
 layout(std140, set = 1, binding = 0) uniform ubo_obj_inst_data {

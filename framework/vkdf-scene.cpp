@@ -1393,7 +1393,9 @@ compute_light_volume_transforms(VkdfLight *light,
  * of light volumes.
  */
 static VkdfObject *
-add_light_volume_object_to_scene(VkdfScene *s, VkdfLight *light)
+add_light_volume_object_to_scene(VkdfScene *s,
+                                 VkdfLight *light,
+                                 uint32_t light_idx)
 {
    VkdfModel *model;
    const char *key;
@@ -1407,6 +1409,11 @@ add_light_volume_object_to_scene(VkdfScene *s, VkdfLight *light)
    vkdf_object_set_scale(obj, scale);
    vkdf_object_set_material_idx_base(obj, 0);
    vkdf_object_set_dynamic(obj, true);
+
+   /* When applying lighting we render the light volumes and we need to know
+    * to which light they correspond in the light UBO
+    */
+   obj->priv_data.u32[0] = light_idx;
 
    vkdf_scene_add_object(s, key, obj);
 
@@ -1431,8 +1438,9 @@ vkdf_scene_add_light(VkdfScene *s,
 
    slight->dirty_frustum = true;
 
+   const uint32_t light_idx = s->lights.size();
    if (vkdf_light_get_type(light) != VKDF_LIGHT_DIRECTIONAL)
-      slight->volume_obj = add_light_volume_object_to_scene(s, light);
+      slight->volume_obj = add_light_volume_object_to_scene(s, light, light_idx);
 
    s->lights.push_back(slight);
 }
@@ -2032,12 +2040,14 @@ static void
 create_static_object_ubo(VkdfScene *s)
 {
    // Per-instance data: model matrix, base material index, model index,
-   // receives shadows
+   // receives shadows, priv_data
    uint32_t num_objects = vkdf_scene_get_static_object_count(s);
    if (num_objects == 0)
       return;
 
-   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
+   s->ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) +
+                                4 * sizeof(uint32_t) +
+                                4 * sizeof(uint32_t), 16);
    s->ubo.obj.size = s->ubo.obj.inst_size * num_objects;
    s->ubo.obj.buf =
       vkdf_create_buffer(s->ctx, 0,
@@ -2091,6 +2101,12 @@ create_static_object_ubo(VkdfScene *s)
 
                offset = ALIGN(offset, 16);
 
+               // Private data
+               memcpy(mem + offset, &obj->priv_data, sizeof(obj->priv_data));
+               offset += sizeof(obj->priv_data);
+
+               offset = ALIGN(offset, 16);
+
                iter = g_list_next(iter);
             }
          }
@@ -2107,9 +2123,10 @@ static void
 create_dynamic_object_ubo(VkdfScene *s)
 {
    // Per-instance data: model matrix, base material index,
-   // model index, receives shadows
-   s->dynamic.ubo.obj.inst_size =
-      ALIGN(sizeof(glm::mat4) + 3 * sizeof(uint32_t), 16);
+   // model index, receives shadows, priv_data
+   s->dynamic.ubo.obj.inst_size = ALIGN(sizeof(glm::mat4) +
+                                        4 * sizeof(uint32_t) +
+                                        4 * sizeof(uint32_t), 16);
 
    s->dynamic.ubo.obj.host_buf =
       g_new(uint8_t, MAX_DYNAMIC_OBJECTS * s->dynamic.ubo.obj.inst_size);
@@ -5948,6 +5965,13 @@ update_dirty_objects(VkdfScene *s)
             memcpy(obj_mem + obj_offset,
                    &receives_shadows, sizeof(uint32_t));
             obj_offset += sizeof(uint32_t);
+
+            obj_offset = ALIGN(obj_offset, 16);
+
+            // Private data
+            memcpy(obj_mem + obj_offset,
+                   &obj->priv_data, sizeof(obj->priv_data));
+            obj_offset += sizeof(obj->priv_data);
 
             obj_offset = ALIGN(obj_offset, 16);
 

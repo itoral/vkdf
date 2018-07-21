@@ -35,6 +35,12 @@ typedef struct {
 
    bool receives_shadows;
    bool casts_shadows;
+
+   union {
+      uint32_t u32[4];
+      int32_t  i32[4];
+      float    f32[4];
+   } priv_data;
 } VkdfObject;
 
 #define SET_FIELD(obj, field, value)   \
