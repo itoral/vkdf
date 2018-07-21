@@ -451,6 +451,25 @@ vkdf_scene_new(VkdfContext *ctx,
    s->rt.height = fb_height;
    s->rt.present_filter = VK_FILTER_NEAREST;
 
+   /* Pre-set models */
+   VkdfMaterial default_material;
+   default_material.diffuse = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+   default_material.ambient = glm::vec4(0.25f, 0.25f, 0.25f, 1.0f);
+   default_material.specular = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+   default_material.shininess = 1.0;
+
+   s->model.cone = vkdf_cone_model_new(s->ctx);
+   s->model.cone->meshes[0]->material_idx = 0;
+   vkdf_model_add_material(s->model.cone, &default_material);
+   vkdf_model_fill_vertex_buffers(s->ctx, s->model.cone, true);
+   vkdf_model_compute_box(s->model.cone);
+
+   s->model.sphere = vkdf_sphere_model_new(s->ctx);
+   s->model.sphere->meshes[0]->material_idx = 0;
+   vkdf_model_add_material(s->model.sphere, &default_material);
+   vkdf_model_fill_vertex_buffers(s->ctx, s->model.sphere, true);
+   vkdf_model_compute_box(s->model.sphere);
+
    return s;
 }
 
@@ -497,6 +516,13 @@ destroy_light(VkdfScene *s, VkdfSceneLight *slight)
    vkdf_light_free(slight->light);
    destroy_light_shadow_map(s, slight);
    g_free(slight);
+}
+
+static void
+destroy_models(VkdfScene *s)
+{
+   vkdf_model_free(s->ctx, s->model.sphere);
+   vkdf_model_free(s->ctx, s->model.cone);
 }
 
 static void
@@ -923,6 +949,8 @@ vkdf_scene_free(VkdfScene *s)
 
    vkDestroyDescriptorPool(s->ctx->device, s->ubo.static_pool, NULL);
    vkDestroyDescriptorPool(s->ctx->device, s->sampler.pool, NULL);
+
+   destroy_models(s);
 
    g_free(s);
 }

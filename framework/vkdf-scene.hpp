@@ -700,6 +700,11 @@ struct _VkdfScene {
    struct {
       std::vector<VkdfBox> list;
    } wall;
+
+   struct {
+      VkdfModel *sphere;
+      VkdfModel *cone;
+   } model;
 };
 
 VkdfScene *
