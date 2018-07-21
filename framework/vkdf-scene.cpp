@@ -6159,10 +6159,6 @@ scene_update(VkdfScene *s)
    if (s->callbacks.update_state)
       s->callbacks.update_state(s->callbacks.data);
 
-   // Record the gbuffer merge command if needed
-   if (s->rp.do_deferred && !s->cmd_buf.gbuffer_merge)
-      prepare_scene_gbuffer_merge_command_buffer(s);
-
    // Check if any fences have been signaled and if so free any disposable
    // command buffers that were pending execution on signaled fences
    if (check_fences(s))
@@ -6182,6 +6178,20 @@ scene_update(VkdfScene *s)
 
    // At this point we are done recording resource updates
    stop_recording_resource_updates(s);
+
+   // Record the gbuffer merge command if needed. We have to do this after
+   // updating dirty lights and objects so that applications have access
+   // to the updated list of visible light volumes (dynamic objects)
+   if (s->rp.do_deferred) {
+      /* FIXME: we don't need to re-record the command buffer if the list
+       * of visible light volumes hasn't changed
+       */
+      if (s->cmd_buf.gbuffer_merge) {
+         new_inactive_cmd_buf(s, 0, s->cmd_buf.gbuffer_merge);
+         s->cmd_buf.gbuffer_merge = 0;
+      }
+      prepare_scene_gbuffer_merge_command_buffer(s);
+   }
 
    // If the camera didn't change, then our active tiles remain the same and
    // we don't need to re-record secondaries for them
