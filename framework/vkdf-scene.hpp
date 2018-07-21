@@ -15,6 +15,9 @@
 
 const uint32_t GBUFFER_MAX_SIZE = 8;
 
+extern const char *VKDF_SCENE_LIGHT_VOL_POINT_ID;
+extern const char *VKDF_SCENE_LIGHT_VOL_SPOT_ID;
+
 /* Fixed GBuffer slot indices
  *
  * We don't reserve a slot for eye-space positions. Applications can create
@@ -82,6 +85,10 @@ typedef struct {
 
 typedef struct {
    VkdfLight *light;
+
+   // A scene object representing the light's volume
+   VkdfObject *volume_obj;
+
    struct {
       VkdfSceneShadowSpec spec;
 

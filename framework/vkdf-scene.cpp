@@ -53,6 +53,9 @@ static const uint32_t MAX_DYNAMIC_OBJECTS     = 1024;
 static const uint32_t MAX_DYNAMIC_MODELS      =  128;
 static const uint32_t MAX_DYNAMIC_MATERIALS   =  MAX_DYNAMIC_MODELS * MAX_MATERIALS_PER_MODEL;
 
+const char *VKDF_SCENE_LIGHT_VOL_POINT_ID = "_VKDF_SCENE_LIGHT_VOL_POINT";
+const char *VKDF_SCENE_LIGHT_VOL_SPOT_ID = "_VKDF_SCENE_LIGHT_VOL_SPOT";
+
 struct FreeCmdBufInfo {
    uint32_t num_commands;
    VkCommandBuffer cmd_buf[2];
@@ -1318,6 +1321,98 @@ vkdf_scene_light_update_shadow_spec(VkdfScene *s,
    }
 }
 
+static void
+get_light_volume_model(VkdfScene *s,
+                       VkdfLight *light,
+                       VkdfModel **model, const char **key)
+{
+   switch (vkdf_light_get_type(light)) {
+   case VKDF_LIGHT_POINT:
+      *key = VKDF_SCENE_LIGHT_VOL_POINT_ID;
+      *model = s->model.sphere;
+      break;
+   case VKDF_LIGHT_SPOTLIGHT:
+      *key = VKDF_SCENE_LIGHT_VOL_SPOT_ID;
+      *model = s->model.cone;
+      break;
+   default:
+      assert(!"Invalid light type");
+      break;
+   }
+}
+
+static void
+compute_light_volume_transforms(VkdfLight *light,
+                                glm::vec3 *pos,
+                                glm::vec3 *rot,
+                                glm::vec3 *scale)
+{
+   switch (vkdf_light_get_type(light)) {
+   case VKDF_LIGHT_POINT:
+      *pos = vkdf_light_get_position(light);
+      *rot = glm::vec3(0.0f);
+      *scale = vkdf_light_get_volume_scale(light);
+      break;
+   case VKDF_LIGHT_SPOTLIGHT:
+      *pos = vkdf_light_get_position(light);
+      *rot = vkdf_light_get_rotation(light);
+      *scale = vkdf_light_get_volume_scale(light);
+      break;
+   default:
+      *pos = glm::vec3(0.0f);
+      *rot = glm::vec3(0.0f);
+      *scale = glm::vec3(1.0f);
+      assert(!"Invalid light type");
+      break;
+   }
+}
+
+/**
+ * Adds a scene object representing the geometry of the 3D volume
+ * affeted by the light source. The volumes are added under specific categories
+ * so applications know what they are and how to deal with them in scene
+ * callbacks.
+ *
+ * These volume objects are useful to optimize the lighting pass in deferred
+ * rendering. The idea is that in the lighting pass (gbuffer-merge), we
+ * render the light volumes to rasterize the screen-space pixels affected by
+ * the light and only run the lighting computations for those pixels.
+ *
+ * Because directional lights have infinite reach, applications always need to
+ * do lighting for all pixels for them, so instead of adding an infinite volume
+ * to represent them we just don't add any volume at all and expect
+ * applications to handle directional lights specially (they can create an
+ * infinite volume for them themselves of they can just render a full
+ * screen-space quad for example).
+ *
+ * A benefit of representing light volumes as scene objects is that we get
+ * light clipping for free, since they get clipped against the camera frustum
+ * like any other scene object. However, since light volumes can be fairly big
+ * depending on attenuation factors, we always mark them as dynamic to avoid
+ * artificially growing the boundaries of static tiles to accomodate the size
+ * of light volumes.
+ */
+static VkdfObject *
+add_light_volume_object_to_scene(VkdfScene *s, VkdfLight *light)
+{
+   VkdfModel *model;
+   const char *key;
+   get_light_volume_model(s, light, &model, &key);
+
+   glm::vec3 pos, rot, scale;
+   compute_light_volume_transforms(light, &pos, &rot, &scale);
+
+   VkdfObject *obj = vkdf_object_new(pos, model);
+   vkdf_object_set_rotation(obj, rot);
+   vkdf_object_set_scale(obj, scale);
+   vkdf_object_set_material_idx_base(obj, 0);
+   vkdf_object_set_dynamic(obj, true);
+
+   vkdf_scene_add_object(s, key, obj);
+
+   return obj;
+}
+
 void
 vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
@@ -1335,6 +1430,9 @@ vkdf_scene_add_light(VkdfScene *s,
    vkdf_light_set_dirty(light, true);
 
    slight->dirty_frustum = true;
+
+   if (vkdf_light_get_type(light) != VKDF_LIGHT_DIRECTIONAL)
+      slight->volume_obj = add_light_volume_object_to_scene(s, light);
 
    s->lights.push_back(slight);
 }
@@ -3304,6 +3402,34 @@ directional_light_has_dirty_shadow_map(VkdfScene *s, VkdfSceneLight *sl)
 }
 
 static void
+update_light_volume_objects(VkdfScene *s)
+{
+   for (uint32_t i = 0; i < s->lights.size(); i++) {
+      VkdfSceneLight *sl = s->lights[i];
+      if (!sl->volume_obj)
+         continue;
+
+      if (!vkdf_light_is_dirty(sl->light))
+         continue;
+
+      VkdfLight *l = sl->light;
+      VkdfObject *obj = sl->volume_obj;
+
+      glm::vec3 pos, rot, scale;
+      compute_light_volume_transforms(l, &pos, &rot, &scale);
+
+      if (pos != obj->pos)
+         vkdf_object_set_position(obj, pos);
+
+      if (rot != obj->rot)
+         vkdf_object_set_rotation(obj, rot);
+
+      if (scale != obj->scale)
+         vkdf_object_set_scale(obj, scale);
+   }
+}
+
+static void
 update_dirty_lights(VkdfScene *s)
 {
    s->lights_dirty = false;
@@ -3406,6 +3532,9 @@ update_dirty_lights(VkdfScene *s)
       }
       stop_recording_shadow_map_commands(s);
    }
+
+   // Update volume objects for dirty lights
+   update_light_volume_objects(s);
 
    // Clean-up dirty bits on the lights now
    for (uint32_t i = 0; i < num_lights; i++) {
@@ -5722,6 +5851,13 @@ record_dynamic_objects_command_buffer(VkdfScene *s,
    vkdf_command_buffer_end(cmd_buf);
 }
 
+static inline bool
+is_light_volume_set(const char *id)
+{
+   return strcmp(id, VKDF_SCENE_LIGHT_VOL_POINT_ID) == 0 ||
+          strcmp(id, VKDF_SCENE_LIGHT_VOL_SPOT_ID) == 0;
+}
+
 static void
 update_dirty_objects(VkdfScene *s)
 {
@@ -6254,7 +6390,7 @@ vkdf_scene_event_loop_run(VkdfScene *s)
                       s);
 }
 
-bool
+static bool
 check_collision_with_object(VkdfBox *box,
                             VkdfObject *obj,
                             bool do_mesh_check)
@@ -6366,6 +6502,10 @@ vkdf_scene_check_camera_collision(VkdfScene *s)
    g_hash_table_iter_init(&iter, s->dynamic.sets);
    while (g_hash_table_iter_next(&iter, (void **)&id, (void **)&info)) {
       if (!info || info->count == 0)
+         continue;
+
+      /* Skip light volume objects */
+      if (is_light_volume_set(id))
          continue;
 
       GList *obj_iter = info->objs;

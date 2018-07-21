@@ -253,8 +253,6 @@ record_scene_commands(VkdfContext *ctx, VkCommandBuffer cmd_buf,
                                set_info->count, set_info->start_index);
          continue;
       }
-
-      assert(!"unkown object category");
    }
 }
 
