@@ -912,6 +912,12 @@ vkdf_scene_get_dynamic_object_set(VkdfScene *s, const char *set_id)
    return (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.sets, set_id);
 }
 
+inline VkdfSceneSetInfo *
+vkdf_scene_get_visible_dynamic_object_set(VkdfScene *s, const char *set_id)
+{
+   return (VkdfSceneSetInfo *) g_hash_table_lookup(s->dynamic.visible, set_id);
+}
+
 inline uint32_t
 vkdf_scene_get_num_tiles(VkdfScene *s)
 {
