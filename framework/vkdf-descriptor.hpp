@@ -54,4 +54,11 @@ vkdf_descriptor_set_create(VkdfContext *ctx,
                            VkDescriptorPool pool,
                            VkDescriptorSetLayout layout);
 
+void
+vkdf_descriptor_set_create_many(VkdfContext *ctx,
+                                VkDescriptorPool pool,
+                                VkDescriptorSetLayout layout,
+                                uint32_t count,
+                                VkDescriptorSet *sets);
+
 #endif

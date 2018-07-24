@@ -209,3 +209,25 @@ vkdf_descriptor_set_create(VkdfContext *ctx,
    VK_CHECK(vkAllocateDescriptorSets(ctx->device, alloc_info, &set));
    return set;
 }
+
+void
+vkdf_descriptor_set_create_many(VkdfContext *ctx,
+                                VkDescriptorPool pool,
+                                VkDescriptorSetLayout layout,
+                                uint32_t count,
+                                VkDescriptorSet *sets)
+{
+   VkDescriptorSetLayout layouts[32];
+   assert(count < 32);
+
+   for (uint32_t i = 0; i < count; i++)
+      layouts[i] = layout;
+
+   VkDescriptorSetAllocateInfo alloc_info[1];
+   alloc_info[0].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+   alloc_info[0].pNext = NULL;
+   alloc_info[0].descriptorPool = pool;
+   alloc_info[0].descriptorSetCount = count;
+   alloc_info[0].pSetLayouts = layouts;
+   VK_CHECK(vkAllocateDescriptorSets(ctx->device, alloc_info, sets));
+}
