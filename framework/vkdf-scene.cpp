@@ -5923,6 +5923,8 @@ update_dirty_objects(VkdfScene *s)
       vis_info->shadow_caster_start_index =
          s->dynamic.visible_shadow_caster_count;
 
+      GList *visible = NULL;
+      GList *visible_slv = NULL;
       GList *obj_iter = info->objs;
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
@@ -5942,54 +5944,76 @@ update_dirty_objects(VkdfScene *s)
          // frame.
          VkdfBox *obj_box = vkdf_object_get_box(obj);
          if (vkdf_box_is_in_frustum(obj_box, cam_box, cam_planes) != OUTSIDE) {
-            // Update host buffer for UBO upload
-            glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
+            // Add the object to the corresponding visible list (we track
+            // light volumes for shadow casting lights separately)and update
+            // visibility counters
+            if (obj->priv_data.i32[0] >= 0 &&
+                s->lights[obj->priv_data.u32[0]]->light->casts_shadows) {
+               visible_slv = g_list_prepend(visible_slv, obj);
+            } else {
+               visible = g_list_prepend(visible, obj);
+            }
 
-            // Model matrix
-            memcpy(obj_mem + obj_offset,
-                   &model_matrix[0][0], sizeof(glm::mat4));
-            obj_offset += sizeof(glm::mat4);
-
-            // Base material index
-            memcpy(obj_mem + obj_offset,
-                   &obj->material_idx_base, sizeof(uint32_t));
-            obj_offset += sizeof(uint32_t);
-
-            // Model index
-            memcpy(obj_mem + obj_offset,
-                   &model_index, sizeof(uint32_t));
-            obj_offset += sizeof(uint32_t);
-
-            // Receives shadows
-            uint32_t receives_shadows = (uint32_t) obj->receives_shadows;
-            memcpy(obj_mem + obj_offset,
-                   &receives_shadows, sizeof(uint32_t));
-            obj_offset += sizeof(uint32_t);
-
-            obj_offset = ALIGN(obj_offset, 16);
-
-            // Private data
-            memcpy(obj_mem + obj_offset,
-                   &obj->priv_data, sizeof(obj->priv_data));
-            obj_offset += sizeof(obj->priv_data);
-
-            obj_offset = ALIGN(obj_offset, 16);
-
-            // Add the object to the viisble list and update visibility counters
-            vis_info->objs = g_list_prepend(vis_info->objs, obj);
             vis_info->count++;
             if (vkdf_object_casts_shadows) {
                vis_info->shadow_caster_count++;
                s->dynamic.visible_shadow_caster_count++;
             }
             s->dynamic.visible_obj_count++;
-
-            // This object is no longer dirty. Notice that we skip processing
-            // updates for dirty objects that are not visible.
-            vkdf_object_set_dirty(obj, false);
          }
 
          obj_iter = g_list_next(obj_iter);
+      }
+
+      /* Merge all light volumes for lights with shadows enabled at the
+       * begining of the list so applications can use instancing to render
+       * the lights with and without shadows.
+       */
+      vis_info->objs = g_list_concat(visible_slv, visible);
+
+      /* Now that we have our objects properly sorted, proceed to update
+       * the UBO
+       */
+      obj_iter = vis_info->objs;
+      while (obj_iter) {
+         VkdfObject *obj = (VkdfObject *) obj_iter->data;
+
+         // Model matrix
+         glm::mat4 model_matrix = vkdf_object_get_model_matrix(obj);
+         memcpy(obj_mem + obj_offset,
+                &model_matrix[0][0], sizeof(glm::mat4));
+         obj_offset += sizeof(glm::mat4);
+
+         // Base material index
+         memcpy(obj_mem + obj_offset,
+                &obj->material_idx_base, sizeof(uint32_t));
+         obj_offset += sizeof(uint32_t);
+
+         // Model index
+         memcpy(obj_mem + obj_offset,
+                &model_index, sizeof(uint32_t));
+         obj_offset += sizeof(uint32_t);
+
+         // Receives shadows
+         uint32_t receives_shadows = (uint32_t) obj->receives_shadows;
+         memcpy(obj_mem + obj_offset,
+                &receives_shadows, sizeof(uint32_t));
+         obj_offset += sizeof(uint32_t);
+
+         obj_offset = ALIGN(obj_offset, 16);
+
+         // Private data
+         memcpy(obj_mem + obj_offset,
+                &obj->priv_data, sizeof(obj->priv_data));
+         obj_offset += sizeof(obj->priv_data);
+
+         obj_offset = ALIGN(obj_offset, 16);
+
+         obj_iter = g_list_next(obj_iter);
+
+         // This object is no longer dirty. Notice that we skip processing
+         // updates for dirty objects that are not visible.
+         vkdf_object_set_dirty(obj, false);
       }
 
       // Update material data for this dynamic object set. We only need to
