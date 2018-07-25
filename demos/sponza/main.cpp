@@ -817,6 +817,9 @@ auto_camera_disable(SceneResources *res)
 {
    res->auto_camera_enabled = false;
    res->collisions_enabled = ENABLE_COLLISIONS;
+
+   /* Move the camera to a "safe" place to avoid collisions */
+   vkdf_camera_set_position(res->camera, 0.0f, 4.0f, 0.0f);
 }
 
 static void
