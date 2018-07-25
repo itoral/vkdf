@@ -67,6 +67,7 @@ vkdf_camera_set_position(VkdfCamera *cam, float px, float py, float pz)
 
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
 }
 
 glm::vec3
@@ -87,6 +88,7 @@ vkdf_camera_set_rotation(VkdfCamera *cam, float rx, float ry, float rz)
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_DIR);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_ROT_MAT);
 }
 
@@ -101,6 +103,7 @@ vkdf_camera_move(VkdfCamera *cam, float dx, float dy, float dz)
 
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
 }
 
 void
@@ -130,6 +133,7 @@ vkdf_camera_rotate(VkdfCamera *cam, float rx, float ry, float rz)
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_DIR);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_ROT_MAT);
 }
 
@@ -153,6 +157,17 @@ vkdf_camera_get_view_matrix(VkdfCamera *cam)
       bitfield_set(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
    }
    return cam->view_matrix;
+}
+
+glm::mat4
+vkdf_camera_get_view_inv_matrix(VkdfCamera *cam)
+{
+   if (!bitfield_get(cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT)) {
+      cam->view_inv_matrix =
+         glm::inverse(vkdf_compute_view_matrix_for_rotation(cam->pos, cam->rot));
+      bitfield_set(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
+   }
+   return cam->view_inv_matrix;
 }
 
 glm::mat4
@@ -189,6 +204,7 @@ vkdf_camera_step(VkdfCamera *cam, float d, int stepX, int stepY, int stepZ)
 
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
 }
 
 /**
@@ -210,6 +226,7 @@ vkdf_camera_strafe(VkdfCamera *cam, float d)
 
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
 }
 
 /**
@@ -225,6 +242,7 @@ vkdf_camera_look_at(VkdfCamera *cam, float x, float y, float z)
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_DIR);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_FRUSTUM);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_MAT);
+   bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_VIEW_INV_MAT);
    bitfield_unset(&cam->cached, VKDF_CAMERA_CACHED_ROT_MAT);
 }
 

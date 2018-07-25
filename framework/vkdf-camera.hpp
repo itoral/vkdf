@@ -17,10 +17,11 @@ enum {
 };
 
 enum {
-   VKDF_CAMERA_CACHED_VIEW_DIR   = (1 << 0),
-   VKDF_CAMERA_CACHED_VIEW_MAT   = (1 << 1),
-   VKDF_CAMERA_CACHED_ROT_MAT    = (1 << 2),
-   VKDF_CAMERA_CACHED_FRUSTUM    = (1 << 3),
+   VKDF_CAMERA_CACHED_VIEW_DIR     = (1 << 0),
+   VKDF_CAMERA_CACHED_VIEW_MAT     = (1 << 1),
+   VKDF_CAMERA_CACHED_VIEW_INV_MAT = (1 << 2),
+   VKDF_CAMERA_CACHED_ROT_MAT      = (1 << 3),
+   VKDF_CAMERA_CACHED_FRUSTUM      = (1 << 4),
 };
 
 typedef struct {
@@ -59,6 +60,7 @@ typedef struct {
 
    glm::vec3 viewdir;
    glm::mat4 view_matrix;
+   glm::mat4 view_inv_matrix;
    glm::mat4 rot_matrix;
 
    VkdfFrustum frustum;
@@ -153,6 +155,9 @@ vkdf_camera_reset_dirty_state(VkdfCamera *cam)
 
 glm::mat4
 vkdf_camera_get_view_matrix(VkdfCamera *cam);
+
+glm::mat4
+vkdf_camera_get_view_inv_matrix(VkdfCamera *cam);
 
 glm::mat4
 vkdf_camera_get_rotation_matrix(VkdfCamera *cam);
