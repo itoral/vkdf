@@ -1086,6 +1086,7 @@ init_automatic_camera(SceneResources *res)
 
    prog.callback_data = res;
 
+#if 0
    /* Iterative rendering of the model
     *
     * This uses the auto-camera program callbacks to activate progressive
@@ -1106,6 +1107,7 @@ init_automatic_camera(SceneResources *res)
    prog.start_cb = NULL;
    prog.update_cb = NULL;
    prog.end_cb = NULL;
+#endif
 
    /* Lower attrium */
    prog.pos.start = glm::vec3(-30.0f, 3.0f, 3.0f);
