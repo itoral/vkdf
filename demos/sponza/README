@@ -1,15 +1,3 @@
 This demo requires the Sponza model (included in the repository) and the
 Sponza texture pack (not included). Use the 'download-textures.sh' script
 to download and unpack the textures before running the demo.
-
-Known issues:
----------------------------------
-
-* There is a clipping bug that makes the entire model suddenly disappear when
-  a small part of it should still be visible. This can happen when the camera
-  is high up close to the ceiling and looking up. The same clipping bug
-  affects shadow mapping and can be observed in the same scenario, but it
-  usually happens a bit earlier than the model clipping bug, so it is possible
-  to see the shadows vanish before we move high up enough for the entire model
-  to disappear.
-

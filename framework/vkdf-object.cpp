@@ -77,23 +77,19 @@ vkdf_object_get_model_matrix(VkdfObject *obj)
    return obj->model_matrix;
 }
 
-glm::mat4
-vkdf_object_get_model_matrix_for_box(VkdfObject *obj)
+static glm::mat4
+get_rotation_matrix_at_position(glm::vec3 pos, glm::vec3 rot)
 {
-   /* The bounding box's position coordinate is already in world space and
-    * it is already scaled so we only need to apply rotation here (around the
-    * box's center)
-    */
    glm::mat4 Model(1.0f);
-   Model = glm::translate(Model, obj->pos);
+   Model = glm::translate(Model, pos);
    // FIXME: use quaternion
-   if (obj->rot.x)
-      Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
-   if (obj->rot.y)
-      Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.y), glm::vec3(0, 1, 0));
-   if (obj->rot.z)
-      Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.z), glm::vec3(0, 0, 1));
-   Model = glm::translate(Model, -obj->pos);
+   if (rot.x)
+      Model = glm::rotate(Model, DEG_TO_RAD(rot.x), glm::vec3(1, 0, 0));
+   if (rot.y)
+      Model = glm::rotate(Model, DEG_TO_RAD(rot.y), glm::vec3(0, 1, 0));
+   if (rot.z)
+      Model = glm::rotate(Model, DEG_TO_RAD(rot.z), glm::vec3(0, 0, 1));
+   Model = glm::translate(Model, -pos);
 
    return Model;
 }
@@ -103,14 +99,23 @@ compute_box(VkdfObject *obj)
 {
    assert(obj->model);
 
+   /* Compute the size of the box based on the object's scale */
    obj->box.w = vkdf_object_width(obj) / 2.0f;
    obj->box.d = vkdf_object_depth(obj) / 2.0f;
    obj->box.h = vkdf_object_height(obj) / 2.0f;
-   obj->box.center = obj->pos;
 
+   /* Put the box at the object's position. If the model is not centered
+    * at the origin we need to account for that too.
+    */
+   obj->box.center = obj->pos + obj->model->box.center * obj->scale;
+
+   /* If the object is rotated we need to rotate the box around the object's
+    * position (not the object's position offset by the model's position).
+    */
    if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
-      glm::mat4 model = vkdf_object_get_model_matrix_for_box(obj);
-      vkdf_box_transform(&obj->box, &model);
+      glm::mat4 rot_matrix =
+         get_rotation_matrix_at_position(obj->pos, obj->rot);
+      vkdf_box_transform(&obj->box, &rot_matrix);
    }
 
    vkdf_object_set_dirty_box(obj, false);
