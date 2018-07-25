@@ -21,6 +21,7 @@ enum {
    VKDF_LIGHT_CACHED_VIEW_INV   = (1 << 1),
 };
 
+/* WARNING: changes to this struct must be replicated in lighting.glsl */
 typedef struct {
    // Common light attributes
    glm::vec4 origin;      // .w = light type
@@ -46,10 +47,11 @@ typedef struct {
 
    float intensity;             // From 0 (no light) to 1 (full intensity)
    uint32_t casts_shadows;
+   float volume_scale_cap;      // Maximum scale of the light volume (for light volume lighting)
 
    uint32_t dirty;              // Dirty state
    uint32_t cached;
-   float padding[0];            // Keep this struct 16-byte aligned
+   float padding[3];            // Keep this struct 16-byte aligned
 } VkdfLight;
 
 VkdfLight *
@@ -367,6 +369,12 @@ inline float
 vkdf_light_get_intensity(VkdfLight *l)
 {
    return l->intensity;
+}
+
+inline void
+vkdf_light_set_volume_scale_cap(VkdfLight *l, float cap)
+{
+   l->volume_scale_cap = cap;
 }
 
 glm::vec3

@@ -16,8 +16,12 @@ struct Light
    mat4 view_matrix_inv;
    float intensity;
    bool casts_shadows;
+   float volume_scale_cap;
    uint dirty;
    uint cached;
+   float pad0;
+   float pad1;
+   float pad2;
 };
 
 struct Material

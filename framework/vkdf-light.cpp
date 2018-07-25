@@ -13,6 +13,10 @@ init_light(VkdfLight *l,
    l->attenuation = attenuation;
    l->intensity = 1.0f;
 
+   /* Make the scale cap +infinity by default (so no scale cap) */
+   uint32_t *tmp = (uint32_t *) &l->volume_scale_cap;
+   *tmp = 0x7f800000;
+
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
 
@@ -140,10 +144,12 @@ vkdf_light_get_volume_scale(VkdfLight *l)
    const float light_max = l->intensity * MAX2(MAX2(color.r, color.g), color.b);
    const float light_cutoff = 0.01f; // The volume extends up to this intensity
 
-   const float distance =
+   float distance =
       (-linear + sqrtf(linear * linear - 4.0f * quadratic *
                        (constant - (1.0f / light_cutoff) * light_max))) /
       (2.0f * quadratic);
+
+   distance = MIN2(distance, l->volume_scale_cap);
 
    switch (vkdf_light_get_type(l)) {
    case VKDF_LIGHT_POINT:
