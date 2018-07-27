@@ -873,6 +873,13 @@ vkdf_scene_get_light_eye_space_data_ubo_range(VkdfScene *s,
    *size = s->ubo.light.eye_space_data_size;
 }
 
+inline VkdfLight *
+vkdf_scene_get_light(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   return s->lights[index]->light;
+}
+
 inline VkSampler
 vkdf_scene_light_get_shadow_map_sampler(VkdfScene *s, uint32_t index)
 {
