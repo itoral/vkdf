@@ -7,6 +7,7 @@
 #include "vkdf-mesh.hpp"
 #include "vkdf-image.hpp"
 
+/* WARNING: changes to this struct need to be applied to lighting.glsl too */
 typedef struct {
    glm::vec4 diffuse;
    glm::vec4 ambient;
@@ -18,7 +19,8 @@ typedef struct {
    uint32_t opacity_tex_count;
    float reflectiveness;
    float roughness;
-   uint32_t padding[1]; // So the size if 16-byte aligned
+   float emission;
+   uint32_t padding[0]; // So the size if 16-byte aligned
 } VkdfMaterial;
 
 typedef struct {

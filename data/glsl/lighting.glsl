@@ -36,7 +36,7 @@ struct Material
    uint opacity_tex_count;
    float reflectiveness;
    float roughness;
-   uint pad0;
+   float emission;
 };
 
 struct LightColor
