@@ -1,5 +1,14 @@
 #include "vkdf-light.hpp"
 
+static inline float
+make_inf_float()
+{
+   float f;
+   uint32_t *tmp = (uint32_t *) &f;
+   *tmp = 0x7f800000;
+   return f;
+}
+
 static void
 init_light(VkdfLight *l,
            glm::vec4 diffuse,
@@ -14,8 +23,7 @@ init_light(VkdfLight *l,
    l->intensity = 1.0f;
 
    /* Make the scale cap +infinity by default (so no scale cap) */
-   uint32_t *tmp = (uint32_t *) &l->volume_scale_cap;
-   *tmp = 0x7f800000;
+   l->volume_scale_cap = make_inf_float();
 
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
@@ -144,10 +152,35 @@ vkdf_light_get_volume_scale(VkdfLight *l)
    const float light_max = l->intensity * MAX2(MAX2(color.r, color.g), color.b);
    const float light_cutoff = 0.01f; // The volume extends up to this intensity
 
-   float distance =
-      (-linear + sqrtf(linear * linear - 4.0f * quadratic *
-                       (constant - (1.0f / light_cutoff) * light_max))) /
-      (2.0f * quadratic);
+   /* If the light's max intensity doesn't even reach the cutoff value, then
+    * we can assume its volume is 0.
+    */
+   if (light_max < light_cutoff)
+      return glm::vec3(0.0f);
+
+   float distance;
+   if (quadratic > 0.0f) {
+      const float dist_sqrt_term =
+         linear * linear - 4.0f * quadratic * (constant - light_max / light_cutoff);
+
+      if (dist_sqrt_term < 0.0f) {
+         /* There is no distance at which we get the minimum attenuation, make
+          * it +inf.
+          */
+         distance = make_inf_float();
+      } else {
+         distance = (-linear + sqrtf(dist_sqrt_term)) / (2.0f * quadratic);
+      }
+   } else {
+      if (linear <= 0.0f || light_max / light_cutoff < constant) {
+         /* There is no distance at which we get the minimum attenuation, make
+          * it +inf.
+          */
+         distance = make_inf_float();
+      } else {
+         distance = (light_max / light_cutoff - constant) / linear;
+      }
+   }
 
    distance = MIN2(distance, l->volume_scale_cap);
 
