@@ -240,3 +240,209 @@ compute_lighting(Light l,
 
    return lc;
 }
+
+LightColor
+compute_lighting_point(Light l,
+                       vec3 world_pos,
+                       vec3 normal,
+                       vec3 view_dir,
+                       Material mat)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
+                dp_reflection;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor;
+
+   lc.specular = vec3(0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) * att_factor;
+   }
+
+   return lc;
+}
+
+LightColor
+compute_lighting_spot(Light l,
+                      vec3 world_pos,
+                      vec3 normal,
+                      vec3 view_dir,
+                      Material mat)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Compute spotlight cutoff
+   float cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+   att_factor *= cutoff_factor;
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * dp_reflection * att_factor;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor;
+
+   lc.specular = vec3(0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) * att_factor;
+   }
+
+   return lc;
+}
+
+LightColor
+compute_lighting_spot(Light l,
+                      vec3 world_pos,
+                      vec3 normal,
+                      vec3 view_dir,
+                      Material mat,
+                      bool receives_shadows,
+                      vec4 light_space_pos,
+                      sampler2DShadow shadow_map,
+                      uint shadow_map_size,
+                      uint pcf_size)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Apply spotlight cutoff
+   att_factor *= compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+
+   // Check if the fragment is in the shadow
+   float shadow_factor;
+   if (receives_shadows) {
+      shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
+                                            shadow_map_size, pcf_size);
+   } else {
+      shadow_factor = 1.0;
+   }
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * dp_reflection * att_factor *
+                shadow_factor;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor;
+
+   lc.specular = vec3(0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) *
+           att_factor * shadow_factor;
+   }
+
+   return lc;
+}
+
+LightColor
+compute_lighting_directional(Light l,
+                             vec3 world_pos,
+                             vec3 normal,
+                             vec3 view_dir,
+                             Material mat)
+{
+   // Compute reflection from light for this fragment
+   vec3 light_to_pos_norm = normalize(vec3(l.pos));
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz *
+                dp_reflection * l.intensity;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * l.intensity;
+
+   lc.specular = vec3(0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) * l.intensity;
+   }
+
+   return lc;
+}
+
+LightColor
+compute_lighting_directional(Light l,
+                             vec3 world_pos,
+                             vec3 normal,
+                             vec3 view_dir,
+                             Material mat,
+                             bool receives_shadows,
+                             vec4 light_space_pos,
+                             sampler2DShadow shadow_map,
+                             uint shadow_map_size,
+                             uint pcf_size)
+{
+   // Compute reflection from light for this fragment
+   vec3 light_to_pos_norm = normalize(vec3(l.pos));
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // No attenuation
+   float att_factor = l.intensity;
+
+    // Check if the fragment is in the shadow
+   float shadow_factor;
+      shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
+                                            shadow_map_size, pcf_size);
+
+  // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * dp_reflection * att_factor *
+                shadow_factor;
+   lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor;
+
+   lc.specular = vec3(0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) *
+           att_factor * shadow_factor;
+   }
+
+   return lc;
+}

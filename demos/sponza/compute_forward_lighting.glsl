@@ -29,15 +29,15 @@
 
    // Do lighting computations (all done in eye space)
    LightColor color =
-      compute_lighting(light,
-                       in_eye_pos.xyz,
-                       eye_normal,
-                       in_eye_view_dir,
-                       mat,
-                       light.casts_shadows,
-                       in_light_space_pos,
-                       shadow_map,
-                       SMD.shadow_map_data.shadow_map_size,
-                       SMD.shadow_map_data.pfc_kernel_size);
+      compute_lighting_directional(light,
+                                   in_eye_pos.xyz,
+                                   eye_normal,
+                                   in_eye_view_dir,
+                                   mat,
+                                   light.casts_shadows,
+                                   in_light_space_pos,
+                                   shadow_map,
+                                   SMD.shadow_map_data.shadow_map_size,
+                                   SMD.shadow_map_data.pfc_kernel_size);
 
    out_color = vec4(color.diffuse + color.ambient + color.specular, 1);
