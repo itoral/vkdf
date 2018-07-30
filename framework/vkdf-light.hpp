@@ -47,11 +47,13 @@ typedef struct {
 
    float intensity;             // From 0 (no light) to 1 (full intensity)
    uint32_t casts_shadows;
+
    float volume_scale_cap;      // Maximum scale of the light volume (for light volume lighting)
+   float volume_cutoff;         // Percentage of light being cutoff by the volume (0..1]
 
    uint32_t dirty;              // Dirty state
    uint32_t cached;
-   float padding[3];            // Keep this struct 16-byte aligned
+   float padding[2];            // Keep this struct 16-byte aligned
 } VkdfLight;
 
 VkdfLight *
@@ -379,6 +381,19 @@ vkdf_light_set_volume_scale_cap(VkdfLight *l, float cap)
 
 glm::vec3
 vkdf_light_get_volume_scale(VkdfLight *l);
+
+inline void
+vkdf_light_set_volume_cutoff(VkdfLight *l, float cutoff)
+{
+   assert(cutoff > 0.0f && cutoff <= 1.0f);
+   l->volume_cutoff = cutoff;
+}
+
+inline float
+vkdf_light_get_volume_cutoff(VkdfLight *l)
+{
+   return l->volume_cutoff;
+}
 
 void
 vkdf_light_free(VkdfLight *light);

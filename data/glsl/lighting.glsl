@@ -17,11 +17,11 @@ struct Light
    float intensity;
    bool casts_shadows;
    float volume_scale_cap;
+   float volume_cutoff;
    uint dirty;
    uint cached;
    float pad0;
    float pad1;
-   float pad2;
 };
 
 struct Material

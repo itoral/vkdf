@@ -25,6 +25,9 @@ init_light(VkdfLight *l,
    /* Make the scale cap +infinity by default (so no scale cap) */
    l->volume_scale_cap = make_inf_float();
 
+   /* Choose 2% light volume reduction by default */
+   l->volume_cutoff = 0.02f;
+
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY | VKDF_LIGHT_DIRTY_VIEW;
    bitfield_set(&l->dirty, dirty_bits);
 
@@ -150,7 +153,9 @@ vkdf_light_get_volume_scale(VkdfLight *l)
 
    const glm::vec4 color = l->diffuse;
    const float light_max = l->intensity * MAX2(MAX2(color.r, color.g), color.b);
-   const float light_cutoff = 0.01f; // The volume extends up to this intensity
+
+   /* The volume extends up to this light intensity */
+   const float light_cutoff = l->volume_cutoff;
 
    /* If the light's max intensity doesn't even reach the cutoff value, then
     * we can assume its volume is 0.
