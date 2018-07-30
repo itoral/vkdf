@@ -300,6 +300,13 @@ choose_device_features(VkdfContext *ctx)
    /* Anisotropic filtering */
    ctx->device_features.samplerAnisotropy =
       ctx->phy_device_features.samplerAnisotropy;
+
+   /* Depth clamp
+    *
+    * We can use depth clamp for rendering light volumes during a deferred
+    * lighting pass, to prevent the light volumes from being Z-clipped.
+    */
+   ctx->device_features.depthClamp = ctx->phy_device_features.depthClamp;
 }
 
 static void
