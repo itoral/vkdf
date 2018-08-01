@@ -279,6 +279,72 @@ compute_lighting_point(Light l,
 }
 
 LightColor
+compute_lighting_point_diffuse(Light l,
+                               vec3 world_pos,
+                               vec3 normal,
+                               Material mat)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
+                dp_reflection;
+
+   lc.ambient = lc.specular = vec3(0.0);
+
+   return lc;
+}
+
+LightColor
+compute_lighting_point_diffuse_specular(Light l,
+                                        vec3 world_pos,
+                                        vec3 normal,
+                                        vec3 view_dir,
+                                        Material mat)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * att_factor *
+                dp_reflection;
+
+   lc.ambient = vec3(0.0);
+
+   lc.specular = vec3(0.0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) * att_factor;
+   }
+
+   return lc;
+}
+
+LightColor
 compute_lighting_spot(Light l,
                       vec3 world_pos,
                       vec3 normal,
@@ -305,6 +371,78 @@ compute_lighting_spot(Light l,
    LightColor lc;
    lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * dp_reflection * att_factor;
    lc.ambient = mat.ambient.xyz * l.ambient.xyz * att_factor;
+
+   lc.specular = vec3(0);
+   if (dot(normal, -light_to_pos_norm) >= 0.0) {
+      vec3 reflection_dir = reflect(light_to_pos_norm, normal);
+      float shine_factor = dot(reflection_dir, normalize(view_dir));
+      lc.specular =
+           l.specular.xyz * mat.specular.xyz *
+           pow(max(0.0, shine_factor), mat.shininess) * att_factor;
+   }
+
+   return lc;
+}
+
+LightColor
+compute_lighting_spot_diffuse(Light l,
+                               vec3 world_pos,
+                               vec3 normal,
+                               Material mat)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Compute spotlight cutoff
+   float cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+   att_factor *= cutoff_factor;
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * dp_reflection * att_factor;
+
+   lc.ambient = lc.specular = vec3(0);
+
+   return lc;
+}
+
+LightColor
+compute_lighting_spot_diffuse_specular(Light l,
+                                       vec3 world_pos,
+                                       vec3 normal,
+                                       vec3 view_dir,
+                                       Material mat)
+{
+   // Compute attenuation
+   vec3 light_to_pos = world_pos - l.pos.xyz;
+   vec3 light_to_pos_norm = normalize(light_to_pos);
+   float dist = length(light_to_pos);
+   float att_factor = l.intensity /
+                      (l.attenuation.x + l.attenuation.y * dist +
+                       l.attenuation.z * dist * dist);
+
+   // Compute spotlight cutoff
+   float cutoff_factor = compute_spotlight_cutoff_factor(l, light_to_pos_norm);
+   att_factor *= cutoff_factor;
+
+   // Compute reflection from light for this fragment
+   normal = normalize(normal);
+   float dp_reflection = max(0.0, dot(normal, -light_to_pos_norm));
+
+   // Compute light contributions to the fragment.
+   LightColor lc;
+   lc.diffuse = mat.diffuse.xyz * l.diffuse.xyz * dp_reflection * att_factor;
+
+   lc.ambient = vec3(0);
 
    lc.specular = vec3(0);
    if (dot(normal, -light_to_pos_norm) >= 0.0) {
