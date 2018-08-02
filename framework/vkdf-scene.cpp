@@ -1111,6 +1111,43 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    s->obj_count++;
 }
 
+void
+vkdf_scene_remove_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
+{
+   assert(obj->is_dynamic);
+
+   VkdfSceneSetInfo *info = (VkdfSceneSetInfo *)
+      g_hash_table_lookup(s->dynamic.sets, set_id);
+   if (!info) {
+      vkdf_info("debug: scene: warning: attempted to remove object from "
+                "non-existent set with id: '%s'\n", set_id);
+      return;
+   }
+
+   GList *node = g_list_find(info->objs, obj);
+   if (!node) {
+      vkdf_info("debug: scene: warning: attempted to remove non-existent "
+                "object from set with id: '%s'\n", set_id);
+      return;
+   }
+
+   assert(info->count > 0);
+   assert(node->data == obj);
+
+   vkdf_object_free(obj);
+   info->objs = g_list_remove_link(info->objs, node);
+   g_list_free(node);
+
+   info->count--;
+   if (vkdf_object_casts_shadows(obj)) {
+      assert(info->shadow_caster_count > 0);
+      info->shadow_caster_count--;
+   }
+
+   s->obj_count--;
+   s->dynamic_objs_dirty = true;
+}
+
 static inline VkdfImage
 create_shadow_map_image(VkdfScene *s, uint32_t size)
 {
@@ -3380,18 +3417,30 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
       compute_visible_tiles_for_light(s, sl);
    }
 
-   // Whether the area of influence has changed or not, we need to check if
-   // we need to regen shadow maps due to dynamic objects anyway. If the
-   // light has dynamic objects in its area of influence then we also need
-   // an updated list of objects so we can render them to the shadow map
-   //
-   // We need to update the shadow maps in this case even if we are skipping
-   // shadow map frames, since otherwise we get self-shadowing on dynamic
-   // objects
+   /* Whether the area of influence has changed or not, we need to check if
+    * we need to regen shadow maps due to dynamic objects anyway. If the
+    * light has dynamic objects in its area of influence then we also need
+    * an updated list of objects so we can render them to the shadow map.
+    *
+    * Furthermore, when dynamic_objs_dirty is TRUE, then we might have removed
+    * visible dynamic objects from the light's view. In that case, even if we
+    * have no visible objects, we need to regen the shadow map, since the
+    * previous shadow map might have recorded the removed objects.
+    *
+    * FIXME: We could compare the new and previous visible object lists
+    *        when dynamic_objs_dirty is TRUE, and regen only if the lists
+    *        don't match.
+    *
+    * We need to update the shadow maps in this case even if we are skipping
+    * shadow map frames, since otherwise we get self-shadowing on dynamic
+    * objects
+    *
+    */
    bool has_dirty_objects;
    GHashTable *dyn_sets =
       find_dynamic_objects_for_light(s, sl, &has_dirty_objects);
-   data->has_dirty_shadow_map = data->has_dirty_shadow_map || has_dirty_objects;
+   data->has_dirty_shadow_map =
+      data->has_dirty_shadow_map || has_dirty_objects || s->dynamic_objs_dirty;
 
    if (data->has_dirty_shadow_map) {
       data->shadow_map_info.sl = sl;

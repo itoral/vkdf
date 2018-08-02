@@ -740,6 +740,9 @@ void
 vkdf_scene_add_object(VkdfScene *scene, const char *set_id, VkdfObject *obj);
 
 void
+vkdf_scene_remove_object(VkdfScene *scene, const char *set_id, VkdfObject *obj);
+
+void
 vkdf_scene_set_clear_values(VkdfScene *scene,
                             VkClearValue *color,
                             VkClearValue *depth);
