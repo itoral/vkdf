@@ -556,7 +556,8 @@ struct _VkdfScene {
    struct _cache *cache;
 
    bool dirty;                          // Dirty static objects (initialization)
-   bool objs_dirty;                     // Dirty dynamic objects
+   bool static_objs_dirty;              // Dirty static objects
+   bool dynamic_objs_dirty;             // Dirty dynamic objects
    bool lights_dirty;                   // Dirty light sources
    bool shadow_maps_dirty;              // Dirty shadow maps
    uint32_t obj_count;                  // Total object count (static + dynamic)

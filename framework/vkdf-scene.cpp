@@ -1067,6 +1067,8 @@ add_static_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    s->static_obj_count++;
    if (is_shadow_caster)
       s->static_shadow_caster_count++;
+
+   s->static_objs_dirty = true;
 }
 
 static void
@@ -1087,6 +1089,8 @@ add_dynamic_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    info->count++;
    if (vkdf_object_casts_shadows(obj))
       info->shadow_caster_count++;
+
+   s->dynamic_objs_dirty = true;
 }
 
 void
@@ -1105,7 +1109,6 @@ vkdf_scene_add_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
       add_dynamic_object(s, set_id, obj);
 
    s->obj_count++;
-   s->dirty = true;
 }
 
 static inline VkdfImage
@@ -2361,9 +2364,6 @@ create_dynamic_material_ubo(VkdfScene *s)
 static void
 prepare_scene_objects(VkdfScene *s)
 {
-   if (!s->dirty)
-      return;
-
    s->set_ids = g_list_reverse(s->set_ids);
    s->models = g_list_reverse(s->models);
 
@@ -2404,7 +2404,7 @@ prepare_scene_objects(VkdfScene *s)
    create_dynamic_object_ubo(s);
    create_dynamic_material_ubo(s);
 
-   s->dirty = false;
+   s->static_objs_dirty = false;
 }
 
 static VkRenderPass
@@ -3449,9 +3449,6 @@ update_light_volume_objects(VkdfScene *s)
 static void
 update_dirty_lights(VkdfScene *s)
 {
-   s->lights_dirty = false;
-   s->shadow_maps_dirty = false;
-
    uint32_t num_lights = s->lights.size();
    if (num_lights == 0)
       return;
@@ -6203,6 +6200,8 @@ update_cmd_bufs(VkdfScene *s)
 static void
 scene_update(VkdfScene *s)
 {
+   assert(!s->static_objs_dirty);
+
    // Let the application update its state first
    if (s->callbacks.update_state)
       s->callbacks.update_state(s->callbacks.data);
@@ -6252,6 +6251,11 @@ scene_update(VkdfScene *s)
 
       vkdf_camera_reset_dirty_state(s->camera);
    }
+
+   // Clean dynamic dirty flags
+   s->dynamic_objs_dirty = false;
+   s->lights_dirty = false;
+   s->shadow_maps_dirty = false;
 }
 
 static void
