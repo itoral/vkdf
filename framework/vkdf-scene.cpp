@@ -5901,7 +5901,7 @@ update_dirty_objects(VkdfScene *s)
    GHashTableIter set_iter;
    g_hash_table_iter_init(&set_iter, s->dynamic.sets);
    while (g_hash_table_iter_next(&set_iter, (void **)&id, (void **)&info)) {
-      if (!info || info->count == 0)
+      if (!info)
          continue;
 
       // Reset visible information for this set
@@ -5914,6 +5914,12 @@ update_dirty_objects(VkdfScene *s)
          g_list_free(vis_info->objs);
          memset(vis_info, 0, sizeof(VkdfSceneSetInfo));
       }
+
+      /* If the set has no objects we are done (this can happen when the
+       * application has removed all of them)
+       */
+      if (info->count == 0)
+         continue;
 
       // Update visible objects for this set
       vis_info->start_index = s->dynamic.visible_obj_count;
