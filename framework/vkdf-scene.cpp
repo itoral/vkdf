@@ -65,6 +65,9 @@ struct FreeCmdBufInfo {
 static void inline
 new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf);
 
+static void
+remove_light_volume_object_from_scene(VkdfScene *s, VkdfSceneLight *slight);
+
 static inline uint32_t
 tile_index_from_tile_coords(VkdfScene *s, float tx, float ty, float tz)
 {
@@ -514,11 +517,39 @@ destroy_light_shadow_map(VkdfScene *s, VkdfSceneLight *slight)
 }
 
 static void
-destroy_light(VkdfScene *s, VkdfSceneLight *slight)
+destroy_light(VkdfScene *s, uint32_t light_idx)
 {
+   assert(light_idx < s->lights.size());
+   VkdfSceneLight *slight = s->lights[light_idx];
+
+   /* Destroy its volume object if present  This will correct light indices
+    * for all volume objects after this one.
+    */
+   if (slight->volume_obj)
+      remove_light_volume_object_from_scene(s, slight);
+
+   /* Destroy the light */
    vkdf_light_free(slight->light);
+
+   /* Destroy shadow map
+    *
+    * FIXME: this is not safe if the shadow map is still in use!
+    */
    destroy_light_shadow_map(s, slight);
+
+   /* Destroy scene light and remove it from the list */
    g_free(slight);
+   s->lights.erase(s->lights.begin() + light_idx);
+
+   /* Now that we have removed the light element from the list, all indices
+    * pointing to lights after this one are off by one, so we will have to:
+    *
+    * 1. Re-upload light and shadow map UBO data
+    * 2. Re-index light volume objects
+    *
+    * This will be done during the dirty light state update.
+    */
+   s->light_indices_dirty = true;
 }
 
 static void
@@ -852,6 +883,11 @@ vkdf_scene_free(VkdfScene *s)
    g_list_free(s->models);
    s->models = NULL;
 
+   while (s->lights.size() > 0)
+      destroy_light(s, 0);
+   s->lights.clear();
+   std::vector<VkdfSceneLight *>(s->lights).swap(s->lights);
+
    for (uint32_t i = 0; i < s->num_tiles.total; i++)
       free_tile(&s->tiles[i]);
    g_free(s->tiles);
@@ -860,11 +896,6 @@ vkdf_scene_free(VkdfScene *s)
    g_free(s->dynamic.ubo.obj.host_buf);
    g_free(s->dynamic.ubo.material.host_buf);
    g_free(s->dynamic.ubo.shadow_map.host_buf);
-
-   for (uint32_t i = 0; i < s->lights.size(); i++)
-      destroy_light(s, s->lights[i]);
-   s->lights.clear();
-   std::vector<VkdfSceneLight *>(s->lights).swap(s->lights);
 
    vkDestroySemaphore(s->ctx->device, s->sync.update_resources_sem, NULL);
    vkDestroySemaphore(s->ctx->device, s->sync.depth_draw_sem, NULL);
@@ -1320,7 +1351,6 @@ scene_light_enable_shadows(VkdfScene *s,
    compute_light_projection(s, sl);
 
    vkdf_light_set_dirty_shadows(sl->light, true);
-   s->has_shadow_caster_lights = true;
 }
 
 static void
@@ -1460,6 +1490,19 @@ add_light_volume_object_to_scene(VkdfScene *s,
    return obj;
 }
 
+static void
+remove_light_volume_object_from_scene(VkdfScene *s,
+                                      VkdfSceneLight *slight)
+{
+   assert(slight && slight->volume_obj);
+
+   VkdfModel *model;
+   const char *key;
+   get_light_volume_model(s, slight->light, &model, &key);
+   vkdf_scene_remove_object(s, key, slight->volume_obj);
+   slight->volume_obj = NULL;
+}
+
 void
 vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
@@ -1483,6 +1526,25 @@ vkdf_scene_add_light(VkdfScene *s,
       slight->volume_obj = add_light_volume_object_to_scene(s, light, light_idx);
 
    s->lights.push_back(slight);
+}
+
+void
+vkdf_scene_remove_light_at_index(VkdfScene *s, uint32_t idx)
+{
+   destroy_light(s, idx);
+}
+
+void
+vkdf_scene_remove_light(VkdfScene *s, VkdfLight *light)
+{
+   for (uint32_t i = 0; i < s->lights.size(); i++) {
+      if (s->lights[i]->light == light) {
+         vkdf_scene_remove_light_at_index(s, i);
+         return;
+      }
+   }
+
+   vkdf_info("debug: scene: warning: attempted to remove non-existent light\n");
 }
 
 static int
@@ -3186,7 +3248,7 @@ record_dirty_light_resource_updates(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
 
       /* Base light data */
-      if (vkdf_light_is_dirty(sl->light)) {
+      if (vkdf_light_is_dirty(sl->light) || s->light_indices_dirty) {
          assert(light_inst_size < 64 * 1024);
          vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                            s->ubo.light.buf.buf,
@@ -3196,7 +3258,8 @@ record_dirty_light_resource_updates(VkdfScene *s)
 
       /* Eye-space light data */
       if (s->compute_eye_space_light &&
-          light_has_dirty_eye_space_data(sl->light, cam)) {
+          (light_has_dirty_eye_space_data(sl->light, cam) ||
+           s->light_indices_dirty)) {
 
          struct _light_eye_space_ubo_data data;
 
@@ -3242,7 +3305,7 @@ record_dirty_shadow_map_resource_updates(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
       if (!vkdf_light_casts_shadows(sl->light))
          continue;
-      if (!vkdf_scene_light_has_dirty_shadows(sl))
+      if (!vkdf_scene_light_has_dirty_shadows(sl) && !s->light_indices_dirty)
          continue;
 
       struct _shadow_map_ubo_data data;
@@ -3502,6 +3565,23 @@ update_dirty_lights(VkdfScene *s)
    if (num_lights == 0)
       return;
 
+   /* If we have dirty light indices then we need to re-upload light and
+    * and shadow map UBOs. We also need to re-index volume objects.
+    *
+    * FIXME: we can track the lowest index that needs to be updated and
+    *        and only update data for light indices larger or equal to that.
+    */
+   if (s->light_indices_dirty) {
+      s->lights_dirty = s->light_indices_dirty;
+      s->shadow_maps_dirty = s->light_indices_dirty;
+
+      for (uint32_t i = 0; i < s->lights.size(); i++) {
+         VkdfSceneLight *sl = s->lights[i];
+         if (sl->volume_obj)
+            sl->volume_obj->priv_data.u32[0] = i;
+      }
+   }
+
    VkdfCamera *cam = vkdf_scene_get_camera(s);
 
    // Go through the list of lights and check if they are dirty and if they
@@ -3631,9 +3711,6 @@ prepare_scene_lights(VkdfScene *s)
 
    // Create light source data UBO
    create_light_ubo(s);
-
-   if (!s->has_shadow_caster_lights)
-      return;
 
    // Create static & dynamic shadow map object UBOs
    create_static_object_shadow_map_ubo(s);
@@ -6311,6 +6388,7 @@ scene_update(VkdfScene *s)
    s->dynamic_objs_dirty = false;
    s->lights_dirty = false;
    s->shadow_maps_dirty = false;
+   s->light_indices_dirty = false;
 }
 
 static void

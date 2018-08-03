@@ -560,10 +560,10 @@ struct _VkdfScene {
    bool dynamic_objs_dirty;             // Dirty dynamic objects
    bool lights_dirty;                   // Dirty light sources
    bool shadow_maps_dirty;              // Dirty shadow maps
+   bool light_indices_dirty;            // Dirty light source indices
    uint32_t obj_count;                  // Total object count (static + dynamic)
    uint32_t static_obj_count;           // Number of static (tiled) objects
    uint32_t static_shadow_caster_count; // Number of static objects that are shadow casters
-   bool has_shadow_caster_lights;       // If we have any static objects that can cast shadows
 
    bool compute_eye_space_light;        // Produce and update eye-space light UBO data
 
@@ -939,6 +939,13 @@ void
 vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *shadow_spec);
+
+void
+vkdf_scene_remove_light_at_index(VkdfScene *s, uint32_t idx);
+
+void
+vkdf_scene_remove_light(VkdfScene *s,
+                     VkdfLight *light);
 
 inline void
 vkdf_scene_set_scene_callbacks(VkdfScene *s,
