@@ -193,6 +193,30 @@ create_depth_framebuffer_image(VkdfScene *s)
                                VK_IMAGE_VIEW_TYPE_2D);
 }
 
+static VkFramebuffer
+create_depth_framebuffer(VkdfScene *s,
+                         uint32_t width,
+                         uint32_t height,
+                         VkRenderPass renderpass,
+                         VkImageView view)
+{
+   VkFramebufferCreateInfo fb_info;
+   fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+   fb_info.pNext = NULL;
+   fb_info.renderPass = renderpass;
+   fb_info.attachmentCount = 1;
+   fb_info.pAttachments = &view;
+   fb_info.width = width;
+   fb_info.height = height;
+   fb_info.layers = 1;
+   fb_info.flags = 0;
+
+   VkFramebuffer framebuffer;
+   VK_CHECK(vkCreateFramebuffer(s->ctx->device, &fb_info, NULL, &framebuffer));
+
+   return framebuffer;
+}
+
 static void
 prepare_render_target(VkdfScene *s)
 {
@@ -1245,6 +1269,22 @@ create_shadow_map_image(VkdfScene *s, uint32_t size)
                             VK_IMAGE_VIEW_TYPE_2D);
 }
 
+static void
+create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
+{
+   /* The shadow map renderpass instance is not created until we prepare
+    * the scene
+    */
+   assert(s->shadows.renderpass);
+
+   sl->shadow.framebuffer =
+      create_depth_framebuffer(s,
+                               sl->shadow.spec.shadow_map_size,
+                               sl->shadow.spec.shadow_map_size,
+                               s->shadows.renderpass,
+                               sl->shadow.shadow_map.view);
+}
+
 static inline glm::vec3
 compute_light_space_frustum_vertex(glm::mat4 *view_matrix,
                                    glm::vec3 p,
@@ -1385,6 +1425,13 @@ scene_light_enable_shadows(VkdfScene *s,
                                  VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
                                  VK_FILTER_LINEAR,
                                  VK_SAMPLER_MIPMAP_MODE_NEAREST);
+
+   if (s->shadows.renderpass) {
+      create_shadow_map_framebuffer(s, sl);
+   } else {
+      /* We will create this at scene prepare time */
+      sl->shadow.framebuffer = 0;
+   }
 
    /* Make sure we compute the shadow map immediately */
    sl->shadow.frame_counter = -1;
@@ -2924,41 +2971,6 @@ create_shadow_map_pipelines(VkdfScene *s)
    }
 }
 
-static VkFramebuffer
-create_depth_framebuffer(VkdfScene *s,
-                         uint32_t width,
-                         uint32_t height,
-                         VkRenderPass renderpass,
-                         VkImageView view)
-{
-   VkFramebufferCreateInfo fb_info;
-   fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-   fb_info.pNext = NULL;
-   fb_info.renderPass = renderpass;
-   fb_info.attachmentCount = 1;
-   fb_info.pAttachments = &view;
-   fb_info.width = width;
-   fb_info.height = height;
-   fb_info.layers = 1;
-   fb_info.flags = 0;
-
-   VkFramebuffer framebuffer;
-   VK_CHECK(vkCreateFramebuffer(s->ctx->device, &fb_info, NULL, &framebuffer));
-
-   return framebuffer;
-}
-
-static inline void
-create_shadow_map_framebuffer(VkdfScene *s, VkdfSceneLight *sl)
-{
-   sl->shadow.framebuffer =
-      create_depth_framebuffer(s,
-                               sl->shadow.spec.shadow_map_size,
-                               sl->shadow.spec.shadow_map_size,
-                               s->shadows.renderpass,
-                               sl->shadow.shadow_map.view);
-}
-
 static const VkdfFrustum *
 scene_light_get_frustum(VkdfScene *s, VkdfSceneLight *sl)
 {
@@ -3797,7 +3809,8 @@ prepare_scene_lights(VkdfScene *s)
    create_shadow_map_renderpass(s);
    create_shadow_map_pipelines(s);
 
-   // Create per-light shadow map resources
+   // Create per-light shadow map resources for shadow casting lights
+   // added before scene preparation
    for (uint32_t i = 0; i < s->lights.size(); i++) {
       VkdfSceneLight *sl = s->lights[i];
       if (vkdf_light_casts_shadows(s->lights[i]->light))
