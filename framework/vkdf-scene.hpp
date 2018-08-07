@@ -599,6 +599,12 @@ struct _VkdfScene {
    } cmd_buf;
 
    struct {
+      GList *images;
+      GList *framebuffers;
+      GList *samplers;
+   } inactive;
+
+   struct {
       VkSemaphore update_resources_sem;
       VkSemaphore depth_draw_static_sem;
       VkSemaphore depth_draw_sem;

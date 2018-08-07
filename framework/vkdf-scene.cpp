@@ -503,21 +503,63 @@ destroy_set(gpointer key, gpointer value, gpointer data)
    free_scene_set(info, false);
 }
 
-static void
-destroy_light_shadow_map(VkdfScene *s, VkdfSceneLight *slight)
+static void inline
+new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf)
 {
-   if (slight->shadow.shadow_map.image)
-      vkdf_destroy_image(s->ctx, &slight->shadow.shadow_map);
-   if (slight->shadow.visible)
-      g_list_free(slight->shadow.visible);
-   if (slight->shadow.framebuffer)
-      vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
-   if (slight->shadow.sampler)
-      vkDestroySampler(s->ctx->device, slight->shadow.sampler, NULL);
+   struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
+   info->num_commands = 1;
+   info->cmd_buf[0] = cmd_buf;
+   info->cmd_buf[1] = 0;
+   info->tile = NULL;
+   s->cmd_buf.free[thread_id] =
+      g_list_prepend(s->cmd_buf.free[thread_id], info);
+}
+
+static void inline
+new_inactive_image(VkdfScene *s, VkdfImage *image)
+{
+   s->inactive.images = g_list_prepend(s->inactive.images, image);
+}
+
+static void inline
+new_inactive_framebuffer(VkdfScene *s, VkFramebuffer framebuffer)
+{
+   s->inactive.framebuffers =
+      g_list_prepend(s->inactive.framebuffers, GINT_TO_POINTER(framebuffer));
+}
+
+static void inline
+new_inactive_sampler(VkdfScene *s, VkSampler sampler)
+{
+   s->inactive.samplers =
+      g_list_prepend(s->inactive.samplers, GINT_TO_POINTER(sampler));
 }
 
 static void
-destroy_light(VkdfScene *s, uint32_t light_idx)
+destroy_light_shadow_map(VkdfScene *s, VkdfSceneLight *slight, bool immediately)
+{
+   if (immediately) {
+      if (slight->shadow.shadow_map.image)
+         vkdf_destroy_image(s->ctx, &slight->shadow.shadow_map);
+      if (slight->shadow.framebuffer)
+         vkDestroyFramebuffer(s->ctx->device, slight->shadow.framebuffer, NULL);
+      if (slight->shadow.sampler)
+         vkDestroySampler(s->ctx->device, slight->shadow.sampler, NULL);
+   } else {
+      if (slight->shadow.shadow_map.image)
+         new_inactive_image(s, &slight->shadow.shadow_map);
+      if (slight->shadow.framebuffer)
+         new_inactive_framebuffer(s, slight->shadow.framebuffer);
+      if (slight->shadow.sampler)
+         new_inactive_sampler(s, slight->shadow.sampler);
+   }
+
+   if (slight->shadow.visible)
+      g_list_free(slight->shadow.visible);
+}
+
+static void
+destroy_light(VkdfScene *s, uint32_t light_idx, bool immediately)
 {
    assert(light_idx < s->lights.size());
    VkdfSceneLight *slight = s->lights[light_idx];
@@ -531,11 +573,10 @@ destroy_light(VkdfScene *s, uint32_t light_idx)
    /* Destroy the light */
    vkdf_light_free(slight->light);
 
-   /* Destroy shadow map
-    *
-    * FIXME: this is not safe if the shadow map is still in use!
+   /* Destroy shadow map. We have to be careful not to free this while it is
+    * still being used for rendering.
     */
-   destroy_light_shadow_map(s, slight);
+   destroy_light_shadow_map(s, slight, immediately);
 
    /* Destroy scene light and remove it from the list */
    g_free(slight);
@@ -884,7 +925,7 @@ vkdf_scene_free(VkdfScene *s)
    s->models = NULL;
 
    while (s->lights.size() > 0)
-      destroy_light(s, 0);
+      destroy_light(s, 0, true);
    s->lights.clear();
    std::vector<VkdfSceneLight *>(s->lights).swap(s->lights);
 
@@ -1323,7 +1364,7 @@ compute_light_view_projection(VkdfScene *s, VkdfSceneLight *sl)
 static void
 scene_light_disable_shadows(VkdfScene *s, VkdfSceneLight *sl)
 {
-   destroy_light_shadow_map(s, sl);
+   destroy_light_shadow_map(s, sl, false);
    vkdf_light_enable_shadows(sl->light, false);
    vkdf_light_set_dirty_shadows(sl->light, false);
 }
@@ -1531,7 +1572,7 @@ vkdf_scene_add_light(VkdfScene *s,
 void
 vkdf_scene_remove_light_at_index(VkdfScene *s, uint32_t idx)
 {
-   destroy_light(s, idx);
+   destroy_light(s, idx, false);
 }
 
 void
@@ -1573,18 +1614,6 @@ sort_active_tiles_by_distance(VkdfScene *s)
 
    glm::vec3 cam_pos = vkdf_camera_get_position(s->camera);
    return g_list_sort_with_data(list, compare_distance, &cam_pos);
-}
-
-static void inline
-new_inactive_cmd_buf(VkdfScene *s, uint32_t thread_id, VkCommandBuffer cmd_buf)
-{
-   struct FreeCmdBufInfo *info = g_new(struct FreeCmdBufInfo, 1);
-   info->num_commands = 1;
-   info->cmd_buf[0] = cmd_buf;
-   info->cmd_buf[1] = 0;
-   info->tile = NULL;
-   s->cmd_buf.free[thread_id] =
-      g_list_prepend(s->cmd_buf.free[thread_id], info);
 }
 
 static void
@@ -1731,6 +1760,54 @@ free_inactive_command_buffers(VkdfScene *s)
          g_free(info);
       }
    }
+}
+
+static void
+free_inactive_images(VkdfScene *s)
+{
+   GList *head = s->inactive.images;
+   while (head) {
+      VkdfImage *image = (VkdfImage *) head->data;
+      vkdf_destroy_image(s->ctx, image);
+      head = g_list_delete_link(head, head);
+   }
+
+   s->inactive.images = NULL;
+}
+
+static void
+free_inactive_framebuffers(VkdfScene *s)
+{
+   GList *head = s->inactive.framebuffers;
+   while (head) {
+      VkFramebuffer framebuffer = (VkFramebuffer) head->data;
+      vkDestroyFramebuffer(s->ctx->device, framebuffer, NULL);
+      head = g_list_delete_link(head, head);
+   }
+
+   s->inactive.framebuffers = NULL;
+}
+
+static void
+free_inactive_samplers(VkdfScene *s)
+{
+   GList *head = s->inactive.samplers;
+   while (head) {
+      VkSampler sampler = (VkSampler) head->data;
+      vkDestroySampler(s->ctx->device, sampler, NULL);
+      head = g_list_delete_link(head, head);
+   }
+
+   s->inactive.samplers = NULL;
+}
+
+static void
+free_inactive_resources(VkdfScene *s)
+{
+   free_inactive_command_buffers(s);
+   free_inactive_images(s);
+   free_inactive_framebuffers(s);
+   free_inactive_samplers(s);
 }
 
 static inline void
@@ -6341,7 +6418,7 @@ scene_update(VkdfScene *s)
    // Check if any fences have been signaled and if so free any disposable
    // command buffers that were pending execution on signaled fences
    if (check_fences(s))
-      free_inactive_command_buffers(s);
+      free_inactive_resources(s);
 
    // Start recording command buffer with resource updates for this frame
    start_recording_resource_updates(s);
@@ -6559,7 +6636,7 @@ scene_draw(VkdfScene *s)
                           s->sync.present_fence);
 
    s->sync.present_fence_active = true;
-   free_inactive_command_buffers(s);
+   free_inactive_resources(s);
 }
 
 static inline void
