@@ -941,7 +941,7 @@ vkdf_scene_get_num_tiles(VkdfScene *s)
    return s->num_tiles.total;
 }
 
-void
+uint32_t
 vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *shadow_spec);

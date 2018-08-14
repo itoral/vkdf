@@ -1626,6 +1626,7 @@ vkdf_scene_add_light(VkdfScene *s,
       slight->volume_obj = add_light_volume_object_to_scene(s, light, light_idx);
 
    s->lights.push_back(slight);
+   return s->lights.size() - 1;
 }
 
 void
