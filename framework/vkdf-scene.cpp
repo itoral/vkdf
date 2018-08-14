@@ -1591,7 +1591,19 @@ remove_light_volume_object_from_scene(VkdfScene *s,
    slight->volume_obj = NULL;
 }
 
-void
+static inline bool
+light_has_volume(VkdfLight *light)
+{
+   switch (vkdf_light_get_type(light)) {
+   case VKDF_LIGHT_POINT:
+   case VKDF_LIGHT_SPOTLIGHT:
+      return true;
+   default:
+      return false;
+   }
+}
+
+uint32_t
 vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *spec)
@@ -1610,7 +1622,7 @@ vkdf_scene_add_light(VkdfScene *s,
    slight->dirty_frustum = true;
 
    const uint32_t light_idx = s->lights.size();
-   if (vkdf_light_get_type(light) != VKDF_LIGHT_DIRECTIONAL)
+   if (light_has_volume(light))
       slight->volume_obj = add_light_volume_object_to_scene(s, light, light_idx);
 
    s->lights.push_back(slight);
@@ -3346,14 +3358,15 @@ record_dirty_light_resource_updates(VkdfScene *s)
       }
 
       /* Eye-space light data */
-      if (s->compute_eye_space_light &&
-          (light_has_dirty_eye_space_data(sl->light, cam) ||
-           s->light_indices_dirty)) {
+      uint32_t light_type = vkdf_light_get_type(sl->light);
+      if (light_type != VKDF_LIGHT_AMBIENT &&
+          s->compute_eye_space_light &&
+          (light_has_dirty_eye_space_data(sl->light, cam) || s->light_indices_dirty)) {
 
          struct _light_eye_space_ubo_data data;
 
          glm::vec3 pos;
-         if (vkdf_light_get_type(sl->light) != VKDF_LIGHT_DIRECTIONAL) {
+         if (light_type != VKDF_LIGHT_DIRECTIONAL) {
             pos = vkdf_light_get_position(sl->light);
             data.eye_pos = vec4(view * vec4(pos, 1.0f), sl->light->origin.w);
          } else {
@@ -3361,7 +3374,7 @@ record_dirty_light_resource_updates(VkdfScene *s)
             data.eye_pos = vec4(view * vec4(pos, 0.0f), sl->light->origin.w);
          }
 
-         if (vkdf_light_get_type(sl->light) == VKDF_LIGHT_SPOTLIGHT) {
+         if (light_type == VKDF_LIGHT_SPOTLIGHT) {
             glm::vec3 dir = vkdf_light_get_direction(sl->light);
             data.eye_dir = vec4(view * vec4(dir, 0.0f), 0.0f);
          }
