@@ -8,6 +8,7 @@ enum {
    VKDF_LIGHT_DIRECTIONAL = 0,
    VKDF_LIGHT_POINT       = 1,
    VKDF_LIGHT_SPOTLIGHT   = 2,
+   VKDF_LIGHT_AMBIENT     = 3
 };
 
 enum {
@@ -78,6 +79,9 @@ vkdf_light_new_spotlight(glm::vec4 pos,
                          glm::vec4 attenuation,
                          glm::vec4 angle_attenuation);
 
+VkdfLight *
+vkdf_light_new_ambient(glm::vec4 ambient);
+
 void inline
 vkdf_light_set_type(VkdfLight *l, uint32_t light_type)
 {
@@ -96,7 +100,8 @@ vkdf_light_get_type(VkdfLight *l)
 void inline
 vkdf_light_set_position(VkdfLight *l, glm::vec3 pos)
 {
-   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL &&
+          vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    l->origin = vec4(pos, l->origin.w);
 
    uint32_t dirty_bits =
@@ -110,21 +115,24 @@ vkdf_light_set_position(VkdfLight *l, glm::vec3 pos)
 glm::vec4 inline
 vkdf_light_get_position_and_type(VkdfLight *l)
 {
-   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL &&
+          vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    return l->origin;
 }
 
 glm::vec3 inline
 vkdf_light_get_position(VkdfLight *l)
 {
-   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL);
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_DIRECTIONAL &&
+          vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    return vec3(l->origin);
 }
 
 void inline
 vkdf_light_set_direction(VkdfLight *l, glm::vec3 dir)
 {
-   assert(vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL);
+   assert(vkdf_light_get_type(l) == VKDF_LIGHT_DIRECTIONAL &&
+          vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    l->origin = vec4(dir, l->origin.w);
 
    uint32_t dirty_bits =
@@ -149,6 +157,8 @@ vkdf_light_get_direction(VkdfLight *l)
 void inline
 vkdf_light_set_diffuse(VkdfLight *l, glm::vec4 color)
 {
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
+
    l->diffuse = color;
 
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
@@ -158,6 +168,7 @@ vkdf_light_set_diffuse(VkdfLight *l, glm::vec4 color)
 glm::vec4 inline
 vkdf_light_get_diffuse(VkdfLight *l)
 {
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    return l->diffuse;
 }
 
@@ -179,6 +190,8 @@ vkdf_light_get_ambient(VkdfLight *l)
 void inline
 vkdf_light_set_specular(VkdfLight *l, glm::vec4 color)
 {
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
+
    l->specular = color;
 
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
@@ -188,12 +201,15 @@ vkdf_light_set_specular(VkdfLight *l, glm::vec4 color)
 glm::vec4 inline
 vkdf_light_get_specular(VkdfLight *l)
 {
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    return l->specular;
 }
 
 void inline
 vkdf_light_set_attenuation(VkdfLight *l, glm::vec4 attenuation)
 {
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
+
    l->attenuation = attenuation;
 
    uint32_t dirty_bits = VKDF_LIGHT_DIRTY;
@@ -203,6 +219,7 @@ vkdf_light_set_attenuation(VkdfLight *l, glm::vec4 attenuation)
 glm::vec4 inline
 vkdf_light_get_attenuation(VkdfLight *l)
 {
+   assert(vkdf_light_get_type(l) != VKDF_LIGHT_AMBIENT);
    return l->attenuation;
 }
 

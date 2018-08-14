@@ -82,6 +82,16 @@ vkdf_light_new_spotlight(glm::vec4 pos,
    return l;
 }
 
+VkdfLight *
+vkdf_light_new_ambient(glm::vec4 ambient)
+{
+   VkdfLight *l = g_new0(VkdfLight, 1);
+   init_light(l, glm::vec4(0.0f), ambient, glm::vec4(0.0f), glm::vec4(0.0f));
+   l->origin = glm::vec4(0.0f);
+   l->origin.w = VKDF_LIGHT_AMBIENT;
+   return l;
+}
+
 const glm::mat4 *
 vkdf_light_get_view_matrix(VkdfLight *l)
 {
