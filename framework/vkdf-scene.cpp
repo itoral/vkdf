@@ -1629,6 +1629,22 @@ vkdf_scene_add_light(VkdfScene *s,
    return s->lights.size() - 1;
 }
 
+uint32_t
+vkdf_scene_add_light_with_clip_planes(VkdfScene *s,
+                                      VkdfLight *light,
+                                      uint32_t num_planes,
+                                      glm::vec4 *planes)
+{
+   uint32_t light_idx = vkdf_scene_add_light(s, light, NULL);
+   VkdfSceneLight *sl = s->lights[light_idx];
+
+   sl->clip.num_planes = num_planes;
+   for (uint32_t i = 0; i < sl->clip.num_planes; i++)
+      sl->clip.planes[i] = planes[i];
+
+   return light_idx;
+}
+
 void
 vkdf_scene_remove_light_at_index(VkdfScene *s, uint32_t idx)
 {
@@ -2393,6 +2409,12 @@ struct _light_eye_space_ubo_data {
    uint32_t padding[0]; // Keep this struct 16-byte aligned
 };
 
+struct _light_clip_planes_ubo_data {
+   glm::vec4 planes[6];
+   uint32_t num_planes;
+   uint32_t padding[3]; // Keep this struct 16-byte aligned
+};
+
 /**
  * Creates a UBO with information about light sources, including:
  * 1. General light source description information (type, position, etc)
@@ -2406,6 +2428,7 @@ struct _light_eye_space_ubo_data {
 static void
 create_light_ubo(VkdfScene *s)
 {
+   /* FIXME: should pre-allocate for maximum number of lights */
    uint32_t num_lights = s->lights.size();
    assert(num_lights > 0);
 
@@ -2417,8 +2440,11 @@ create_light_ubo(VkdfScene *s)
    const uint32_t eye_space_data_size =
       ALIGN(sizeof(struct _light_eye_space_ubo_data), 16);
 
+   const uint32_t clip_planes_data_size =
+      ALIGN(sizeof(struct _light_clip_planes_ubo_data), 16);
+
    /* Since we pack multiple data segments into the UBO we need to make sure
-    * theit offsets are properly aligned
+    * their offsets are properly aligned
     */
    VkDeviceSize ubo_offset_alignment =
       s->ctx->phy_device_props.limits.minUniformBufferOffsetAlignment;
@@ -2437,6 +2463,11 @@ create_light_ubo(VkdfScene *s)
       buf_size = s->ubo.light.eye_space_data_offset +
                  s->ubo.light.eye_space_data_size;
    }
+
+   s->ubo.light.clip_planes_data_offset = ALIGN(buf_size, ubo_offset_alignment);
+   s->ubo.light.clip_planes_data_size = num_lights * clip_planes_data_size;
+   buf_size = s->ubo.light.clip_planes_data_offset +
+              s->ubo.light.clip_planes_data_size;
 
    s->ubo.light.size = buf_size;
 
@@ -3345,6 +3376,8 @@ record_dirty_light_resource_updates(VkdfScene *s)
    VkDeviceSize light_inst_size = ALIGN(sizeof(VkdfLight), 16);
    VkDeviceSize light_eye_space_size =
       ALIGN(sizeof(struct _light_eye_space_ubo_data), 16);
+   VkDeviceSize light_clip_planes_size =
+      ALIGN(sizeof(struct _light_clip_planes_ubo_data), 16);
 
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
@@ -3388,6 +3421,19 @@ record_dirty_light_resource_updates(VkdfScene *s)
                            s->ubo.light.buf.buf,
                            offset, light_eye_space_size,
                            &data);
+      }
+
+      /* Clip planes */
+      if ((scene_light_is_dirty(sl) || s->light_indices_dirty) &&
+          sl->clip.num_planes > 0) {
+         VkDeviceSize offset =
+            s->ubo.light.clip_planes_data_offset + i * light_clip_planes_size;
+
+         assert(light_eye_space_size < 64 * 1024);
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->ubo.light.buf.buf,
+                           offset, light_clip_planes_size,
+                           &sl->clip);
       }
    }
 

@@ -117,6 +117,12 @@ typedef struct {
       // light's view area when rendering the shadow map
       GList *visible;
    } shadow;
+
+   struct {
+      glm::vec4 planes[6];
+      uint32_t num_planes;
+   } clip;
+
    VkdfFrustum frustum;
    bool dirty_frustum;
 } VkdfSceneLight;
@@ -666,6 +672,8 @@ struct _VkdfScene {
          VkDeviceSize shadow_map_data_size;
          VkDeviceSize eye_space_data_offset;
          VkDeviceSize eye_space_data_size;
+         VkDeviceSize clip_planes_data_offset;
+         VkDeviceSize clip_planes_data_size;
          VkDeviceSize size;
       } light;
       struct {
@@ -883,6 +891,15 @@ vkdf_scene_get_light_eye_space_data_ubo_range(VkdfScene *s,
    *size = s->ubo.light.eye_space_data_size;
 }
 
+inline void
+vkdf_scene_get_light_clip_planes_data_ubo_range(VkdfScene *s,
+                                                VkDeviceSize *offset,
+                                                VkDeviceSize *size)
+{
+   *offset = s->ubo.light.clip_planes_data_offset;
+   *size = s->ubo.light.clip_planes_data_size;
+}
+
 inline VkdfLight *
 vkdf_scene_get_light(VkdfScene *s, uint32_t index)
 {
@@ -904,6 +921,13 @@ vkdf_scene_light_get_shadow_map_image(VkdfScene *s, uint32_t index)
    assert(index < s->lights.size() &&
           vkdf_light_casts_shadows(s->lights[index]->light));
    return &s->lights[index]->shadow.shadow_map;
+}
+
+inline uint32_t
+vkdf_scene_light_has_clip_planes(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   return s->lights[index]->clip.num_planes > 0;
 }
 
 void
@@ -945,6 +969,12 @@ uint32_t
 vkdf_scene_add_light(VkdfScene *s,
                      VkdfLight *light,
                      VkdfSceneShadowSpec *shadow_spec);
+
+uint32_t
+vkdf_scene_add_light_with_clip_planes(VkdfScene *s,
+                                      VkdfLight *light,
+                                      uint32_t num_planes,
+                                      glm::vec4 *planes);
 
 void
 vkdf_scene_remove_light_at_index(VkdfScene *s, uint32_t idx);
