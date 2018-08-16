@@ -19,7 +19,7 @@ glm::vec3
 vkdf_box_get_vertex(const VkdfBox *box, uint32_t index);
 
 bool
-vkdf_box_is_inside(const VkdfBox *box, glm::vec3 *p);
+vkdf_box_is_inside(const VkdfBox *box, glm::vec3 &p);
 
 bool
 vkdf_box_collision(const VkdfBox *box1, const VkdfBox *box2);
