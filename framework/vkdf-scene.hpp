@@ -125,6 +125,8 @@ typedef struct {
 
    VkdfFrustum frustum;
    bool dirty_frustum;
+
+   bool enabled;
 } VkdfSceneLight;
 
 typedef struct _VkdfSceneTile VkdfSceneTile;
@@ -934,6 +936,35 @@ void
 vkdf_scene_light_update_shadow_spec(VkdfScene *s,
                                     uint32_t index,
                                     VkdfSceneShadowSpec *spec);
+
+inline void
+vkdf_scene_light_enable(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   s->lights[index]->enabled = true;
+
+   /* We need to mark enabled lights as dirty, otherwise the scene update
+    * might not be aware that their state has changed.
+    */
+   VkdfLight *l = s->lights[index]->light;
+   vkdf_light_set_dirty(l, true);
+   vkdf_light_set_dirty_shadows(l, vkdf_light_casts_shadows(l));
+}
+
+inline void
+vkdf_scene_light_disable(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   s->lights[index]->enabled = false;
+}
+
+inline bool
+vkdf_scene_light_is_enabled(VkdfScene *s, uint32_t index)
+{
+   assert(index < s->lights.size());
+   return s->lights[index]->enabled &&
+          s->lights[index]->light->intensity > 0.0f;
+}
 
 inline uint32_t
 vkdf_scene_get_static_object_count(VkdfScene *scene)

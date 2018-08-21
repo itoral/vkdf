@@ -1610,6 +1610,7 @@ vkdf_scene_add_light(VkdfScene *s,
 {
    VkdfSceneLight *slight = g_new0(VkdfSceneLight, 1);
    slight->light = light;
+   slight->enabled = true;
 
    if (spec)
       scene_light_enable_shadows(s, slight, spec);
@@ -3342,23 +3343,32 @@ skip_shadow_map_frame(VkdfSceneLight *sl)
 }
 
 static bool
-vkdf_scene_light_has_dirty_shadows(VkdfSceneLight *sl)
+scene_light_has_dirty_shadows(VkdfSceneLight *sl)
 {
+   if (!sl->enabled)
+      return false;
+
    if (!vkdf_light_has_dirty_shadows(sl->light))
       return false;
 
    return !skip_shadow_map_frame(sl);
 }
 
+static bool
+scene_light_is_dirty(VkdfSceneLight *sl)
+{
+   return sl->enabled && vkdf_light_is_dirty(sl->light);
+}
+
 static inline bool
-light_has_dirty_eye_space_data(VkdfLight *l, VkdfCamera *cam)
+scene_light_has_dirty_eye_space_data(VkdfSceneLight *sl, VkdfCamera *cam)
 {
    /* FIXME: we can optimize this by type light:
     * - directional only need eye-space updates for direction (origin)
     * - positional only need eye-space updates for position (origin)
     * - spotlights only need eye-space updates for position and direction
     */
-   return vkdf_light_is_dirty(l) || vkdf_camera_is_dirty(cam);
+   return scene_light_is_dirty(sl) || vkdf_camera_is_dirty(cam);
 }
 
 static void
@@ -3383,7 +3393,7 @@ record_dirty_light_resource_updates(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
 
       /* Base light data */
-      if (vkdf_light_is_dirty(sl->light) || s->light_indices_dirty) {
+      if (scene_light_is_dirty(sl) || s->light_indices_dirty) {
          assert(light_inst_size < 64 * 1024);
          vkCmdUpdateBuffer(s->cmd_buf.update_resources,
                            s->ubo.light.buf.buf,
@@ -3395,7 +3405,7 @@ record_dirty_light_resource_updates(VkdfScene *s)
       uint32_t light_type = vkdf_light_get_type(sl->light);
       if (light_type != VKDF_LIGHT_AMBIENT &&
           s->compute_eye_space_light &&
-          (light_has_dirty_eye_space_data(sl->light, cam) || s->light_indices_dirty)) {
+          (scene_light_has_dirty_eye_space_data(sl, cam) || s->light_indices_dirty)) {
 
          struct _light_eye_space_ubo_data data;
 
@@ -3454,7 +3464,7 @@ record_dirty_shadow_map_resource_updates(VkdfScene *s)
       VkdfSceneLight *sl = s->lights[i];
       if (!vkdf_light_casts_shadows(sl->light))
          continue;
-      if (!vkdf_scene_light_has_dirty_shadows(sl) && !s->light_indices_dirty)
+      if (!scene_light_has_dirty_shadows(sl) && !s->light_indices_dirty)
          continue;
 
       struct _shadow_map_ubo_data data;
@@ -3615,6 +3625,11 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
    VkdfScene *s = data->s;
    VkdfSceneLight *sl = data->sl;
 
+   if (!sl->enabled) {
+      data->has_dirty_shadow_map = false;
+      return;
+   }
+
    // FIXME: for spolights, if neither the spotlight nor its area of
    // influence are visible to the camera, then we can skip shadow map
    // updates. This requires frustum vs frustum testing or maybe a
@@ -3623,7 +3638,7 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 
    // If the light has dirty shadows it means that its area of influence
    // has changed and we need to recompute its list of visible tiles.
-   if (vkdf_scene_light_has_dirty_shadows(sl)) {
+   if (scene_light_has_dirty_shadows(sl)) {
       data->has_dirty_shadow_map = true;
       compute_light_view_projection(s, sl);
       compute_visible_tiles_for_light(s, sl);
@@ -3663,6 +3678,9 @@ thread_shadow_map_update(uint32_t thread_id, void *arg)
 static bool
 directional_light_has_dirty_shadow_map(VkdfScene *s, VkdfSceneLight *sl)
 {
+   if (!sl->enabled)
+      return false;
+
    VkdfCamera *cam = vkdf_scene_get_camera(s);
 
    if (vkdf_light_has_dirty_shadows(sl->light))
@@ -3687,7 +3705,7 @@ update_light_volume_objects(VkdfScene *s)
       if (!sl->volume_obj)
          continue;
 
-      if (!vkdf_light_is_dirty(sl->light))
+      if (!scene_light_is_dirty(sl))
          continue;
 
       VkdfLight *l = sl->light;
@@ -3746,6 +3764,9 @@ update_dirty_lights(VkdfScene *s)
    bool has_thread_jobs = false;
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
+      if (!sl->enabled)
+         continue;
+
       VkdfLight *l = sl->light;
 
       // Directional ligthts are special because the shadow box that defines
@@ -3757,12 +3778,12 @@ update_dirty_lights(VkdfScene *s)
          vkdf_light_set_dirty_shadows(l, true);
       }
 
-      if (vkdf_light_is_dirty(l) ||
-          (s->compute_eye_space_light && light_has_dirty_eye_space_data(l, cam))) {
+      if (scene_light_is_dirty(sl) ||
+          (s->compute_eye_space_light && scene_light_has_dirty_eye_space_data(sl, cam))) {
          s->lights_dirty = true;
       }
 
-      if (vkdf_scene_light_has_dirty_shadows(sl))
+      if (scene_light_has_dirty_shadows(sl))
          sl->dirty_frustum = true;
 
       if (!vkdf_light_casts_shadows(l))
@@ -3832,7 +3853,7 @@ update_dirty_lights(VkdfScene *s)
    for (uint32_t i = 0; i < num_lights; i++) {
       VkdfSceneLight *sl = s->lights[i];
 
-      if (vkdf_scene_light_has_dirty_shadows(sl)) {
+      if (scene_light_has_dirty_shadows(sl)) {
          vkdf_light_set_dirty_shadows(sl->light, false);
          sl->shadow.frame_counter = 0;
       } else {
@@ -6208,6 +6229,14 @@ update_dirty_objects(VkdfScene *s)
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
 
+         /* If this is a light volume and the light is disabled, skip */
+         const int32_t light_idx = obj->priv_data.i32[0];
+         const bool is_light_volume = light_idx >= 0;
+         if (is_light_volume && !vkdf_scene_light_is_enabled(s, light_idx)) {
+            obj_iter = g_list_next(obj_iter);
+            continue;
+         }
+
          // FIXME: Maybe we want to wrap objects into sceneobjects so we
          // can keep track of whether they are visible to the camera and the
          // lights and their slots in the UBOs. Then here and in other
@@ -6224,10 +6253,10 @@ update_dirty_objects(VkdfScene *s)
          VkdfBox *obj_box = vkdf_object_get_box(obj);
          if (vkdf_box_is_in_frustum(obj_box, cam_box, cam_planes) != OUTSIDE) {
             // Add the object to the corresponding visible list (we track
-            // light volumes for shadow casting lights separately)and update
+            // light volumes for shadow casting lights separately) and update
             // visibility counters
-            if (obj->priv_data.i32[0] >= 0 &&
-                s->lights[obj->priv_data.u32[0]]->light->casts_shadows) {
+            if (is_light_volume &&
+                vkdf_light_casts_shadows(s->lights[light_idx]->light)) {
                visible_slv = g_list_prepend(visible_slv, obj);
             } else {
                visible = g_list_prepend(visible, obj);
