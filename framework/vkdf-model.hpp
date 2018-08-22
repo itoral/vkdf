@@ -92,6 +92,15 @@ vkdf_model_add_material(VkdfModel *model, VkdfMaterial *material)
    model->materials.push_back(*material);
 }
 
+inline void
+vkdf_model_add_texture_material(VkdfModel *model,
+                                VkdfMaterial *material,
+                                VkdfTexMaterial *tex_material)
+{
+   vkdf_model_add_material(model, material);
+   model->tex_materials.push_back(*tex_material);
+}
+
 void
 vkdf_model_fill_vertex_buffers(VkdfContext *ctx,
                                VkdfModel *model,
