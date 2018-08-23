@@ -68,7 +68,7 @@ VkdfModel *
 vkdf_model_new();
 
 VkdfModel *
-vkdf_cube_model_new(VkdfContext *ctx);
+vkdf_cube_model_new(VkdfContext *ctx, bool include_uvs = false);
 
 VkdfModel *
 vkdf_sphere_model_new(VkdfContext *ctx);

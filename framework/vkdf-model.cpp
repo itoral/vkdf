@@ -19,9 +19,9 @@ create_model_with_mesh(VkdfContext *ctx, VkdfMesh *mesh)
 }
 
 VkdfModel *
-vkdf_cube_model_new(VkdfContext *ctx)
+vkdf_cube_model_new(VkdfContext *ctx, bool include_uvs)
 {
-   VkdfMesh *mesh = vkdf_cube_mesh_new(ctx);
+   VkdfMesh *mesh = vkdf_cube_mesh_new(ctx, include_uvs);
    return create_model_with_mesh(ctx, mesh);
 }
 

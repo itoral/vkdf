@@ -23,7 +23,7 @@ vkdf_mesh_new(VkPrimitiveTopology primitive)
 }
 
 VkdfMesh *
-vkdf_cube_mesh_new(VkdfContext *ctx)
+vkdf_cube_mesh_new(VkdfContext *ctx, bool include_uvs)
 {
    static glm::vec3 vertices[] = {
       // Front
@@ -84,10 +84,62 @@ vkdf_cube_mesh_new(VkdfContext *ctx)
       glm::vec3( 0.0f, -1.0f,  0.0f), // Bottom
    };
 
+   static glm::vec2 uvs[] = {
+      // Front
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(1.0f, 1.0f),
+
+      // Back
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(1.0f, 1.0f),
+
+      // Left
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(1.0f, 1.0f),
+
+      // Right
+      glm::vec2(1.0f, 0.0f),
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(1.0f, 1.0f),
+      glm::vec2(1.0f, 1.0f),
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(0.0f, 1.0f),
+
+      // Top
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(1.0f, 1.0f),
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(1.0f, 1.0f),
+      glm::vec2(1.0f, 0.0f),
+
+      // Bottom
+      glm::vec2(0.0f, 1.0f),
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(1.0f, 1.0f),
+      glm::vec2(1.0f, 1.0f),
+      glm::vec2(0.0f, 0.0f),
+      glm::vec2(1.0f, 0.0f),
+   };
+
    VkdfMesh *mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
    for (uint32_t i = 0; i < 36; i++) {
       mesh->vertices.push_back(vertices[i]);
       mesh->normals.push_back(face_normals[i / 6]);
+      if (include_uvs)
+         mesh->uvs.push_back(uvs[i]);
    }
 
    vkdf_mesh_compute_box(mesh);

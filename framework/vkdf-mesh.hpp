@@ -34,7 +34,7 @@ VkdfMesh *
 vkdf_mesh_new(VkPrimitiveTopology primitive);
 
 VkdfMesh *
-vkdf_cube_mesh_new(VkdfContext *ctx);
+vkdf_cube_mesh_new(VkdfContext *ctx, bool include_uvs = false);
 
 VkdfMesh *
 vkdf_tile_mesh_new(VkdfContext *ctx);
