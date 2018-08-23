@@ -837,7 +837,7 @@ check_camera_collision(VkdfScene *s, VkdfCamera *cam, glm::vec3 prev_pos)
    if (prev_pos == cam->pos)
       return;
 
-   if (!vkdf_scene_check_camera_collision(s))
+   if (!vkdf_scene_check_camera_collision(s, NULL))
       return;
 
    /* Otherwise, try to move in each axis separately so we can slide along
@@ -850,7 +850,7 @@ check_camera_collision(VkdfScene *s, VkdfCamera *cam, glm::vec3 prev_pos)
                             diff.y * (i == 1 ? 1.0f : 0.0f),
                             diff.z * (i == 2 ? 1.0f : 0.0f));
 
-      if (prev_pos != cam->pos && vkdf_scene_check_camera_collision(s))
+      if (prev_pos != cam->pos && vkdf_scene_check_camera_collision(s, NULL))
          cam->pos = prev_pos;
 
       prev_pos = cam->pos;

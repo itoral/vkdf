@@ -6812,7 +6812,10 @@ check_collision_with_object(VkdfBox *box,
 }
 
 static bool
-check_tile_collision(VkdfScene *s, VkdfSceneTile *t, VkdfBox *box)
+check_tile_collision(VkdfScene *s,
+                     VkdfSceneTile *t,
+                     VkdfBox *box,
+                     VkdfObject **collision_obj)
 {
    if (t->obj_count == 0)
       return false;
@@ -6825,8 +6828,7 @@ check_tile_collision(VkdfScene *s, VkdfSceneTile *t, VkdfBox *box)
     */
    if (t->subtiles) {
       for (uint32_t i = 0; i < 8; i++) {
-         bool has_collision = check_tile_collision(s, &t->subtiles[i], box);
-         if (has_collision)
+         if (check_tile_collision(s, &t->subtiles[i], box, collision_obj))
             return true;
       }
 
@@ -6847,8 +6849,11 @@ check_tile_collision(VkdfScene *s, VkdfSceneTile *t, VkdfBox *box)
       GList *obj_iter = set_info->objs;
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
-         if (check_collision_with_object(box, obj, true))
+         if (check_collision_with_object(box, obj, true)) {
+            if (collision_obj)
+               *collision_obj = obj;
             return true;
+         }
          obj_iter = g_list_next(obj_iter);
       }
 
@@ -6859,13 +6864,13 @@ check_tile_collision(VkdfScene *s, VkdfSceneTile *t, VkdfBox *box)
 }
 
 bool
-vkdf_scene_check_camera_collision(VkdfScene *s)
+vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
 {
    VkdfBox *cam_box = vkdf_camera_get_collision_box(s->camera);
 
    /* Check collision against static geometry */
    for (uint32_t ti = 0; ti < s->num_tiles.total; ti++) {
-      if (check_tile_collision(s, &s->tiles[ti], cam_box))
+      if (check_tile_collision(s, &s->tiles[ti], cam_box, collision_obj))
          return true;
    }
 
@@ -6885,8 +6890,11 @@ vkdf_scene_check_camera_collision(VkdfScene *s)
       GList *obj_iter = info->objs;
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
-         if (check_collision_with_object(cam_box, obj, true))
+         if (check_collision_with_object(cam_box, obj, true)) {
+            if (collision_obj)
+               *collision_obj = obj;
             return true;
+         }
          obj_iter = g_list_next(obj_iter);
       }
    }
@@ -6897,8 +6905,11 @@ vkdf_scene_check_camera_collision(VkdfScene *s)
     */
    for (uint32_t i = 0; i < s->wall.list.size(); i++) {
       VkdfBox *box = &s->wall.list[i];
-      if (vkdf_box_collision(cam_box, box))
+      if (vkdf_box_collision(cam_box, box)) {
+         if (collision_obj)
+            *collision_obj = NULL;
          return true;
+      }
    }
 
    return false;
