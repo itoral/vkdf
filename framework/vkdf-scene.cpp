@@ -1636,6 +1636,8 @@ vkdf_scene_add_light_with_clip_planes(VkdfScene *s,
                                       uint32_t num_planes,
                                       glm::vec4 *planes)
 {
+   assert(num_planes <= 6);
+
    uint32_t light_idx = vkdf_scene_add_light(s, light, NULL);
    VkdfSceneLight *sl = s->lights[light_idx];
 
@@ -1644,6 +1646,45 @@ vkdf_scene_add_light_with_clip_planes(VkdfScene *s,
       sl->clip.planes[i] = planes[i];
 
    return light_idx;
+}
+
+void
+vkdf_scene_light_set_clip_planes(VkdfScene *s,
+                                 uint32_t index,
+                                 uint32_t num_planes,
+                                 glm::vec4 *planes)
+{
+   assert(index < s->lights.size());
+   assert(num_planes <= 6);
+
+   VkdfSceneLight *sl = s->lights[index];
+
+   sl->clip.num_planes = num_planes;
+   for (uint32_t i = 0; i < sl->clip.num_planes; i++)
+      sl->clip.planes[i] = planes[i];
+
+   vkdf_light_set_dirty(sl->light, true);
+}
+
+/**
+ * This can be used to remove unnecessary (or restore necessary)
+ * clip-planes at any given time.
+ *
+ * The user is responsible for ensuring that the light has all the
+ * requested planes set.
+ */
+void
+vkdf_scene_light_set_num_clip_planes(VkdfScene *s,
+                                     uint32_t index,
+                                     uint32_t num_planes)
+{
+   assert(index < s->lights.size());
+   assert(num_planes <= 6);
+
+   VkdfSceneLight *sl = s->lights[index];
+   sl->clip.num_planes = num_planes;
+
+   vkdf_light_set_dirty(sl->light, true);
 }
 
 void

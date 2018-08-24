@@ -933,6 +933,17 @@ vkdf_scene_light_has_clip_planes(VkdfScene *s, uint32_t index)
 }
 
 void
+vkdf_scene_light_set_clip_planes(VkdfScene *s,
+                                 uint32_t index,
+                                 uint32_t num_planes,
+                                 glm::vec4 *planes);
+
+void
+vkdf_scene_light_set_num_clip_planes(VkdfScene *s,
+                                     uint32_t index,
+                                     uint32_t num_planes);
+
+void
 vkdf_scene_light_update_shadow_spec(VkdfScene *s,
                                     uint32_t index,
                                     VkdfSceneShadowSpec *spec);
