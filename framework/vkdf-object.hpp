@@ -9,6 +9,7 @@
 typedef struct {
    glm::vec3 pos;
    glm::vec3 rot;
+   glm::vec3 rot_origin;
    glm::vec3 scale;
 
    VkdfModel *model;
@@ -75,6 +76,12 @@ inline void
 vkdf_object_set_rotation(VkdfObject *obj, const glm::vec3 &rot)
 {
    SET_FIELD(obj, obj->rot, rot)
+}
+
+inline void
+vkdf_object_set_rotation_origin(VkdfObject *obj, const glm::vec3 &rot_origin)
+{
+   SET_FIELD(obj, obj->rot_origin, rot_origin)
 }
 
 inline void

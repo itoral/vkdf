@@ -71,7 +71,7 @@ vkdf_object_get_model_matrix(VkdfObject *obj)
       return obj->model_matrix;
 
    obj->model_matrix =
-      vkdf_compute_model_matrix(obj->pos, obj->rot, obj->scale);
+      vkdf_compute_model_matrix(obj->pos, obj->rot, obj->scale, obj->rot_origin);
 
    vkdf_object_set_dirty_model_matrix(obj, false);
    return obj->model_matrix;
@@ -114,7 +114,7 @@ compute_box(VkdfObject *obj)
     */
    if (obj->rot.x != 0.0f || obj->rot.y != 0.0f || obj->rot.z != 0.0f) {
       glm::mat4 rot_matrix =
-         get_rotation_matrix_at_position(obj->pos, obj->rot);
+         get_rotation_matrix_at_position(obj->pos + obj->rot_origin, obj->rot);
       vkdf_box_transform(&obj->box, &rot_matrix);
    }
 

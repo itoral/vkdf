@@ -142,11 +142,21 @@ vkdf_compute_viewdir(glm::vec3 rot)
 
 /**
  * Computes a model matrix
+ *
+ * When 'rot_origin_offset' is the origin (default), the rotation applies to
+ * the object's center. Otherwise, it applies around the object's center
+ * plus this offset.
  */
 glm::mat4
-vkdf_compute_model_matrix(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale)
+vkdf_compute_model_matrix(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale,
+                          glm::vec3 rot_origin_offset)
 {
-   glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
+   glm::mat4 m = glm::mat4(1.0f);
+
+   m = glm::translate(m, pos);
+
+   if (rot_origin_offset != glm::vec3(0.0f))
+      m = glm::translate(m, rot_origin_offset);
 
    if (rot.x != 0.0f || rot.y != 0.0f || rot.z != 0.0f) {
       glm::vec3 rot_rad = glm::vec3(DEG_TO_RAD(rot.x),
@@ -156,6 +166,9 @@ vkdf_compute_model_matrix(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale)
       glm::mat4 rot_matrix = glm::toMat4(quat);
       m = m * rot_matrix;
    }
+
+   if (rot_origin_offset != glm::vec3(0.0f))
+      m = glm::translate(m, -rot_origin_offset);
 
    if (scale.x != 1.0f || scale.y != 1.0f || scale.z != 1.0f)
       m = glm::scale(m, scale);
