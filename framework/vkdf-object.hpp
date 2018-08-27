@@ -15,6 +15,7 @@ typedef struct {
 
    VkdfBox box;
    VkdfBox *mesh_boxes;
+   bool do_mesh_collision;
 
    glm::mat4 model_matrix;
 
@@ -191,6 +192,12 @@ vkdf_object_set_dirty_mesh_boxes(VkdfObject *obj, bool dirty)
    /* If we mark this dirty we should've marked the main box too */
    assert(!dirty || obj->dirty_box);
    obj->dirty_mesh_boxes = dirty;
+}
+
+inline void
+vkdf_object_set_do_mesh_collision(VkdfObject *obj, bool enable)
+{
+   obj->do_mesh_collision = enable;
 }
 
 inline bool

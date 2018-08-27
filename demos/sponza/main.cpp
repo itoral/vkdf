@@ -2233,6 +2233,7 @@ init_objects(SceneResources *res)
    vkdf_object_set_material_idx_base(obj, 0);
    vkdf_object_set_lighting_behavior(obj, true, true);
    vkdf_object_set_dynamic(obj, true);
+   vkdf_object_set_do_mesh_collision(obj, true);
    vkdf_scene_add_object(res->scene, "sponza", obj);
 
    res->sponza_obj = obj;

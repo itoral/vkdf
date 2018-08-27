@@ -6890,7 +6890,7 @@ check_tile_collision(VkdfScene *s,
       GList *obj_iter = set_info->objs;
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
-         if (check_collision_with_object(box, obj, true)) {
+         if (check_collision_with_object(box, obj, obj->do_mesh_collision)) {
             if (collision_obj)
                *collision_obj = obj;
             return true;
@@ -6931,7 +6931,7 @@ vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
       GList *obj_iter = info->objs;
       while (obj_iter) {
          VkdfObject *obj = (VkdfObject *) obj_iter->data;
-         if (check_collision_with_object(cam_box, obj, true)) {
+         if (check_collision_with_object(cam_box, obj, obj->do_mesh_collision)) {
             if (collision_obj)
                *collision_obj = obj;
             return true;
