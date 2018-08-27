@@ -11,6 +11,7 @@ static const uint32_t sdl_key_map[] = {
    SDL_SCANCODE_PAGEUP,
    SDL_SCANCODE_PAGEDOWN,
    SDL_SCANCODE_SPACE,
+   SDL_SCANCODE_RETURN,
    SDL_SCANCODE_A,
    SDL_SCANCODE_L,
 };

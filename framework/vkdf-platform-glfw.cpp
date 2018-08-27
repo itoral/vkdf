@@ -9,6 +9,7 @@ static const uint32_t glfw_key_map[] = {
    GLFW_KEY_PAGE_UP,
    GLFW_KEY_PAGE_DOWN,
    GLFW_KEY_SPACE,
+   GLFW_KEY_ENTER,
    GLFW_KEY_A,
    GLFW_KEY_L,
 };
