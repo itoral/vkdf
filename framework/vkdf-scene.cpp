@@ -3604,6 +3604,12 @@ record_dynamic_shadow_map_resource_updates_helper(VkdfScene *s,
    // lights, we may have to replicate object data for each light.
    uint8_t *mem = (uint8_t *) s->dynamic.ubo.shadow_map.host_buf;
 
+   const uint32_t item_size = ALIGN(sizeof(glm::mat4), 16);
+
+   /* This is the number of objects we have uploaded for previous lights */
+   uint32_t total_count = *offset / item_size;
+
+   /* This tracks the number of objects for this light */
    uint32_t count = 0;
 
    char *id;
@@ -3614,8 +3620,11 @@ record_dynamic_shadow_map_resource_updates_helper(VkdfScene *s,
       if (!info || info->shadow_caster_count == 0)
          continue;
 
-      // Sanity check
+      /* We reset start index to 0 for each light, so here we need to amend
+       * this by adding the number of objects we uploaded for previous lights
+       */
       assert(count == info->shadow_caster_start_index);
+      info->shadow_caster_start_index += total_count;
 
       GList *obj_iter = info->objs;
       while (obj_iter) {
@@ -3623,11 +3632,10 @@ record_dynamic_shadow_map_resource_updates_helper(VkdfScene *s,
 
          // Model matrix
          glm::mat4 model = vkdf_object_get_model_matrix(obj);
-         memcpy(mem + (*offset),
-                &model[0][0], sizeof(glm::mat4));
-         *offset += sizeof(glm::mat4);
+         memcpy(mem + (*offset), &model[0][0], item_size);
+         *offset += item_size;
 
-         *offset = ALIGN(*offset, 16);
+         assert(*offset % 16 == 0);
 
          count++;
          obj_iter = g_list_next(obj_iter);
