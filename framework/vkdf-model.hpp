@@ -77,7 +77,8 @@ VkdfModel *
 vkdf_cone_model_new(VkdfContext *ctx);
 
 void
-vkdf_model_free(VkdfContext *ctx, VkdfModel *model);
+vkdf_model_free(VkdfContext *ctx, VkdfModel *model,
+                bool free_material_resources = true);
 
 inline void
 vkdf_model_add_mesh(VkdfModel *model, VkdfMesh *mesh)

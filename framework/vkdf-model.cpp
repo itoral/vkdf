@@ -331,7 +331,8 @@ vkdf_model_load(const char *file)
 }
 
 void
-vkdf_model_free(VkdfContext *ctx, VkdfModel *model)
+vkdf_model_free(VkdfContext *ctx, VkdfModel *model,
+                bool free_material_resources)
 {
    for (uint32_t i = 0; i < model->meshes.size(); i++)
       vkdf_mesh_free(ctx, model->meshes[i]);
@@ -350,14 +351,16 @@ vkdf_model_free(VkdfContext *ctx, VkdfModel *model)
       g_free(model->tex_materials[i].specular_path);
       g_free(model->tex_materials[i].normal_path);
       g_free(model->tex_materials[i].opacity_path);
-      if (model->tex_materials[i].diffuse.image)
-         vkdf_destroy_image(ctx, &model->tex_materials[i].diffuse);
-      if (model->tex_materials[i].specular.image)
-         vkdf_destroy_image(ctx, &model->tex_materials[i].specular);
-      if (model->tex_materials[i].normal.image)
-         vkdf_destroy_image(ctx, &model->tex_materials[i].normal);
-      if (model->tex_materials[i].opacity.image)
-         vkdf_destroy_image(ctx, &model->tex_materials[i].opacity);
+      if (free_material_resources) {
+         if (model->tex_materials[i].diffuse.image)
+            vkdf_destroy_image(ctx, &model->tex_materials[i].diffuse);
+         if (model->tex_materials[i].specular.image)
+            vkdf_destroy_image(ctx, &model->tex_materials[i].specular);
+         if (model->tex_materials[i].normal.image)
+            vkdf_destroy_image(ctx, &model->tex_materials[i].normal);
+         if (model->tex_materials[i].opacity.image)
+            vkdf_destroy_image(ctx, &model->tex_materials[i].opacity);
+      }
    }
    model->tex_materials.clear();
    std::vector<VkdfTexMaterial>(model->tex_materials).swap(model->tex_materials);
