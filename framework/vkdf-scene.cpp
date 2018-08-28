@@ -6304,7 +6304,7 @@ update_dirty_objects(VkdfScene *s)
             }
 
             vis_info->count++;
-            if (vkdf_object_casts_shadows) {
+            if (vkdf_object_casts_shadows(obj)) {
                vis_info->shadow_caster_count++;
                s->dynamic.visible_shadow_caster_count++;
             }
