@@ -959,7 +959,6 @@ vkdf_scene_free(VkdfScene *s)
 
    free_dynamic_objects(s);
    g_free(s->dynamic.ubo.obj.host_buf);
-   g_free(s->dynamic.ubo.material.host_buf);
    g_free(s->dynamic.ubo.shadow_map.host_buf);
 
    vkDestroySemaphore(s->ctx->device, s->sync.update_resources_sem, NULL);
@@ -1176,10 +1175,6 @@ add_dynamic_object(VkdfScene *s, const char *set_id, VkdfObject *obj)
    if (!info) {
       info = g_new0(VkdfSceneSetInfo, 1);
       g_hash_table_replace(s->dynamic.sets, g_strdup(set_id), info);
-
-      // If this is the first time we added this type of dynamic object
-      // we will need to update the dynamic materials UBO
-      s->dynamic.materials_dirty = true;
    }
    info->objs = g_list_prepend(info->objs, obj);
    info->count++;
@@ -2653,7 +2648,6 @@ create_dynamic_material_ubo(VkdfScene *s)
    VkDeviceSize buf_size =
       MAX_DYNAMIC_MATERIALS * s->dynamic.ubo.material.inst_size;
 
-   s->dynamic.ubo.material.host_buf = g_new(uint8_t, buf_size);
    s->dynamic.ubo.material.size = buf_size;
 
    s->dynamic.ubo.material.buf =
@@ -6237,9 +6231,7 @@ update_dirty_objects(VkdfScene *s)
    // Go through all dynamic objects in the scene and update visible sets
    // and their material data
    uint8_t *obj_mem = (uint8_t *) s->dynamic.ubo.obj.host_buf;
-   uint8_t *mat_mem = (uint8_t *) s->dynamic.ubo.material.host_buf;
    VkDeviceSize obj_offset = 0;
-   VkDeviceSize mat_offset;
 
    uint32_t model_index = 0;
    char *id;
@@ -6373,30 +6365,29 @@ update_dirty_objects(VkdfScene *s)
          vkdf_object_set_dirty(obj, false);
       }
 
-      // Update material data for this dynamic object set. We only need to
-      // upload material data for dynamic objects once unless we have added
-      // new set-ids or the materials have been updated (we don't really
-      // support that for now)
-      //
-      // FIXME: support dirty materials for existing set-ids
-      if (s->dynamic.materials_dirty) {
-         VkdfModel *model = ((VkdfObject *) info->objs->data)->model;
-         uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
-         mat_offset = model_index * MAX_MATERIALS_PER_MODEL * material_size;
-         uint32_t num_materials = model->materials.size();
+      // Record dynamic material UBO update if needed
+      VkdfModel *model = ((VkdfObject *) info->objs->data)->model;
+      if (model->materials_dirty) {
+         const uint32_t material_size = ALIGN(sizeof(VkdfMaterial), 16);
+         const uint32_t num_materials = model->materials.size();
          assert(num_materials <= MAX_MATERIALS_PER_MODEL);
-         for (uint32_t mat_idx = 0; mat_idx < num_materials; mat_idx++) {
-            VkdfMaterial *m = &model->materials[mat_idx];
-            memcpy(mat_mem + mat_offset, m, material_size);
-            mat_offset += material_size;
-         }
+         const VkDeviceSize update_offset =
+            model_index * MAX_MATERIALS_PER_MODEL * material_size;
+         const VkDeviceSize update_size = num_materials * material_size;
+
+         assert(update_size < 64 * 1024);
+         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
+                           s->dynamic.ubo.material.buf.buf,
+                           update_offset, update_size,
+                           &model->materials[0]);
+
+         model->materials_dirty = false;
       }
 
       model_index++;
    }
 
-   // Record dynamic resource update command buffer for dynamic objects and
-   // materials
+   // Record dynamic resource update command buffer for dynamic objects
    //
    // FIXME: Maybe we can skip this if we have an efficient way to know that
    // it has not changed from the previous frame ahead. For now,
@@ -6420,18 +6411,7 @@ update_dirty_objects(VkdfScene *s)
                         s->dynamic.ubo.obj.buf.buf,
                         0, obj_offset,
                         s->dynamic.ubo.obj.host_buf);
-
-      if (s->dynamic.materials_dirty) {
-         assert(mat_offset < 64 * 1024);
-         vkCmdUpdateBuffer(s->cmd_buf.update_resources,
-                           s->dynamic.ubo.material.buf.buf,
-                           0, mat_offset,
-                           s->dynamic.ubo.material.host_buf);
-      }
    }
-
-   // We have processed all new materials by now
-   s->dynamic.materials_dirty = false;
 
    // Record dynamic object rendering command buffer
    if (s->cmd_buf.dynamic)

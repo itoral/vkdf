@@ -297,8 +297,7 @@ create_model_from_scene(const aiScene *scene, const char *file)
 
       aiMaterial *material = scene->mMaterials[i];
       process_material(material, &solid_material, &tex_material, file);
-      model->materials.push_back(solid_material);
-      model->tex_materials.push_back(tex_material);
+      vkdf_model_add_texture_material(model, &solid_material, &tex_material);
    }
 
    // Load meshes

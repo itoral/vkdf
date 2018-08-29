@@ -42,6 +42,8 @@ typedef struct {
    std::vector<VkdfMaterial> materials;
    std::vector<VkdfTexMaterial> tex_materials;
 
+   bool materials_dirty;
+
    // A single vertex buffer packing vertex data for all meshes, where
    // vertex data for mesh 'm' starts at byte offset 'vertex_buf_offsets[m]'
    VkdfBuffer vertex_buf;
@@ -91,6 +93,7 @@ vkdf_model_add_material(VkdfModel *model, VkdfMaterial *material)
 {
    assert(material->shininess >= 1.0f);
    model->materials.push_back(*material);
+   model->materials_dirty = true;
 }
 
 inline void
