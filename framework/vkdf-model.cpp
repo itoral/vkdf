@@ -177,7 +177,10 @@ process_material(aiMaterial *material,
 
    aiColor4D shininess(0.0f, 0.0f, 0.0f, 0.0f);
    aiGetMaterialColor(material, AI_MATKEY_SHININESS, &shininess);
-   memcpy(&solid_material->shininess, &shininess.r, sizeof(float));
+   if (shininess.r >= 1.0f) // Require shininiess to be at least 1.0f
+      memcpy(&solid_material->shininess, &shininess.r, sizeof(float));
+   else
+      solid_material->shininess = 1.0f;
 
    // Texture materials
    aiString path;
