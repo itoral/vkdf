@@ -64,7 +64,9 @@ typedef struct {
 } VkdfModel;
 
 VkdfModel *
-vkdf_model_load(const char *file);
+vkdf_model_load(const char *file,
+                bool load_uvs = true,
+                bool load_tangents = true);
 
 VkdfModel *
 vkdf_model_new();

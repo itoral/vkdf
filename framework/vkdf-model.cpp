@@ -48,14 +48,17 @@ vkdf_cone_model_new(VkdfContext *ctx)
 }
 
 static VkdfMesh *
-process_mesh(const aiScene *scene, const aiMesh *mesh)
+process_mesh(const aiScene *scene,
+             const aiMesh *mesh,
+             const bool load_uvs,
+             const bool load_tangents)
 {
    // FIXME: for now we only support triangle lists for loaded models
    assert(mesh->mPrimitiveTypes == aiPrimitiveType_TRIANGLE);
    VkdfMesh *_mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
-   bool has_tangent = mesh->mTangents != NULL;
-   bool has_bitangent = mesh->mBitangents != NULL;
+   bool has_tangent = mesh->mTangents != NULL && load_tangents;
+   bool has_bitangent = mesh->mBitangents != NULL && load_tangents;
    assert(has_tangent == has_bitangent);
 
    // Vertex data
@@ -92,7 +95,7 @@ process_mesh(const aiScene *scene, const aiMesh *mesh)
             _mesh->bitangents.push_back(bitangent);
          }
 
-         if (mesh->mTextureCoords[0]) {
+         if (mesh->mTextureCoords[0] && load_uvs) {
              glm::vec2 uv;
              uv.x = mesh->mTextureCoords[0][i].x;
              uv.y = mesh->mTextureCoords[0][i].y;
@@ -116,11 +119,15 @@ process_mesh(const aiScene *scene, const aiMesh *mesh)
 }
 
 static void
-process_node(VkdfModel *model, const aiScene *scene, const aiNode *node)
+process_node(VkdfModel *model,
+             const aiScene *scene,
+             const aiNode *node,
+             const bool load_uvs,
+             const bool load_tangents)
 {
    for (uint32_t i = 0; i < node->mNumMeshes; i++) {
       aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
-      model->meshes.push_back(process_mesh(scene, mesh));
+      model->meshes.push_back(process_mesh(scene, mesh, load_uvs, load_tangents));
 
       // Sanity check: all or no meshes have tangents
       assert(i == 0 ||
@@ -139,7 +146,7 @@ process_node(VkdfModel *model, const aiScene *scene, const aiNode *node)
    }
 
    for (uint32_t i = 0; i < node->mNumChildren; i++)
-      process_node(model, scene, node->mChildren[i]);
+      process_node(model, scene, node->mChildren[i], load_uvs, load_tangents);
 }
 
 static char *
@@ -286,7 +293,10 @@ process_material(aiMaterial *material,
 }
 
 static VkdfModel *
-create_model_from_scene(const aiScene *scene, const char *file)
+create_model_from_scene(const aiScene *scene,
+                        const char *file,
+                        const bool load_uvs,
+                        const bool load_tangents)
 {
    VkdfModel *model = vkdf_model_new();
 
@@ -301,13 +311,14 @@ create_model_from_scene(const aiScene *scene, const char *file)
    }
 
    // Load meshes
-   process_node(model, scene, scene->mRootNode);
+   process_node(model, scene, scene->mRootNode, load_uvs, load_tangents);
 
    return model;
 }
 
 VkdfModel *
-vkdf_model_load(const char *file)
+vkdf_model_load(const char *file, bool load_uvs, bool load_tangents)
+
 {
    uint32_t flags = aiProcess_CalcTangentSpace |
                     aiProcess_Triangulate |
@@ -323,7 +334,8 @@ vkdf_model_load(const char *file)
       vkdf_fatal("Assimp failed to load model at '%s'. Error: %s.",
                  file, aiGetErrorString());
 
-   VkdfModel *model = create_model_from_scene(scene, file);
+   VkdfModel *model =
+      create_model_from_scene(scene, file, load_uvs, load_tangents);
 
    aiReleaseImport(scene);
 
