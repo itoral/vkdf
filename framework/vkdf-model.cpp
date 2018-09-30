@@ -32,6 +32,7 @@ vkdf_sphere_model_new(VkdfContext *ctx)
    char *path = g_strdup_printf("%s/data/models/sphere.obj", vkdf_path);
    VkdfModel *model = vkdf_model_load(path);
    model->materials.clear();
+   model->tex_materials.clear();
    g_free(path);
    return model;
 }
@@ -43,6 +44,7 @@ vkdf_cone_model_new(VkdfContext *ctx)
    char *path = g_strdup_printf("%s/data/models/cone.obj", vkdf_path);
    VkdfModel *model = vkdf_model_load(path);
    model->materials.clear();
+   model->tex_materials.clear();
    g_free(path);
    return model;
 }
