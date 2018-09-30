@@ -21,8 +21,13 @@ create_model_with_mesh(VkdfContext *ctx, VkdfMesh *mesh)
 VkdfModel *
 vkdf_cube_model_new(VkdfContext *ctx, bool include_uvs)
 {
-   VkdfMesh *mesh = vkdf_cube_mesh_new(ctx, include_uvs);
-   return create_model_with_mesh(ctx, mesh);
+   const char *vkdf_path = getenv("VKDF_HOME");
+   char *path = g_strdup_printf("%s/data/models/cube.obj", vkdf_path);
+   VkdfModel *model = vkdf_model_load(path, include_uvs, false);
+   model->materials.clear();
+   model->tex_materials.clear();
+   g_free(path);
+   return model;
 }
 
 VkdfModel *
