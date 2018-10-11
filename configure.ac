@@ -112,6 +112,7 @@ AC_CONFIG_FILES([
    demos/depth/Makefile
    demos/mesh/Makefile
    demos/model/Makefile
+   demos/pbr/Makefile
    demos/shadow/Makefile
    demos/scene/Makefile
    demos/scenelight/Makefile

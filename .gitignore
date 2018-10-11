@@ -46,3 +46,8 @@ demos/sponza/obj.frag
 demos/sponza/obj.vert
 demos/sponza/obj_opacity.deferred.frag
 demos/sponza/obj_opacity.frag
+demos/pbr/pbr
+demos/pbr/shader.frag
+demos/pbr/shader-tex.frag
+demos/pbr/shader-ibl-tex.frag
+demos/pbr/shader-ibl.frag
