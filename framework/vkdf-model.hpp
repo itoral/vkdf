@@ -77,7 +77,9 @@ vkdf_cube_model_new(VkdfContext *ctx,
                     bool include_tangents = false);
 
 VkdfModel *
-vkdf_sphere_model_new(VkdfContext *ctx);
+vkdf_sphere_model_new(VkdfContext *ctx,
+                    bool include_uvs = false,
+                    bool include_tangents = false);
 
 VkdfModel *
 vkdf_cone_model_new(VkdfContext *ctx);

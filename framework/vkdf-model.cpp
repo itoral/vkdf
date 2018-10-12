@@ -31,11 +31,11 @@ vkdf_cube_model_new(VkdfContext *ctx, bool include_uvs, bool include_tangents)
 }
 
 VkdfModel *
-vkdf_sphere_model_new(VkdfContext *ctx)
+vkdf_sphere_model_new(VkdfContext *ctx, bool include_uvs, bool include_tangents)
 {
    const char *vkdf_path = getenv("VKDF_HOME");
    char *path = g_strdup_printf("%s/data/models/sphere.obj", vkdf_path);
-   VkdfModel *model = vkdf_model_load(path);
+   VkdfModel *model = vkdf_model_load(path, include_uvs, include_tangents);
    model->materials.clear();
    model->tex_materials.clear();
    g_free(path);
