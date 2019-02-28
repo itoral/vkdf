@@ -17,7 +17,9 @@
                                1.0);
       vec4 eye_view_dir = -eye_position;
 
-      vec4 light_space_position = texture(tex_light_space_position, in_uv);
+      /* Reconstruct light-space position for shadow mapping */
+      vec4 world_pos = CD.ViewInv * eye_position;
+      vec4 light_space_position = SMD.shadow_map_data.light_viewproj * world_pos;
 
       Material mat;
       mat.diffuse = texture(tex_diffuse, in_uv);

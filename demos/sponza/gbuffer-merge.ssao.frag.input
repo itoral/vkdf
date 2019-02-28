@@ -15,7 +15,12 @@ layout(push_constant) uniform pcb {
 layout(location = 0) in vec2 in_uv;
 layout(location = 1) in vec2 in_view_ray;
 
-layout(std140, set = 0, binding = 0) uniform light_ubo
+layout(std140, set = 0, binding = 0) uniform ubo_camera {
+   mat4 View;
+   mat4 ViewInv;
+} CD;
+
+layout(std140, set = 1, binding = 0) uniform light_ubo
 {
    Light sun;
 } L;
@@ -28,23 +33,22 @@ struct ShadowMapData {
 
 layout (constant_id = 0) const int SHADOW_MAP_PCF_KERNEL_SIZE = 2;
 
-layout(std140, set = 0, binding = 1) uniform ubo_shadow_map_data {
+layout(std140, set = 1, binding = 1) uniform ubo_shadow_map_data {
    ShadowMapData shadow_map_data;
 } SMD;
 
-layout(std140, set = 0, binding = 2) uniform ubo_light_eye_space_data {
+layout(std140, set = 1, binding = 2) uniform ubo_light_eye_space_data {
    vec4 eye_pos;
    vec4 eye_dir;
 } LESD;
 
-layout(set = 1, binding = 0) uniform sampler2DShadow shadow_map;
+layout(set = 2, binding = 0) uniform sampler2DShadow shadow_map;
 
-layout(set = 2, binding = 0) uniform sampler2D tex_depth;
-layout(set = 2, binding = 1) uniform sampler2D tex_eye_normal;
-layout(set = 2, binding = 2) uniform sampler2D tex_diffuse;
-layout(set = 2, binding = 3) uniform sampler2D tex_specular;
-layout(set = 2, binding = 4) uniform sampler2D tex_light_space_position;
-layout(set = 2, binding = 5) uniform sampler2D tex_ssao;
+layout(set = 3, binding = 0) uniform sampler2D tex_depth;
+layout(set = 3, binding = 1) uniform sampler2D tex_eye_normal;
+layout(set = 3, binding = 2) uniform sampler2D tex_diffuse;
+layout(set = 3, binding = 3) uniform sampler2D tex_specular;
+layout(set = 3, binding = 4) uniform sampler2D tex_ssao;
 
 layout(location = 0) out vec4 out_color;
 

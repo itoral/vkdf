@@ -27,18 +27,6 @@ const bool       ENABLE_CLIPPING           = true;
 const bool       ENABLE_DEPTH_PREPASS      = true;
 const bool       ENABLE_DEFERRED_RENDERING = true;
 
-/* Deferred rendering options
- *
- * GBUFFER_OPTIMIZE_FOR_QUALITY uses a 32-bit GBuffer attachment to store
- * fragment positions in light-space which are involved in shadow mapping
- * calculations. These calculations are very sensitive to precision, so
- * using a 32-bit format trades performance for quality. If this is set to
- * False. we use a 16-bit precision format which leads to visible artifacts
- * that can be reduced to some extent by increasing shadow mapping bias
- * parameters at the expense of introducing peter panning.
- */
-const uint32_t   GBUFFER_OPTIMIZE_FOR_QUALITY  = true;
-
 /* Anisotropic filtering */
 const float      MAX_ANISOTROPY            = 16.0f; // Min=0.0 (disabled)
 
@@ -326,8 +314,8 @@ create_ubo(VkdfContext *ctx, uint32_t size, uint32_t usage, uint32_t mem_props)
 static void
 init_ubos(SceneResources *res)
 {
-   // Camera view matrix
-   res->ubos.camera_view.size = sizeof(glm::mat4);
+   // Camera view matrix (and Inverse View)
+   res->ubos.camera_view.size = 2 * sizeof(glm::mat4);
    res->ubos.camera_view.buf = create_ubo(res->ctx,
                                           res->ubos.camera_view.size,
                                           VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -412,10 +400,14 @@ record_update_resources_command(VkdfContext *ctx,
    // Update camera view matrix
    VkdfCamera *camera = vkdf_scene_get_camera(res->scene);
    if (vkdf_camera_is_dirty(camera)) {
-      glm::mat4 view = vkdf_camera_get_view_matrix(res->camera);
+      vkdf_camera_get_view_matrix(camera);
+      vkdf_camera_get_view_inv_matrix(camera);
+      /* To avoid issuing two vkCmdUpdateBuffer commands, we take advantage of
+       * the fact that we keep both together in the VkdfCamera object.
+       */
       vkCmdUpdateBuffer(cmd_buf,
                         res->ubos.camera_view.buf.buf,
-                        0, sizeof(glm::mat4), &view[0][0]);
+                        0, 2 * sizeof(glm::mat4), &camera->view_matrix[0][0]);
       has_updates = true;
    }
 
@@ -789,6 +781,7 @@ record_gbuffer_merge_commands(VkdfContext *ctx,
 
    // Bind descriptor sets
    VkDescriptorSet descriptor_sets[] = {
+      res->pipelines.descr.camera_view_set,
       res->pipelines.descr.light_set,
       res->pipelines.descr.shadow_map_sampler_set,
       res->pipelines.descr.gbuffer_tex_set
@@ -798,7 +791,7 @@ record_gbuffer_merge_commands(VkdfContext *ctx,
                            VK_PIPELINE_BIND_POINT_GRAPHICS,
                            res->pipelines.layout.gbuffer_merge,
                            0,                        // First decriptor set
-                           3,                        // Descriptor set count
+                           4,                        // Descriptor set count
                            descriptor_sets,          // Descriptor sets
                            0,                        // Dynamic offset count
                            NULL);                    // Dynamic offsets
@@ -1310,19 +1303,9 @@ init_scene(SceneResources *res)
       vkdf_scene_enable_depth_prepass(res->scene);
 
    if (ENABLE_DEFERRED_RENDERING) {
-      /* We use an extra slot to store light-space fragment positions, which
-       * we need to compute shadow mapping.
-       *
-       * We don't store eye-space positions, instead we reconstruct them in the
-       * lighting pass (gbuffer merge pass) from the depth buffer for optimal
-       * performance.
-       */
-      VkFormat light_space_pos_format =
-         GBUFFER_OPTIMIZE_FOR_QUALITY ? VK_FORMAT_R32G32B32A32_SFLOAT :
-                                        VK_FORMAT_R16G16B16A16_SFLOAT;
       vkdf_scene_enable_deferred_rendering(res->scene,
                                            record_gbuffer_merge_commands,
-                                           1, light_space_pos_format);
+                                           0, NULL);
    }
 
    if (ENABLE_SSAO) {
@@ -1543,7 +1526,8 @@ init_pipeline_descriptors(SceneResources *res,
    /* Descriptor set layouts */
    res->pipelines.descr.camera_view_layout =
       vkdf_create_ubo_descriptor_set_layout(res->ctx, 0, 1,
-                                            VK_SHADER_STAGE_VERTEX_BIT,
+                                            VK_SHADER_STAGE_VERTEX_BIT |
+                                             VK_SHADER_STAGE_FRAGMENT_BIT,
                                             false);
 
    res->pipelines.descr.obj_layout =
@@ -1805,6 +1789,7 @@ init_pipeline_descriptors(SceneResources *res,
 
       /* Gbuffer merge pipeline layout */
       VkDescriptorSetLayout gbuffer_merge_layouts[] = {
+         res->pipelines.descr.camera_view_layout,
          res->pipelines.descr.light_layout,
          res->pipelines.descr.shadow_map_sampler_layout,
          res->pipelines.descr.gbuffer_tex_layout
@@ -1815,7 +1800,7 @@ init_pipeline_descriptors(SceneResources *res,
       pipeline_layout_info.pNext = NULL;
       pipeline_layout_info.pushConstantRangeCount = 1;
       pipeline_layout_info.pPushConstantRanges = &pcb_recons_range;
-      pipeline_layout_info.setLayoutCount = 3;
+      pipeline_layout_info.setLayoutCount = 4;
       pipeline_layout_info.pSetLayouts = gbuffer_merge_layouts;
       pipeline_layout_info.flags = 0;
 

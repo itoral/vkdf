@@ -1,11 +1,3 @@
-   // light-space pos
-   //
-   // We skip eye-space position to save bandwidth. Shaders that need
-   // this will have to reconstruct it from depth.
-   //
-   // We also skip light direction since this is constant for all fragments
-   out_light_space_pos = in_light_space_pos;
-
    Material mat = Mat.materials[in_material_idx];
 
    // Eye-space normal and roughness
