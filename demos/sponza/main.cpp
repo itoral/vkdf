@@ -929,6 +929,38 @@ update_camera(SceneResources *res)
             check_camera_collision(res->scene, cam, prev_pos);
       }
 
+      // Mouse input
+      {
+         int32_t mdx, mdy;
+         vkdf_platform_mouse_delta(platform, &mdx, &mdy);
+
+         bool pressed = vkdf_platform_mouse_pressed(platform, VKDF_MOUSE_BTN_L);
+
+         glm::vec3 prev_pos = cam->pos;
+         if (!pressed) {
+            const float mouse_rot_speed = -0.15f; /* Invert direction */
+            if (mdx != 0)
+               vkdf_camera_rotate(cam, 0.0f, mouse_rot_speed * mdx, 0.0f);
+            if (mdy != 0)
+               vkdf_camera_rotate(cam, mouse_rot_speed * mdy, 0.0f, 0.0f);
+         } else {
+            /* Clamp delta to avoid speed excess */
+            mdx = MAX2(MIN2(mdx, +10), -10);
+            mdy = MAX2(MIN2(mdy, +10), -10);
+            if (mdx != 0) {
+               const float mouse_strafe_speed = -0.015f; /* Invert direction */
+               vkdf_camera_strafe(cam, mouse_strafe_speed * mdx);
+            }
+            if (mdy != 0) {
+               const float mouse_step_speed = -0.025f; /* Invert direction */
+               vkdf_camera_step(cam, mouse_step_speed * mdy, 1, 1, 1);
+            }
+         }
+
+         if (res->collisions_enabled)
+            check_camera_collision(res->scene, cam, prev_pos);
+      }
+
       // Other keyboad bindings
       if (vkdf_platform_key_is_pressed(platform, VKDF_KEY_L)) {
          glm::vec3 pos = vkdf_camera_get_position(cam);
@@ -951,8 +983,8 @@ update_camera(SceneResources *res)
          auto_camera_enable(res);
       }
    } else {
-      /* Resume manual mode if any of the directional keys are pressed
-       * or the joystick thumbsticks are used
+      /* Resume manual mode if any of the directional keys are pressed,
+       * the joystick thumbsticks are used or the mouse is moved.
        */
       bool keyboard_break =
          vkdf_platform_key_is_pressed(platform, VKDF_KEY_LEFT) ||
@@ -967,7 +999,11 @@ update_camera(SceneResources *res)
           fabs(vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_RC_H)) > 0.5f ||
           fabs(vkdf_platform_joy_check_axis(platform, VKDF_JOY_AXIS_RC_H)) > 0.5f);
 
-      if (keyboard_break || joy_break) {
+      int32_t mdx, mdy;
+      vkdf_platform_mouse_delta(platform, &mdx, &mdy);
+      bool mouse_break = mdx != 0 || mdy != 0;
+
+      if (keyboard_break || joy_break || mouse_break) {
          auto_camera_disable(res);
       } else {
          if (res->auto_camera_state == AUTO_CAM_SETUP_STATE)
@@ -2745,6 +2781,7 @@ main()
    SceneResources resources;
 
    vkdf_init(&ctx, WIN_WIDTH, WIN_HEIGHT, WIN_FULLSCREEN, false, false);
+   vkdf_platform_mouse_enable_relative_mode(&ctx.platform);
    vkdf_set_framerate_target(&ctx, FRAMERATE_TARGET);
 
    init_resources(&ctx, &resources);
