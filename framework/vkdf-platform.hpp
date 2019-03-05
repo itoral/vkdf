@@ -81,6 +81,13 @@ typedef enum {
    VKDF_JOY_BTN_DPAD_RIGHT = 16,
 } VkdfJoyButton;
 
+/* Enum for mouse buttons (matches SDL2 usual mapping) */
+typedef enum {
+   VKDF_MOUSE_BTN_L = 1,
+   VKDF_MOUSE_BTN_C = 2,
+   VKDF_MOUSE_BTN_R = 3,
+} VkdfMouseButton;
+
 void
 vkdf_platform_init(VkdfPlatform *platform);
 
@@ -124,5 +131,15 @@ vkdf_platform_joy_check_axis(VkdfPlatform *platform, VkdfJoyAxis axis);
 
 bool
 vkdf_platform_joy_check_button(VkdfPlatform *platform, VkdfJoyButton btn);
+
+
+bool
+vkdf_platform_mouse_enable_relative_mode(VkdfPlatform *platform);
+
+void
+vkdf_platform_mouse_delta(VkdfPlatform *platform, int32_t *x, int32_t *y);
+
+bool
+vkdf_platform_mouse_pressed(VkdfPlatform *platform, VkdfMouseButton btn);
 
 #endif

@@ -148,3 +148,25 @@ vkdf_platform_joy_check_button(VkdfPlatform *platform, VkdfJoyButton btn)
    vkdf_error("Platform GLFW3: joystick support not implemented.\n");
    return false;
 }
+
+bool
+vkdf_platform_mouse_enable_relative_mode(VkdfPlatform *platform)
+{
+   vkdf_error("Platform GLFW3: mouse support not implemented.\n");
+   return false;
+}
+
+void
+vkdf_platform_mouse_delta(VkdfPlatform *platform, int32_t *x, int32_t *y)
+{
+   *x = 0;
+   *y = 0;
+   vkdf_error("Platform GLFW3: mouse support not implemented.\n");
+}
+
+bool
+vkdf_platform_mouse_pressed(VkdfPlatform *platform, VkdfMouseButton btn)
+{
+   vkdf_error("Platform GLFW3: mouse support not implemented.\n");
+   return false;
+}

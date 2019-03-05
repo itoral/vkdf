@@ -175,3 +175,22 @@ vkdf_platform_joy_check_button(VkdfPlatform *platform, VkdfJoyButton btn)
    assert(btn < platform->sdl.joy.num_buttons);
    return SDL_JoystickGetButton(platform->sdl.joy.joy, btn);
 }
+
+bool
+vkdf_platform_mouse_enable_relative_mode(VkdfPlatform *platform)
+{
+   return SDL_SetRelativeMouseMode(SDL_TRUE) == 0;
+}
+
+void
+vkdf_platform_mouse_delta(VkdfPlatform *platform, int32_t *x, int32_t *y)
+{
+   SDL_GetRelativeMouseState(x, y);
+}
+
+bool
+vkdf_platform_mouse_pressed(VkdfPlatform *platform, VkdfMouseButton btn)
+{
+   uint32_t mask = SDL_GetRelativeMouseState(NULL, NULL);
+   return (mask & SDL_BUTTON((uint32_t) btn)) != 0;
+}
