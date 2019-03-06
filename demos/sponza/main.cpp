@@ -16,9 +16,9 @@ const uint32_t   SPONZA_FLAG_MESH_IDX      = 4;
 
 /* Show debug texture
  *
- * WARNING: Enabling this produces a GPU hang on Intel Mesa when SSR is also
- *          enabled with deferred rendering. The hang goes away if we remove
- *          the blur pass from the SSR implementation.
+ * There may be some artifacts due to the fact that we are using a the
+ * post-processing callback for this, which means that our debug tile
+ * will be post-processed (i.e. affect SSR, etc)
  */
 const bool       SHOW_DEBUG_TILE           = false;
 
@@ -2525,7 +2525,7 @@ create_debug_tile_renderpass(SceneResources *res, VkFormat format)
 static void
 init_debug_tile_resources(SceneResources *res)
 {
-   res->debug.image = res->scene->lights[0]->shadow.shadow_map;
+   res->debug.image = res->scene->rt.gbuffer[0];
 
    VkdfImage *color_image = vkdf_scene_get_color_render_target(res->scene);
 
