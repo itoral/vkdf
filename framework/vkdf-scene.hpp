@@ -380,7 +380,6 @@ struct _VkdfScene {
       VkSampler nearest_sampler;
 
       VkdfSceneSsrSpec config;
-      void *spec_const_buf;
 
       struct {
          VkdfImage input;

@@ -5431,81 +5431,90 @@ set_specialization_constant(VkSpecializationMapEntry *entries,
 }
 
 static void
-ssr_populate_specialization_constants(VkdfScene *s,
-                                      VkPipelineShaderStageCreateInfo *info)
+ssr_prepare_specialization_constants(VkdfScene *s,
+                                     VkSpecializationInfo *fs_spec_info)
 {
    VkdfSceneSsrSpec *spec = &s->ssr.config;
 
    /* Let's assume that we have a maximum of 32 constants of 4B each */
-   s->ssr.spec_const_buf = malloc(4 * 32);
-   void *val_buf = s->ssr.spec_const_buf;
-
    uint32_t num_entries = 0;
    uint32_t offset = 0;
-   VkSpecializationMapEntry entries[32];
+   void *val_buf = malloc(4 * 32);
+   VkSpecializationMapEntry *entries = (VkSpecializationMapEntry *)
+      malloc(32 * sizeof(VkSpecializationMapEntry));
 
    if (spec->max_samples != -1)
-      set_specialization_constant(entries, &num_entries, 0, &offset, sizeof(int32_t), val_buf, &spec->max_samples);
+      set_specialization_constant(entries, &num_entries, 0, &offset,
+                                  sizeof(int32_t), val_buf, &spec->max_samples);
 
    if (spec->min_step_size != -1)
-      set_specialization_constant(entries, &num_entries, 1, &offset, sizeof(float), val_buf, &spec->min_step_size);
+      set_specialization_constant(entries, &num_entries, 1, &offset,
+                                  sizeof(float), val_buf, &spec->min_step_size);
 
    if (spec->max_step_size != -1)
-      set_specialization_constant(entries, &num_entries, 2, &offset, sizeof(float), val_buf, &spec->max_step_size);
+      set_specialization_constant(entries, &num_entries, 2, &offset,
+                                  sizeof(float), val_buf, &spec->max_step_size);
 
    if (spec->fg_test_bias != -1)
-      set_specialization_constant(entries, &num_entries, 3, &offset, sizeof(float), val_buf, &spec->fg_test_bias);
+      set_specialization_constant(entries, &num_entries, 3, &offset,
+                                  sizeof(float), val_buf, &spec->fg_test_bias);
 
    if (spec->fg_obstacle_max_samples != -1)
-      set_specialization_constant(entries, &num_entries, 4, &offset, sizeof(int32_t), val_buf, &spec->fg_obstacle_max_samples);
+      set_specialization_constant(entries, &num_entries, 4, &offset,
+                                  sizeof(int32_t), val_buf, &spec->fg_obstacle_max_samples);
 
    if (spec->fg_obstacle_min_step_size != -1)
-      set_specialization_constant(entries, &num_entries, 5, &offset, sizeof(float), val_buf, &spec->fg_obstacle_min_step_size);
+      set_specialization_constant(entries, &num_entries, 5, &offset,
+                                  sizeof(float), val_buf, &spec->fg_obstacle_min_step_size);
 
    if (spec->fg_obstacle_max_step_size != -1)
-      set_specialization_constant(entries, &num_entries, 6, &offset, sizeof(float), val_buf, &spec->fg_obstacle_max_step_size);
+      set_specialization_constant(entries, &num_entries, 6, &offset,
+                                  sizeof(float), val_buf, &spec->fg_obstacle_max_step_size);
 
    if (spec->fg_obstacle_break_dist != -1)
-      set_specialization_constant(entries, &num_entries, 7, &offset, sizeof(float), val_buf, &spec->fg_obstacle_break_dist);
+      set_specialization_constant(entries, &num_entries, 7, &offset,
+                                  sizeof(float), val_buf, &spec->fg_obstacle_break_dist);
 
    if (spec->fg_obstacle_jump_min_dist != -1)
-      set_specialization_constant(entries, &num_entries, 8, &offset, sizeof(float), val_buf, &spec->fg_obstacle_jump_min_dist);
+      set_specialization_constant(entries, &num_entries, 8, &offset,
+                                  sizeof(float), val_buf, &spec->fg_obstacle_jump_min_dist);
 
    if (spec->max_binary_search_samples != -1)
-      set_specialization_constant(entries, &num_entries, 9, &offset, sizeof(int32_t), val_buf, &spec->max_binary_search_samples);
+      set_specialization_constant(entries, &num_entries, 9, &offset,
+                                  sizeof(int32_t), val_buf, &spec->max_binary_search_samples);
 
    if (spec->max_reflection_dist != -1)
-      set_specialization_constant(entries, &num_entries, 10, &offset, sizeof(float), val_buf, &spec->max_reflection_dist);
+      set_specialization_constant(entries, &num_entries, 10, &offset,
+                                  sizeof(float), val_buf, &spec->max_reflection_dist);
 
    if (spec->att_reflection_dist_start != -1)
-      set_specialization_constant(entries, &num_entries, 11, &offset, sizeof(float), val_buf, &spec->att_reflection_dist_start);
+      set_specialization_constant(entries, &num_entries, 11, &offset,
+                                  sizeof(float), val_buf, &spec->att_reflection_dist_start);
 
    if (spec->att_screen_edge_dist_start != -1)
-      set_specialization_constant(entries, &num_entries, 12, &offset, sizeof(float), val_buf, &spec->att_screen_edge_dist_start);
+      set_specialization_constant(entries, &num_entries, 12, &offset,
+                                  sizeof(float), val_buf, &spec->att_screen_edge_dist_start);
 
    if (spec->max_dot_reflection_normal != -1)
-      set_specialization_constant(entries, &num_entries, 13, &offset, sizeof(float), val_buf, &spec->max_dot_reflection_normal);
+      set_specialization_constant(entries, &num_entries, 13, &offset,
+                                  sizeof(float), val_buf, &spec->max_dot_reflection_normal);
 
    if (spec->att_dot_reflection_normal_start != -1)
-      set_specialization_constant(entries, &num_entries, 14, &offset, sizeof(float), val_buf, &spec->att_dot_reflection_normal_start);
+      set_specialization_constant(entries, &num_entries, 14, &offset,
+                                  sizeof(float), val_buf, &spec->att_dot_reflection_normal_start);
 
    if (spec->min_dot_reflection_view != -1)
-      set_specialization_constant(entries, &num_entries, 15, &offset, sizeof(float), val_buf, &spec->min_dot_reflection_view);
+      set_specialization_constant(entries, &num_entries, 15, &offset,
+                                  sizeof(float), val_buf, &spec->min_dot_reflection_view);
 
    if (spec->att_dot_reflection_view_start != -1)
-      set_specialization_constant(entries, &num_entries, 16, &offset, sizeof(float), val_buf, &spec->att_dot_reflection_view_start);
+      set_specialization_constant(entries, &num_entries, 16, &offset,
+                                  sizeof(float), val_buf, &spec->att_dot_reflection_view_start);
 
-   VkSpecializationInfo fs_spec_info = {
-      num_entries,
-      entries,
-      offset,
-      val_buf
-   };
-
-   vkdf_pipeline_fill_shader_stage_info(info,
-                                        VK_SHADER_STAGE_FRAGMENT_BIT,
-                                        s->ssr.base.pipeline.shader.fs,
-                                        &fs_spec_info);
+   fs_spec_info->mapEntryCount = num_entries;
+   fs_spec_info->pMapEntries = entries;
+   fs_spec_info->dataSize = offset;
+   fs_spec_info->pData = val_buf;
 }
 
 static VkdfImage
@@ -5601,8 +5610,14 @@ prepare_ssr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
    s->ssr.base.pipeline.shader.fs =
       vkdf_create_shader_module(s->ctx, SSR_FS_SHADER_PATH);
 
+   VkSpecializationInfo fs_spec_info;
+   ssr_prepare_specialization_constants(s, &fs_spec_info);
+
    VkPipelineShaderStageCreateInfo fs_info;
-   ssr_populate_specialization_constants(s, &fs_info);
+   vkdf_pipeline_fill_shader_stage_info(&fs_info,
+                                        VK_SHADER_STAGE_FRAGMENT_BIT,
+                                        s->ssr.base.pipeline.shader.fs,
+                                        &fs_spec_info);
 
    s->ssr.base.pipeline.pipeline =
       vkdf_create_gfx_pipeline(s->ctx,
@@ -5616,6 +5631,9 @@ prepare_ssr(VkdfScene *s, VkCommandBuffer cmd_buf, const VkdfImage *input)
                                VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
                                VK_CULL_MODE_BACK_BIT,
                                1, &vs_info, &fs_info);
+
+   free((void *) fs_spec_info.pMapEntries);
+   free((void *) fs_spec_info.pData);
 
    /* Descriptor sets */
    s->ssr.base.pipeline.tex_set =
