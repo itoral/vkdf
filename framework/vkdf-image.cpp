@@ -20,7 +20,7 @@ create_image(VkdfContext *ctx,
    VkFormatProperties props;
    vkGetPhysicalDeviceFormatProperties(ctx->phy_device, format, &props);
    if ((props.optimalTilingFeatures & format_flags) != format_flags)
-      vkdf_fatal("Can't create image: unsupported format features");
+      vkdf_fatal("Can't create image: unsupported format features: format=%d",format);
 
    VkImageCreateInfo image_info = {};
    image_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -782,9 +782,21 @@ vkdf_load_image_from_file(VkdfContext *ctx,
 
    // Load image data from file and put pixel data in a GPU buffer
    SDL_Surface *surf = IMG_Load(path);
+
    if (!surf) {
       vkdf_error("image: failed to load '%s'", path);
       return false;
+   }
+
+   SDL_PixelFormat *fmt = surf->format;
+   
+   if (fmt->BitsPerPixel==24) {
+	   SDL_PixelFormat* nft = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+	   SDL_Surface *tmp = SDL_ConvertSurface(surf,nft,0);
+	   SDL_FreeSurface(surf);
+//	   SDL_FreeFormat(nft);
+	   surf = tmp;
+       fmt = surf->format;
    }
 
    // Get pixel size and format

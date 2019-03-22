@@ -146,9 +146,9 @@ init_physical_device(VkdfContext *ctx)
    if (res != VK_SUCCESS)
        vkdf_fatal("Failed to query Vulkan devices");
 
-   if (ctx->phy_device_count > 1)
+   /*if (ctx->phy_device_count > 1)
       vkdf_fatal("Found %u Vulkan devices. Using device 0",
-                 ctx->phy_device_count);
+                 ctx->phy_device_count);*/
  
    ctx->phy_device = ctx->phy_devices[0];
 

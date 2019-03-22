@@ -70,7 +70,7 @@ vkdf_ssao_gen_noise_image(VkdfContext *ctx,
 
    vkdf_create_image_from_data(ctx, pool,
                                width, height,
-                               VK_FORMAT_R16G16B16_SFLOAT,
+                               VK_FORMAT_R16G16B16A16_SFLOAT,
                                false,
                                &(*samples)[0],
                                VK_IMAGE_USAGE_SAMPLED_BIT,

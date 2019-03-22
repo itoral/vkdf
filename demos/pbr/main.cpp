@@ -719,14 +719,14 @@ load_hdr_environment_image(VkdfContext *ctx,
                            VkdfImage *image)
 {
    int width, height, components;
-   void *data = (void *) stbi_loadf(path, &width, &height, &components, 0);
+   void *data = (void *) stbi_loadf(path, &width, &height, &components, 4);
    if (!data)
       return false;
 
    vkdf_create_image_from_data(ctx,
                                cmd_pool,
                                width, height,
-                               VK_FORMAT_R32G32B32_SFLOAT,
+                               VK_FORMAT_R32G32B32A32_SFLOAT,
                                false, data,
                                VK_IMAGE_USAGE_SAMPLED_BIT,
                                image);
