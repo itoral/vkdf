@@ -1,8 +1,6 @@
 #ifndef __VKDF_DEPS_H__
 #define __VKDF_DEPS_H__
 
-#include "config.h"
-
 // LIBC
 #include <stdio.h>
 #include <stdlib.h>

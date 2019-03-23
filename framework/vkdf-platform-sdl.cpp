@@ -16,8 +16,8 @@ static const uint32_t sdl_key_map[] = {
    SDL_SCANCODE_L,
 };
 
-static void
-platform_init(VkdfPlatform *platform)
+void
+vkdf_platform_init(VkdfPlatform *platform)
 {
    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0)
       vkdf_fatal("Failed to initialize SDL2 platform");
@@ -39,6 +39,8 @@ platform_init(VkdfPlatform *platform)
          SDL_JoystickEventState(SDL_ENABLE);
       }
    }
+   /* SDL2 Image library */
+   IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG | IMG_INIT_TIF);
 }
 
 void

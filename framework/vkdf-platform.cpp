@@ -1,7 +1,7 @@
 #include "vkdf-platform.hpp"
 #include "vkdf-error.hpp"
 
-static void
+void
 wait_for_window_resize(VkdfPlatform *platform, int32_t width, int32_t height)
 {
    int32_t last_fb_width, last_fb_height;
@@ -32,22 +32,3 @@ wait_for_window_resize(VkdfPlatform *platform, int32_t width, int32_t height)
       }
    } while (still_resizing);
 }
-
-static void platform_init(VkdfPlatform *platform);
-
-void
-vkdf_platform_init(VkdfPlatform *platform)
-{
-   platform_init(platform);
-
-   /* SDL2 Image library */
-   IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG | IMG_INIT_TIF);
-}
-
-#ifdef VKDF_PLATFORM_SDL
-#include "vkdf-platform-sdl.cpp"
-#elif defined(VKDF_PLATFORM_GLFW)
-#include "vkdf-platform-glfw.cpp"
-#else
-#error No platform defined
-#endif

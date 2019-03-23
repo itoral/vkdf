@@ -615,8 +615,10 @@ init_matrices(DemoResources *res)
 static void
 init_models(VkdfContext *ctx, DemoResources *res)
 {
+   char path[256];
+   sprintf(path, "%smodels/sphere.obj", VKDF_DATA_DIR);
    res->model.sphere =
-      vkdf_model_load("./../../data/models/sphere.obj", true, false);
+      vkdf_model_load(path, true, false);
 
    // Create per-vertex and index buffers for this model. Make it so we have
    // a single buffer for the entire model that packs data from all meshes
@@ -626,8 +628,9 @@ init_models(VkdfContext *ctx, DemoResources *res)
    // where the mesh's data is stored.
    vkdf_model_fill_vertex_buffers(ctx, res->model.sphere, false);
 
+   sprintf(path, "%smodels/cube.obj", VKDF_DATA_DIR);
    res->model.cube =
-      vkdf_model_load("./../../data/models/cube.obj", true, false);
+      vkdf_model_load(path, true, false);
 
    vkdf_model_fill_vertex_buffers(ctx, res->model.cube, true);
 }

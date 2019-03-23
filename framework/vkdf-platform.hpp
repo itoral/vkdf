@@ -142,4 +142,6 @@ vkdf_platform_mouse_delta(VkdfPlatform *platform, int32_t *x, int32_t *y);
 bool
 vkdf_platform_mouse_pressed(VkdfPlatform *platform, VkdfMouseButton btn);
 
+void
+wait_for_window_resize(VkdfPlatform *platform, int32_t width, int32_t height);
 #endif

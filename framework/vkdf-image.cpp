@@ -784,18 +784,18 @@ vkdf_load_image_from_file(VkdfContext *ctx,
    SDL_Surface *surf = IMG_Load(path);
 
    if (!surf) {
-      vkdf_error("image: failed to load '%s'", path);
+      vkdf_error("image: failed to load '%s', %s", path, IMG_GetError());
       return false;
    }
 
    SDL_PixelFormat *fmt = surf->format;
-   
+
    if (fmt->BitsPerPixel==24) {
-	   SDL_PixelFormat* nft = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
-	   SDL_Surface *tmp = SDL_ConvertSurface(surf,nft,0);
-	   SDL_FreeSurface(surf);
+       SDL_PixelFormat* nft = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA8888);
+       SDL_Surface *tmp = SDL_ConvertSurface(surf,nft,0);
+       SDL_FreeSurface(surf);
 //	   SDL_FreeFormat(nft);
-	   surf = tmp;
+       surf = tmp;
        fmt = surf->format;
    }
 

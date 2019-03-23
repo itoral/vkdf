@@ -149,7 +149,7 @@ init_physical_device(VkdfContext *ctx)
    /*if (ctx->phy_device_count > 1)
       vkdf_fatal("Found %u Vulkan devices. Using device 0",
                  ctx->phy_device_count);*/
- 
+
    ctx->phy_device = ctx->phy_devices[0];
 
    vkGetPhysicalDeviceProperties(ctx->phy_device, &ctx->phy_device_props);
@@ -331,7 +331,7 @@ init_logical_device(VkdfContext *ctx)
    VkDeviceCreateInfo device_info;
    device_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
    device_info.pNext = NULL;
-   device_info.flags = 0;   
+   device_info.flags = 0;
    device_info.queueCreateInfoCount = 1;
    device_info.pQueueCreateInfos = &queue_info;
    device_info.enabledExtensionCount = extension_count;
@@ -342,7 +342,7 @@ init_logical_device(VkdfContext *ctx)
 
    VkResult res =
       vkCreateDevice(ctx->phy_device, &device_info, NULL, &ctx->device);
-   if (res != VK_SUCCESS) 
+   if (res != VK_SUCCESS)
       vkdf_fatal("Could not create Vulkan logical device.\n");
 
    vkGetDeviceQueue(ctx->device, ctx->gfx_queue_index, 0, &ctx->gfx_queue);
@@ -688,9 +688,6 @@ vkdf_init(VkdfContext *ctx,
           bool resizable,
           bool enable_validation)
 {
-   if (getenv("VKDF_HOME") == NULL)
-      vkdf_fatal("VKDF_HOME environment variable is not set.");
-
    memset(ctx, 0, sizeof(VkdfContext));
 
    vkdf_platform_init(&ctx->platform);

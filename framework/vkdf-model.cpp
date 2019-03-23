@@ -21,8 +21,9 @@ create_model_with_mesh(VkdfContext *ctx, VkdfMesh *mesh)
 VkdfModel *
 vkdf_cube_model_new(VkdfContext *ctx, bool include_uvs, bool include_tangents)
 {
-   const char *vkdf_path = getenv("VKDF_HOME");
-   char *path = g_strdup_printf("%s/data/models/cube.obj", vkdf_path);
+   char path[256];
+   sprintf(path, "%smodels/cube.obj", VKDF_DATA_DIR);
+
    VkdfModel *model = vkdf_model_load(path, include_uvs, include_tangents);
    model->materials.clear();
    model->tex_materials.clear();
@@ -33,24 +34,22 @@ vkdf_cube_model_new(VkdfContext *ctx, bool include_uvs, bool include_tangents)
 VkdfModel *
 vkdf_sphere_model_new(VkdfContext *ctx, bool include_uvs, bool include_tangents)
 {
-   const char *vkdf_path = getenv("VKDF_HOME");
-   char *path = g_strdup_printf("%s/data/models/sphere.obj", vkdf_path);
+   char path[256];
+   sprintf(path, "%smodels/sphere.obj", VKDF_DATA_DIR);
    VkdfModel *model = vkdf_model_load(path, include_uvs, include_tangents);
    model->materials.clear();
    model->tex_materials.clear();
-   g_free(path);
    return model;
 }
 
 VkdfModel *
 vkdf_cone_model_new(VkdfContext *ctx)
 {
-   const char *vkdf_path = getenv("VKDF_HOME");
-   char *path = g_strdup_printf("%s/data/models/cone.obj", vkdf_path);
+   char path[256];
+   sprintf(path, "%smodels/cone.obj", VKDF_DATA_DIR);
    VkdfModel *model = vkdf_model_load(path);
    model->materials.clear();
    model->tex_materials.clear();
-   g_free(path);
    return model;
 }
 
