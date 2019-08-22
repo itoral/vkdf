@@ -30,7 +30,7 @@ libvkdf_la_SOURCES = \
     vkdf-object.hpp vkdf-object.cpp \
     vkdf-light.hpp vkdf-light.cpp \
     vkdf-camera.hpp vkdf-camera.cpp \
-    vkdf-ssa0.hpp vkdf-ssao.cpp \
+    vkdf-ssao.hpp vkdf-ssao.cpp \
     vkdf-scene.hpp vkdf-scene.cpp
 
 libvkdf_la_CXXFLAGS = \
