@@ -38,71 +38,108 @@ terrain_height_from_height_map(VkdfTerrain *t,
    return h;
 }
 
+static inline glm::vec3
+world_to_terrain_vertex_coords(VkdfTerrain *t, glm::vec3 p)
+{
+   /* Normalize to [0,1] */
+   p -= t->obj->pos;
+   glm::vec3 p_norm = 0.5f + (p / t->obj->scale) * 0.5f;
+
+   /* Trnaslate to [0, num_verts - 1] */
+   return glm::vec3(p_norm.x * (t->num_verts_x - 1),
+                    2.0f * p_norm.y - 1.0f,  // [-1, 1]
+                    p_norm.z * (t->num_verts_z - 1));
+}
+
 /**
- * Computes height at vertex coordinates (x,z). The coordinates can have
- * fractional part, which can be used to calculate height at any position
- * in between actual terrain vertices.
+ * Computes the terrain height at an arbitrary (x,z) location in
+ * world space.
+ */
+float
+vkdf_terrain_get_height_at(VkdfTerrain *t, float x, float z)
+{
+   VkdfMesh *mesh = t->obj->model->meshes[0];
+
+   /* Translate world space coordinates to mesh space */
+   glm::vec3 vloc = world_to_terrain_vertex_coords(t, glm::vec3(x, 0.0f, z));
+   x = vloc.x;
+   z = vloc.z;
+
+   /* If the location is outside the terrain area, just return a very low
+    * height.
+    */
+   if (x < 0.0f || z < 0.0f || x > t->num_verts_x - 1 || z > t->num_verts_z - 1)
+      return -999999999.0f;
+
+   /* Find offsets of the coords into a terrain quad */
+   float offx = x - truncf(x);
+   float offz = z - truncf(z);
+
+   /* Compute the plane equation for the triangle we are in */
+   glm::vec3 p1, p2, p3;
+   float A, B, C, D;
+   if (offx >= offz) {
+      /* First triangle in the quad */
+      p1.x = truncf(x) + 1.0f;
+      p1.z = truncf(z);
+      p1.y = terrain_vertex_height(t, mesh, p1.x, p1.z);
+
+      p2.x = truncf(x);
+      p2.z = truncf(z);
+      p2.y = terrain_vertex_height(t, mesh, p2.x, p2.z);
+
+      p3.x = truncf(x) + 1.0f;
+      p3.z = truncf(z) + 1.0f;
+      p3.y = terrain_vertex_height(t, mesh, p3.x, p3.z);
+   } else {
+      /* Second triangle in the quad */
+      p1.x = truncf(x);
+      p1.z = truncf(z);
+      p1.y = terrain_vertex_height(t, mesh, p1.x, p1.z);
+
+      p2.x = truncf(x) + 1.0f;
+      p2.z = truncf(z) + 1.0f;
+      p2.y = terrain_vertex_height(t, mesh, p2.x, p2.z);
+
+      p3.x = truncf(x);
+      p3.z = truncf(z) + 1.0f;
+      p3.y = terrain_vertex_height(t, mesh, p3.x, p3.z);
+   }
+
+
+   /* FIXME: we probably want to pre-compute plane equations for each
+    * triangle in the terrain rather than recomputing them all the time
+    */
+   A = (p2.y - p1.y) * (p3.z - p1.z) - (p3.y - p1.y) * (p2.z - p1.z);
+   B = (p2.z - p1.z) * (p3.x - p1.x) - (p3.z - p1.z) * (p2.x - p1.x);
+   C = (p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y);
+   D = -(A * p1.x + B * p1.y + C * p1.z);
+
+   /* Use the plane equation to find Y given (X,Z) */
+   float y = (-D - C * z - A * x) / B;
+
+   /* Return world-space height */
+   return t->obj->pos.y + y * t->obj->scale.y;
+}
+
+/**
+ * Retrieves the terrain height at vertex coordinates (x,z).
  */
 float
 vkdf_terrain_height_from_height_map(VkdfTerrain *t,
-                                    float x, float z,
+                                    uint32_t x, uint32_t z,
                                     void *data)
 {
-   assert(x >= 0.0f && x <= t->num_verts_x - 1);
-   assert(z >= 0.0f && z <= t->num_verts_z - 1);
+   assert(x >= 0 && x <= t->num_verts_x - 1);
+   assert(z >= 0 && z <= t->num_verts_z - 1);
 
-   /* Fast path if we are querying the height at an exact vertex coordinate,
-    * which we can take directly from the mesh vertex.
-    */
-   if (t->initialized && x == truncf(x) && z == truncf(z)) {
+   if (t->initialized) {
       assert(t->obj && t->obj->model);
       return terrain_vertex_height(t, t->obj->model->meshes[0], x, z);
    }
 
-   /* The location is not an exact vertex or we still haven't computed terrain
-    * heights for mesh vertices, fallback to computing height manually.
-    */
    SDL_Surface *surf = (SDL_Surface *) data;
-
-   /* Compute offset into the quad of vertices where this coordinate lives:
-    *
-    * (vx,vz+1)  (vx+1,vz+1)
-    *    x--------x
-    *    |        |
-    *    | x------|----> (x,z)
-    *    |        |
-    *    x--------x
-    * (vx,vz)    (vx+1,vz)
-    */
-   float x_offset = x - truncf(x);
-   float z_offset = z - truncf(z);
-   assert(x_offset < 1.0f && z_offset < 1.0f);
-
-   float one_x_offset = 1.0f - x_offset;
-   float one_z_offset = 1.0f - z_offset;
-
-   /* For each quad vertex, compute its height and its distance to (x,z) */
-   float x0 = truncf(x);
-   float z0 = truncf(z);
-   float d0 = sqrtf(x_offset * x_offset + z_offset * z_offset);
-   float h0 = terrain_height_from_height_map(t, surf, x0, z0);
-
-   float x1 = x0 + 1.0f;
-   float d1 = sqrtf(one_x_offset * one_x_offset + z_offset * z_offset);
-   float h1 = terrain_height_from_height_map(t, surf, x1, z0);
-
-   float z1 = z0 + 1.0f;
-   float d2 = sqrtf(x_offset * x_offset + one_z_offset * one_z_offset);
-   float h2 = terrain_height_from_height_map(t, surf, x0, z1);
-
-   float d3 = sqrtf(one_x_offset * one_x_offset + one_z_offset * one_z_offset);
-   float h3 = terrain_height_from_height_map(t, surf, x1, z1);
-
-   /* Compute height at (x,z) by interpolating the heights from the quad */
-   float sum_dist = d0 + d1 + d2 + d3;
-   return (h0 * (sum_dist - d0) + h1 * (sum_dist - d1) +
-           h2 * (sum_dist - d2) + h3 * (sum_dist - d3)) /
-          (3.0f * sum_dist);
+   return terrain_height_from_height_map(t, surf, x, z);
 }
 
 static glm::vec3
@@ -221,19 +258,6 @@ vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t, bool free_obj)
    g_free(t);
 }
 
-static inline glm::vec3
-world_to_terrain_vertex_coords(VkdfTerrain *t, glm::vec3 p)
-{
-   /* Normalize to [0,1] */
-   p -= t->obj->pos;
-   glm::vec3 p_norm = 0.5f + (p / t->obj->scale) * 0.5f;
-
-   /* Trnaslate to [0, num_verts - 1] */
-   return glm::vec3(p_norm.x * (t->num_verts_x - 1),
-                    2.0f * p_norm.y - 1.0f,  // [-1, 1]
-                    p_norm.z * (t->num_verts_z - 1));
-}
-
 bool
 vkdf_terrain_check_collision(VkdfTerrain *t,
                              VkdfBox *box,
@@ -252,19 +276,7 @@ vkdf_terrain_check_collision(VkdfTerrain *t,
    };
 
    for (uint32_t i = 0; i < 4; i++) {
-      glm::vec3 loc = world_to_terrain_vertex_coords(t, box_bottom[i]);
-      /* If the vertex is outside the terrain area, then there is no collision */
-      if (loc.x <  0.0  || loc.x > t->num_verts_x - 1 ||
-          loc.y < -1.0f || loc.y > t->max_height      ||
-          loc.z <  0.0f || loc.z > t->num_verts_z - 1) {
-         continue;
-      }
-
-      /* Otherwise, check the Y component of this box vertex against the
-       * terrain height at the same location.
-       */
-      float h_norm = t->hf(t, loc.x, loc.z, t->hf_data);
-      float h = t->obj->pos.y + t->obj->scale.y * h_norm;
+      float h = vkdf_terrain_get_height_at(t, box_bottom[i].x, box_bottom[i].z);
       if (h >= box_bottom[i].y) {
          if (collision_height)
             *collision_height = h;

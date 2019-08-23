@@ -7,13 +7,13 @@
 typedef struct _VkdfTerrain VkdfTerrain;
 
 /**
- * Returns normalized terrain height in range [-1, 1] at normalized
- * coords (x, z) in range [-1, 1].
+ * Returns normalized terrain height in range [-1, 1] at vertex coordinates
+ * (x, z) in range ([0, num_verts_x - 1], [0, num_verts_z - 1].
  *
  * This function is called from the terrain constructor during the terrain
  * initialization.
  */
-typedef float (*VkdfTerrainHeightFunc)(VkdfTerrain *t, float x, float z, void *data);
+typedef float (*VkdfTerrainHeightFunc)(VkdfTerrain *t, uint32_t x, uint32_t z, void *data);
 
 struct _VkdfTerrain {
    VkdfObject *obj;
@@ -39,7 +39,10 @@ vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t, bool free_obj);
  */
 float
 vkdf_terrain_height_from_height_map(VkdfTerrain *t,
-                                    float x, float z, void *data);
+                                    uint32_t x, uint32_t z, void *data);
+
+float
+vkdf_terrain_get_height_at(VkdfTerrain *t, float x, float z);
 
 bool
 vkdf_terrain_check_collision(VkdfTerrain *t,
