@@ -6816,6 +6816,10 @@ check_collision_with_object(VkdfBox *box,
                             VkdfObject *obj,
                             bool do_mesh_check)
 {
+   /* If the object has been flagged to skip collision testing, skip */
+   if (vkdf_object_ignores_collisions(obj))
+      return false;
+
    /* If there is no collision against the top-level box, we are certain there
     * is no collision at all.
     */

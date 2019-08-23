@@ -17,6 +17,7 @@ typedef struct {
    VkdfBox box;
    VkdfBox *mesh_boxes;
    bool do_mesh_collision;
+   bool ignore_collisions;
 
    glm::mat4 model_matrix;
 
@@ -205,6 +206,18 @@ inline void
 vkdf_object_set_do_mesh_collision(VkdfObject *obj, bool enable)
 {
    obj->do_mesh_collision = enable;
+}
+
+inline void
+vkdf_object_set_ignore_collisions(VkdfObject *obj, bool enable)
+{
+   obj->ignore_collisions = enable;
+}
+
+inline bool
+vkdf_object_ignores_collisions(VkdfObject *obj)
+{
+   return obj->ignore_collisions;
 }
 
 inline bool
