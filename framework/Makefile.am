@@ -31,7 +31,8 @@ libvkdf_la_SOURCES = \
     vkdf-light.hpp vkdf-light.cpp \
     vkdf-camera.hpp vkdf-camera.cpp \
     vkdf-ssao.hpp vkdf-ssao.cpp \
-    vkdf-scene.hpp vkdf-scene.cpp
+    vkdf-scene.hpp vkdf-scene.cpp \
+    vkdf-terrain.hpp vkdf-terrain.cpp
 
 libvkdf_la_CXXFLAGS = \
     -DPREFIX=$(prefix) \

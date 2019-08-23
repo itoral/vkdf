@@ -29,5 +29,6 @@
 #include "vkdf-camera.hpp"
 #include "vkdf-ssao.hpp"
 #include "vkdf-scene.hpp"
+#include "vkdf-terrain.hpp"
 
 #endif
