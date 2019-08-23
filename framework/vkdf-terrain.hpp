@@ -2,13 +2,9 @@
 #define __VKDF_TERRAIN_H__
 
 #include "vkdf-object.hpp"
+#include "vkdf-box.hpp"
 
-typedef struct {
-   VkdfObject *obj;
-   uint32_t num_verts_x;
-   uint32_t num_verts_z;
-   bool initialized;
-} VkdfTerrain;
+typedef struct _VkdfTerrain VkdfTerrain;
 
 /**
  * Returns normalized terrain height in range [-1, 1] at normalized
@@ -18,6 +14,16 @@ typedef struct {
  * initialization.
  */
 typedef float (*VkdfTerrainHeightFunc)(VkdfTerrain *t, float x, float z, void *data);
+
+struct _VkdfTerrain {
+   VkdfObject *obj;
+   uint32_t num_verts_x;
+   uint32_t num_verts_z;
+   VkdfTerrainHeightFunc hf;
+   void *hf_data;
+   float max_height;
+   bool initialized;
+};
 
 VkdfTerrain *
 vkdf_terrain_new(VkdfContext *ctx, uint32_t num_verts_x, uint32_t num_verts_z,
@@ -34,5 +40,10 @@ vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t, bool free_obj);
 float
 vkdf_terrain_height_from_height_map(VkdfTerrain *t,
                                     float x, float z, void *data);
+
+bool
+vkdf_terrain_check_collision(VkdfTerrain *t,
+                             VkdfBox *box,
+                             float *collision_height);
 
 #endif

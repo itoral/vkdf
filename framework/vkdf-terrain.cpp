@@ -122,8 +122,7 @@ calculate_vertex_normal(VkdfTerrain *t, VkdfMesh *mesh, uint32_t x, uint32_t z)
 }
 
 static void
-terrain_gen_mesh(VkdfContext *ctx, VkdfTerrain *t,
-                 VkdfTerrainHeightFunc hf, void *hf_data)
+terrain_gen_mesh(VkdfContext *ctx, VkdfTerrain *t)
 {
    VkdfMesh *mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
    mesh->material_idx = 0;
@@ -133,9 +132,14 @@ terrain_gen_mesh(VkdfContext *ctx, VkdfTerrain *t,
    float delta_z = 2.0f / (t->num_verts_z - 1);
    for (uint32_t x = 0; x < t->num_verts_x; x++) {
       for (uint32_t z = 0; z < t->num_verts_z; z++) {
+         float h = t->hf(t, x, z, t->hf_data);
          glm::vec3 v = glm::vec3(-1.0f + x * delta_x,
-                                 hf(t, x, z, hf_data),
+                                 h,
                                  -1.0f + z * delta_z);
+
+         if (h > t->max_height)
+            t->max_height = h;
+
          mesh->vertices.push_back(v);
       }
    }
@@ -191,10 +195,13 @@ vkdf_terrain_new(VkdfContext *ctx,
    assert(num_verts_x > 1 && num_verts_z > 1);
 
    VkdfTerrain *t = g_new0(VkdfTerrain, 1);
+   t->max_height = -1.0f;
    t->num_verts_x = num_verts_x;
    t->num_verts_z = num_verts_z;
+   t->hf = hf;
+   t->hf_data = hf_data;
 
-   terrain_gen_mesh(ctx, t, hf, hf_data);
+   terrain_gen_mesh(ctx, t);
 
    t->initialized = true;
 
@@ -212,5 +219,59 @@ vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t, bool free_obj)
    if (free_obj)
       vkdf_object_free(t->obj);
    g_free(t);
+}
+
+static inline glm::vec3
+world_to_terrain_vertex_coords(VkdfTerrain *t, glm::vec3 p)
+{
+   /* Normalize to [0,1] */
+   p -= t->obj->pos;
+   glm::vec3 p_norm = 0.5f + (p / t->obj->scale) * 0.5f;
+
+   /* Trnaslate to [0, num_verts - 1] */
+   return glm::vec3(p_norm.x * (t->num_verts_x - 1),
+                    2.0f * p_norm.y - 1.0f,  // [-1, 1]
+                    p_norm.z * (t->num_verts_z - 1));
+}
+
+bool
+vkdf_terrain_check_collision(VkdfTerrain *t,
+                             VkdfBox *box,
+                             float *collision_height)
+{
+   VkdfBox *t_box = vkdf_object_get_box(t->obj);
+   if (!vkdf_box_collision(box, t_box))
+      return false;
+
+   float box_min_y = box->center.y - box->h;
+   glm::vec3 box_bottom[4] = {
+      vkdf_box_get_vertex(box, 2),
+      vkdf_box_get_vertex(box, 3),
+      vkdf_box_get_vertex(box, 6),
+      vkdf_box_get_vertex(box, 7)
+   };
+
+   for (uint32_t i = 0; i < 4; i++) {
+      glm::vec3 loc = world_to_terrain_vertex_coords(t, box_bottom[i]);
+      /* If the vertex is outside the terrain area, then there is no collision */
+      if (loc.x <  0.0  || loc.x > t->num_verts_x - 1 ||
+          loc.y < -1.0f || loc.y > t->max_height      ||
+          loc.z <  0.0f || loc.z > t->num_verts_z - 1) {
+         continue;
+      }
+
+      /* Otherwise, check the Y component of this box vertex against the
+       * terrain height at the same location.
+       */
+      float h_norm = t->hf(t, loc.x, loc.z, t->hf_data);
+      float h = t->obj->pos.y + t->obj->scale.y * h_norm;
+      if (h >= box_bottom[i].y) {
+         if (collision_height)
+            *collision_height = h;
+         return true;
+      }
+   }
+
+   return false;
 }
 
