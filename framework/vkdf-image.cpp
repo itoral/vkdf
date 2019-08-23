@@ -776,7 +776,9 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           const char *path,
                           VkdfImage *image,
                           VkImageUsageFlags usage,
-                          bool is_srgb)
+                          bool is_srgb,
+                          bool gen_mipmaps,
+                          SDL_Surface **out_surf)
 {
    memset(image, 0, sizeof(VkdfImage));
 
@@ -824,7 +826,12 @@ vkdf_load_image_from_file(VkdfContext *ctx,
    create_image_from_data(ctx, pool,
                           image, surf->w, surf->h,
                           format, bpp, swz,
-                          usage, true, surf->pixels);
+                          usage, gen_mipmaps, surf->pixels);
+
+   if (out_surf)
+      *out_surf = surf;
+   else
+      SDL_FreeSurface(surf);
 
    return true;
 }

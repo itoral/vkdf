@@ -30,7 +30,9 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           const char *path,
                           VkdfImage *image,
                           VkImageUsageFlags usage,
-                          bool is_srgb);
+                          bool is_srgb,
+                          bool gen_mipmaps = true,
+                          SDL_Surface **out_surf = NULL);
 
 void
 vkdf_create_image_from_data(VkdfContext *ctx,
