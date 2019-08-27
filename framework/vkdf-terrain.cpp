@@ -263,10 +263,7 @@ vkdf_terrain_check_collision(VkdfTerrain *t,
                              VkdfBox *box,
                              float *collision_height)
 {
-   VkdfBox *t_box = vkdf_object_get_box(t->obj);
-   if (!vkdf_box_collision(box, t_box))
-      return false;
-
+   /* Compute the X,Z area of the object box */
    float box_min_y = box->center.y - box->h;
    glm::vec3 box_bottom[4] = {
       vkdf_box_get_vertex(box, 2),
@@ -275,15 +272,39 @@ vkdf_terrain_check_collision(VkdfTerrain *t,
       vkdf_box_get_vertex(box, 7)
    };
 
-   for (uint32_t i = 0; i < 4; i++) {
-      float h = vkdf_terrain_get_height_at(t, box_bottom[i].x, box_bottom[i].z);
-      if (h >= box_bottom[i].y) {
-         if (collision_height)
+   glm::vec3 min(box_bottom[0].x, 0.0f, box_bottom[0].z);
+   glm::vec3 max(box_bottom[0].x, 0.0f, box_bottom[0].z);
+   for (uint32_t i = 1; i < 4; i++) {
+      if (box_bottom[i].x < min.x)
+         min.x = box_bottom[i].x;
+      else if (box_bottom[i].x > max.x)
+         max.x = box_bottom[i].x;
+
+      if (box_bottom[i].z < min.z)
+         min.z = box_bottom[i].z;
+      else if (box_bottom[i].z > max.z)
+         max.z = box_bottom[i].z;
+   }
+
+   /* Check if any terrain vertex covered by the X,Z area of the object box
+    * is not below the box (in which case some part of the object is below the
+    * terrain).
+    */
+   float x_scale = (2.0f * t->obj->scale.x) / (t->num_verts_x - 1);
+   float z_scale = (2.0f * t->obj->scale.z) / (t->num_verts_z - 1);
+   bool has_collision = false;
+   if (collision_height)
+      *collision_height = box_bottom[0].y;
+   for (float x = min.x; x <= max.x; x += x_scale)
+   for (float z = min.z; z <= max.z; z += z_scale) {
+      float h = vkdf_terrain_get_height_at(t, x, z);
+      if (h >= box_bottom[0].y) {
+         if (collision_height && *collision_height < h)
             *collision_height = h;
-         return true;
+         has_collision = true;
       }
    }
 
-   return false;
+   return has_collision;
 }
 
