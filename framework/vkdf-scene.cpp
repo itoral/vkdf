@@ -6914,14 +6914,13 @@ check_tile_collision(VkdfScene *s,
    return false;
 }
 
-bool
-vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
+static bool
+check_box_collision(VkdfScene *s, VkdfObject *obj, VkdfBox *box,
+                    VkdfObject **collision_obj)
 {
-   VkdfBox *cam_box = vkdf_camera_get_collision_box(s->camera);
-
    /* Check collision against static geometry */
    for (uint32_t ti = 0; ti < s->num_tiles.total; ti++) {
-      if (check_tile_collision(s, &s->tiles[ti], cam_box, collision_obj))
+      if (check_tile_collision(s, &s->tiles[ti], box, collision_obj))
          return true;
    }
 
@@ -6940,10 +6939,11 @@ vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
 
       GList *obj_iter = info->objs;
       while (obj_iter) {
-         VkdfObject *obj = (VkdfObject *) obj_iter->data;
-         if (check_collision_with_object(cam_box, obj, obj->do_mesh_collision)) {
+         VkdfObject *_obj = (VkdfObject *) obj_iter->data;
+         if (obj != _obj &&
+             check_collision_with_object(box, _obj, _obj->do_mesh_collision)) {
             if (collision_obj)
-               *collision_obj = obj;
+               *collision_obj = _obj;
             return true;
          }
          obj_iter = g_list_next(obj_iter);
@@ -6955,8 +6955,8 @@ vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
     * TODO: handle rotation for invisible walls?
     */
    for (uint32_t i = 0; i < s->wall.list.size(); i++) {
-      VkdfBox *box = &s->wall.list[i];
-      if (vkdf_box_collision(cam_box, box)) {
+      VkdfBox *wbox = &s->wall.list[i];
+      if (vkdf_box_collision(box, wbox)) {
          if (collision_obj)
             *collision_obj = NULL;
          return true;
@@ -6964,4 +6964,20 @@ vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
    }
 
    return false;
+}
+
+bool
+vkdf_scene_check_camera_collision(VkdfScene *s, VkdfObject **collision_obj)
+{
+   VkdfBox *cam_box = vkdf_camera_get_collision_box(s->camera);
+   return check_box_collision(s, NULL, cam_box, collision_obj);
+}
+
+bool
+vkdf_scene_check_object_collision(VkdfScene *s,
+                                  VkdfObject *obj,
+                                  VkdfObject **collision_obj)
+{
+   VkdfBox *box = vkdf_object_get_box(obj);
+   return check_box_collision(s, obj, box, collision_obj);
 }
