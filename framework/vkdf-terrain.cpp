@@ -263,9 +263,10 @@ vkdf_terrain_new(VkdfContext *ctx,
  * False.
  */
 void
-vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t, bool free_obj)
+vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t,
+                  bool free_obj, bool free_materials)
 {
-   vkdf_model_free(ctx, t->obj->model);
+   vkdf_model_free(ctx, t->obj->model, free_materials);
    if (free_obj)
       vkdf_object_free(t->obj);
    g_free(t);

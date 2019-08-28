@@ -34,7 +34,8 @@ vkdf_terrain_new(VkdfContext *ctx,
                  VkdfTerrainHeightFunc hf, void *hf_data);
 
 void
-vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t, bool free_obj);
+vkdf_terrain_free(VkdfContext *ctx, VkdfTerrain *t,
+                  bool free_obj, bool free_materials);
 
 /**
  * A VkdfTerrainHeightFunc that reads height from a heightmap texture.
