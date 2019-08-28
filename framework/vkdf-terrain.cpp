@@ -217,6 +217,16 @@ terrain_gen_mesh(VkdfContext *ctx, VkdfTerrain *t)
       }
    }
 
+   /* Compute UVs */
+   if (t->uv_scale_x > 0.0f && t->uv_scale_z > 0.0f) {
+      for (uint32_t i = 0; i < mesh->vertices.size(); i++) {
+         glm::vec3 v = mesh->vertices[i];
+         glm::vec2 uv = glm::vec2(t->uv_scale_x * (0.5f + v.x * 0.5f),
+                                  t->uv_scale_z * (0.5f + v.z * 0.5f));
+         mesh->uvs.push_back(uv);
+      }
+   }
+
    vkdf_mesh_compute_box(mesh);
 
    t->obj = vkdf_object_new_from_mesh(glm::vec3(0.0f), mesh);
@@ -227,6 +237,7 @@ terrain_gen_mesh(VkdfContext *ctx, VkdfTerrain *t)
 VkdfTerrain *
 vkdf_terrain_new(VkdfContext *ctx,
                  uint32_t num_verts_x, uint32_t num_verts_z,
+                 float uv_scale_x, float uv_scale_z,
                  VkdfTerrainHeightFunc hf, void *hf_data)
 {
    assert(num_verts_x > 1 && num_verts_z > 1);
@@ -235,6 +246,8 @@ vkdf_terrain_new(VkdfContext *ctx,
    t->max_height = -1.0f;
    t->num_verts_x = num_verts_x;
    t->num_verts_z = num_verts_z;
+   t->uv_scale_x = uv_scale_x;
+   t->uv_scale_z = uv_scale_z;
    t->hf = hf;
    t->hf_data = hf_data;
 

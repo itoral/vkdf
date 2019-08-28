@@ -19,6 +19,8 @@ struct _VkdfTerrain {
    VkdfObject *obj;
    uint32_t num_verts_x;
    uint32_t num_verts_z;
+   float uv_scale_x;
+   float uv_scale_z;
    VkdfTerrainHeightFunc hf;
    void *hf_data;
    float max_height;
@@ -26,7 +28,9 @@ struct _VkdfTerrain {
 };
 
 VkdfTerrain *
-vkdf_terrain_new(VkdfContext *ctx, uint32_t num_verts_x, uint32_t num_verts_z,
+vkdf_terrain_new(VkdfContext *ctx,
+                 uint32_t num_verts_x, uint32_t num_verts_z,
+                 float uv_scale_x, float uv_scale_z,
                  VkdfTerrainHeightFunc hf, void *hf_data);
 
 void
