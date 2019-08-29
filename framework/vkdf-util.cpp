@@ -133,8 +133,7 @@ vkdf_compute_viewdir(glm::vec3 rot)
    v2.z = v1.z * cosX;
    v2.y = sin(angle);
 
-   /* FIXME: Rotate around Z-axis (not supportted!) */
-   assert(rot.z == 0.0f);
+   /* Z-axis rotation doesn't affect view direction */
 
    return v2;
 }
