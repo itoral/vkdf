@@ -59,7 +59,6 @@ vkdf_compute_view_matrix(glm::vec3 origin, glm::vec3 target)
    mat = glm::rotate(mat, -ry, glm::vec3(0, 1, 0));
    mat = glm::rotate(mat, -rz, glm::vec3(0, 0, 1));
    mat = glm::translate(mat, -origin);
-
    return mat;
 }
 
@@ -70,10 +69,10 @@ vkdf_compute_view_matrix(glm::vec3 origin, glm::vec3 target)
 glm::mat4
 vkdf_compute_view_matrix_for_rotation(glm::vec3 origin, glm::vec3 rot)
 {
-   glm::mat4 mat(1.0);
    float rx = DEG_TO_RAD(rot.x);
    float ry = DEG_TO_RAD(rot.y);
    float rz = DEG_TO_RAD(rot.z);
+   glm::mat4 mat(1.0);
    mat = glm::rotate(mat, -rx, glm::vec3(1, 0, 0));
    mat = glm::rotate(mat, -ry, glm::vec3(0, 1, 0));
    mat = glm::rotate(mat, -rz, glm::vec3(0, 0, 1));
@@ -104,10 +103,10 @@ vkdf_compute_view_matrix_for_direction(glm::vec3 dir)
 glm::mat4
 vkdf_compute_rotation_matrix(glm::vec3 rot)
 {
-   glm::mat4 mat(1.0);
    float rx = DEG_TO_RAD(rot.x);
    float ry = DEG_TO_RAD(rot.y);
    float rz = DEG_TO_RAD(rot.z);
+   glm::mat4 mat(1.0);
    mat = glm::rotate(mat, rz, glm::vec3(0, 0, 1));
    mat = glm::rotate(mat, ry, glm::vec3(0, 1, 0));
    mat = glm::rotate(mat, rx, glm::vec3(1, 0, 0));
