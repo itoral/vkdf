@@ -83,10 +83,10 @@ get_rotation_matrix_at_position(glm::vec3 pos, glm::vec3 rot)
    glm::mat4 Model(1.0f);
    Model = glm::translate(Model, pos);
    // FIXME: use quaternion
-   if (rot.x)
-      Model = glm::rotate(Model, DEG_TO_RAD(rot.x), glm::vec3(1, 0, 0));
    if (rot.y)
       Model = glm::rotate(Model, DEG_TO_RAD(rot.y), glm::vec3(0, 1, 0));
+   if (rot.x)
+      Model = glm::rotate(Model, DEG_TO_RAD(rot.x), glm::vec3(1, 0, 0));
    if (rot.z)
       Model = glm::rotate(Model, DEG_TO_RAD(rot.z), glm::vec3(0, 0, 1));
    Model = glm::translate(Model, -pos);
@@ -154,10 +154,10 @@ compute_mesh_boxes(VkdfObject *obj)
          glm::mat4 Model(1.0f);
          Model = glm::translate(Model, box->center);
          // FIXME: use quaternion
-         if (obj->rot.x)
-            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
          if (obj->rot.y)
             Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.y), glm::vec3(0, 1, 0));
+         if (obj->rot.x)
+            Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.x), glm::vec3(1, 0, 0));
          if (obj->rot.z)
             Model = glm::rotate(Model, DEG_TO_RAD(obj->rot.z), glm::vec3(0, 0, 1));
          Model = glm::translate(Model, -box->center);

@@ -159,12 +159,29 @@ vkdf_compute_model_matrix(glm::vec3 pos, glm::vec3 rot, glm::vec3 scale,
       m = glm::translate(m, rot_origin_offset);
 
    if (rot.x != 0.0f || rot.y != 0.0f || rot.z != 0.0f) {
+#if 0
+      /* FIXME: for some reason rotating Y first seems to be more precise
+       * rotation. This was observed by rendering a flat mesh with no rotation
+       * but which vertices followed an inclined plane with a given slope.
+       * If we then rendered a cube with a rotation vector matching the slope
+       * of the mesh we would expect to see it being rendered with exactly the
+       * same slope (that is both objects should be parallel). However, when
+       * all rotation axis where non-zero the objects would not be parallel.
+       * This is fixed when we produce model matrices by appliying the Y
+       * rotation first. However, when producing view matrices for the camera,
+       * doing the same doesn't seem to produce correct results, so there
+       * should be an inconsistency somewhere...
+       */
       glm::vec3 rot_rad = glm::vec3(DEG_TO_RAD(rot.x),
                                     DEG_TO_RAD(rot.y),
                                     DEG_TO_RAD(rot.z));
       glm::tquat<float> quat = glm::quat(rot_rad);
       glm::mat4 rot_matrix = glm::toMat4(quat);
       m = m * rot_matrix;
+#endif
+      m = glm::rotate(m, DEG_TO_RAD(rot.y), glm::vec3(0, 1, 0));
+      m = glm::rotate(m, DEG_TO_RAD(rot.x), glm::vec3(1, 0, 0));
+      m = glm::rotate(m, DEG_TO_RAD(rot.z), glm::vec3(0, 0, 1));
    }
 
    if (rot_origin_offset != glm::vec3(0.0f))
