@@ -70,7 +70,8 @@ float
 compute_shadow_factor(vec4 light_space_pos,
                       sampler2DShadow shadow_map,
                       uint shadow_map_size,
-                      uint pcf_size)
+                      uint pcf_size,
+                      bool is_directional)
 {
    // Convert light space position to NDC
    vec3 light_space_ndc = light_space_pos.xyz /= light_space_pos.w;
@@ -78,11 +79,14 @@ compute_shadow_factor(vec4 light_space_pos,
    // If the fragment is outside the light's projection then it is outside
    // the light's influence, which means it is in the shadow (notice that
    // such fragment position is outside the shadow map texture so it would
-   // it be incorrect to sample the shadow map with it)
+   // it be incorrect to sample the shadow map with it). For directional
+   // lights tht have infinite reach we consider the point to be in the
+   // light, otherwise we would cast a large shadow over everything that
+   // is far enough that isn't covered by the shadow map around the camera.
    if (abs(light_space_ndc.x) > 1.0 ||
        abs(light_space_ndc.y) > 1.0 ||
        light_space_ndc.z > 1.0)
-      return 0.0;
+      return is_directional ? 1.0 : 0.0;
 
    // Translate from NDC to shadow map space (Vulkan's Z is already in [0..1])
    vec2 shadow_map_coord = light_space_ndc.xy * 0.5 + 0.5;
@@ -132,7 +136,8 @@ compute_lighting(Light l,
    float shadow_factor;
    if (receives_shadows) {
       shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
-                                            shadow_map_size, pcf_size);
+                                            shadow_map_size, pcf_size,
+                                            l.pos.w == 0.0);
    } else {
       shadow_factor = 1.0;
    }
@@ -483,7 +488,8 @@ compute_lighting_spot(Light l,
    float shadow_factor;
    if (receives_shadows) {
       shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
-                                            shadow_map_size, pcf_size);
+                                            shadow_map_size, pcf_size,
+                                            false);
    } else {
       shadow_factor = 1.0;
    }
@@ -564,7 +570,8 @@ compute_lighting_directional(Light l,
     // Check if the fragment is in the shadow
    float shadow_factor;
       shadow_factor = compute_shadow_factor(light_space_pos, shadow_map,
-                                            shadow_map_size, pcf_size);
+                                            shadow_map_size, pcf_size,
+                                            true);
 
   // Compute light contributions to the fragment.
    LightColor lc;
