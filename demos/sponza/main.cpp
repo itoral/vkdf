@@ -1328,7 +1328,7 @@ init_scene(SceneResources *res)
                               0.1f, 60.0f,                 // Near, Far
                               SHADOW_MAP_CONST_BIAS,
                               SHADOW_MAP_SLOPE_BIAS,
-                              -10.0f,                      // Directional offset
+                              -30.0f,                      // Directional offset
                               glm::vec3(1.0f, 1.0f, 2.0f), // Directional scale
                               SHADOW_MAP_PCF_SIZE);
 
