@@ -9,6 +9,7 @@ VkImage
 create_image(VkdfContext *ctx,
              uint32_t width,
              uint32_t height,
+             uint32_t num_layers,
              uint32_t num_levels,
              VkImageType image_type,
              VkFormat format,
@@ -31,7 +32,7 @@ create_image(VkdfContext *ctx,
    image_info.extent.height = height;
    image_info.extent.depth = 1;
    image_info.mipLevels = num_levels;
-   image_info.arrayLayers = 1;
+   image_info.arrayLayers = num_layers;
    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
    image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
    image_info.usage = usage_flags;
@@ -74,6 +75,7 @@ create_image_view(VkdfContext *ctx,
                   VkImage image,
                   VkFormat format,
                   VkImageAspectFlags aspect_flags,
+                  uint32_t num_layers,
                   uint32_t num_levels,
                   VkComponentSwizzle swz_r,
                   VkComponentSwizzle swz_g,
@@ -94,7 +96,7 @@ create_image_view(VkdfContext *ctx,
    view_info.subresourceRange.baseMipLevel = 0;
    view_info.subresourceRange.levelCount = num_levels;
    view_info.subresourceRange.baseArrayLayer = 0;
-   view_info.subresourceRange.layerCount = 1;
+   view_info.subresourceRange.layerCount = num_layers;
    view_info.viewType = view_type;
    view_info.flags = 0;
 
@@ -118,10 +120,13 @@ vkdf_create_image(VkdfContext *ctx,
 {
    VkdfImage image;
 
+    uint32_t num_layers = 1;
+
    image.format = format;
 
    image.image = create_image(ctx,
-                              width, height, num_levels,
+                              width, height,
+                              num_layers, num_levels,
                               image_type, format,
                               format_flags,
                               usage_flags);
@@ -131,7 +136,8 @@ vkdf_create_image(VkdfContext *ctx,
    image.view = create_image_view(ctx,
                                   VK_IMAGE_VIEW_TYPE_2D,
                                   image.image, format,
-                                  aspect_flags, num_levels,
+                                  aspect_flags,
+                                  num_layers, num_levels,
                                   VK_COMPONENT_SWIZZLE_R,
                                   VK_COMPONENT_SWIZZLE_G,
                                   VK_COMPONENT_SWIZZLE_B,
@@ -330,6 +336,7 @@ compute_bpp_from_sdl_surface(SDL_Surface *surf)
 static VkDeviceSize
 compute_gpu_image_size(uint32_t width,
                        uint32_t height,
+                       uint32_t num_layers,
                        uint32_t bpp,
                        bool with_mipmaps,
                        uint32_t *num_levels,
@@ -355,7 +362,7 @@ compute_gpu_image_size(uint32_t width,
       size_y = MAX2(size_y / 2, 1);
    }
 
-   return total_bytes;
+   return total_bytes * num_layers;
 }
 
 /**
@@ -364,6 +371,7 @@ compute_gpu_image_size(uint32_t width,
  */
 static void
 gen_mipmaps_linear_blit(VkImage image,
+                        uint32_t layer,
                         uint32_t num_levels,
                         struct _MipmapInfo *mip_levels,
                         VkCommandBuffer cmd_buf)
@@ -371,7 +379,7 @@ gen_mipmaps_linear_blit(VkImage image,
    /* Transition mip-levels 1..N to transfer destination */
    VkImageSubresourceRange mip_1N =
        vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                           1, num_levels - 1, 0, 1);
+                                           1, num_levels - 1, layer, 1);
 
    VkImageMemoryBarrier barrier_layout_mip_1N =
        vkdf_create_image_barrier(0,
@@ -391,11 +399,11 @@ gen_mipmaps_linear_blit(VkImage image,
    for (uint32_t i = 1; i < num_levels; i++) {
       VkImageSubresourceLayers src_subresource =
          vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT,
-                                              i - 1, 0, 1);
+                                              i - 1, layer, 1);
 
       VkImageSubresourceLayers dst_subresource =
          vkdf_create_image_subresource_layers(VK_IMAGE_ASPECT_COLOR_BIT,
-                                              i, 0, 1);
+                                              i, layer, 1);
 
       VkImageBlit region =
          vkdf_create_image_blit_region(src_subresource,
@@ -411,7 +419,7 @@ gen_mipmaps_linear_blit(VkImage image,
 
       VkImageSubresourceRange prev_mip =
          vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                             i - 1, 1, 0, 1);
+                                             i - 1, 1, layer, 1);
 
       vkdf_image_set_layout(cmd_buf, image, prev_mip,
                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -427,7 +435,7 @@ gen_mipmaps_linear_blit(VkImage image,
 
    VkImageSubresourceRange mip_0Nm1 =
        vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                           0, num_levels - 1, 0, 1);
+                                           0, num_levels - 1, layer, 1);
    VkImageMemoryBarrier dst_barrier_0Nm1 =
       vkdf_create_image_barrier(VK_ACCESS_TRANSFER_READ_BIT,
                                 VK_ACCESS_SHADER_READ_BIT,
@@ -437,7 +445,7 @@ gen_mipmaps_linear_blit(VkImage image,
 
    VkImageSubresourceRange mip_N =
        vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                           num_levels - 1, 1, 0, 1);
+                                           num_levels - 1, 1, layer, 1);
    VkImageMemoryBarrier dst_barrier_N =
       vkdf_create_image_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
                                 VK_ACCESS_SHADER_READ_BIT,
@@ -498,34 +506,22 @@ create_image_from_data(VkdfContext *ctx,
                        VkdfImage *image,
                        uint32_t width,
                        uint32_t height,
+                       uint32_t num_layers,
                        VkFormat format,
                        uint32_t bpp,
                        const VkComponentSwizzle *swz,
                        VkImageUsageFlags usage,
                        bool gen_mipmaps,
-                       const void *pixel_data)
+                       const void **pixel_data)
 {
    uint32_t num_levels;
    struct _MipmapInfo *mip_levels;
    VkDeviceSize gpu_image_bytes =
-      compute_gpu_image_size(width, height, bpp,
+      compute_gpu_image_size(width, height, num_layers, bpp,
                              gen_mipmaps, &num_levels, &mip_levels);
 
    if (num_levels < 2)
       gen_mipmaps = false;
-
-   // Upload pixel data to a host-visible staging buffer
-   VkdfBuffer buf =
-      vkdf_create_buffer(ctx,
-                         0,
-                         gpu_image_bytes,
-                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-
-   uint8_t *data;
-   vkdf_memory_map(ctx, buf.mem, 0, VK_WHOLE_SIZE, (void **)&data);
-   memcpy(data, pixel_data, mip_levels[0].bytes);
-   vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, 0, VK_WHOLE_SIZE);
 
    // Create the image
    image->format = format;
@@ -565,7 +561,7 @@ create_image_from_data(VkdfContext *ctx,
       }
    }
 
-   image->image = create_image(ctx, width, height, num_levels,
+   image->image = create_image(ctx, width, height, num_layers, num_levels,
                                VK_IMAGE_TYPE_2D,
                                image->format,
                                format_flags,
@@ -581,68 +577,86 @@ create_image_from_data(VkdfContext *ctx,
                                    image->image,
                                    image->format,
                                    VK_IMAGE_ASPECT_COLOR_BIT,
+                                   num_layers,
                                    num_levels,
                                    swz[0], swz[1], swz[2], swz[3]);
 
-   // Copy data from staging buffer to mip level 0
-   VkBufferImageCopy region = {};
-   region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-   region.imageSubresource.mipLevel = 0;
-   region.imageSubresource.baseArrayLayer = 0;
-   region.imageSubresource.layerCount = 1;
-   region.imageExtent.width = width;
-   region.imageExtent.height = height;
-   region.imageExtent.depth = 1;
-   region.bufferOffset = 0;
+   VkdfBuffer buf =
+      vkdf_create_buffer(ctx,
+                         0,
+                         mip_levels[0].bytes,
+                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
-   VkCommandBuffer cmd_buf;
-   vkdf_create_command_buffer(ctx, pool,
-                              VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                              1, &cmd_buf);
+   for (uint32_t i = 0; i < num_layers; i++) {
+      // Upload pixel data to a host-visible staging buffer
+      uint8_t *data;
+      vkdf_memory_map(ctx, buf.mem, 0, VK_WHOLE_SIZE, (void **)&data);
+      memcpy(data, pixel_data[i], mip_levels[0].bytes);
+      vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, 0, VK_WHOLE_SIZE);
 
-   vkdf_command_buffer_begin(cmd_buf,
-                             VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-   VkImageSubresourceRange mip_0 =
-      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
-                                          0, 1, 0, 1);
-
-   VkImageMemoryBarrier barrier_layout_mip_0 =
-      vkdf_create_image_barrier(0,
-                                VK_ACCESS_TRANSFER_WRITE_BIT,
-                                VK_IMAGE_LAYOUT_UNDEFINED,
-                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                image->image,
-                                mip_0);
-
-   vkCmdPipelineBarrier(cmd_buf,
-                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                        VK_PIPELINE_STAGE_TRANSFER_BIT,
-                        0,
-                        0, NULL,
-                        0, NULL,
-                        1, &barrier_layout_mip_0);
-
-   vkCmdCopyBufferToImage(cmd_buf, buf.buf, image->image,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          1, &region);
+      // Copy data from staging buffer to mip level 0
+      VkBufferImageCopy region = {};
+      region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+      region.imageSubresource.mipLevel = 0;
+      region.imageSubresource.baseArrayLayer = i;
+      region.imageSubresource.layerCount = 1;
+      region.imageExtent.width = width;
+      region.imageExtent.height = height;
+      region.imageExtent.depth = 1;
+      region.bufferOffset = 0;
 
 
-   if (!gen_mipmaps) {
-      vkdf_image_set_layout(cmd_buf, image->image, mip_0,
-                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                            VK_PIPELINE_STAGE_TRANSFER_BIT,
-                            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-   } else {
-      gen_mipmaps_linear_blit(image->image, num_levels, mip_levels, cmd_buf);
+      VkImageSubresourceRange mip_0 =
+         vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT,
+                                             0, 1, i, 1);
+
+      VkImageMemoryBarrier barrier_layout_mip_0 =
+         vkdf_create_image_barrier(0,
+                                   VK_ACCESS_TRANSFER_WRITE_BIT,
+                                   VK_IMAGE_LAYOUT_UNDEFINED,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                   image->image,
+                                   mip_0);
+
+      VkCommandBuffer cmd_buf;
+      vkdf_create_command_buffer(ctx, pool,
+                                 VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                                 1, &cmd_buf);
+
+      vkdf_command_buffer_begin(cmd_buf,
+                                VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+      vkCmdPipelineBarrier(cmd_buf,
+                           VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           0,
+                           0, NULL,
+                           0, NULL,
+                           1, &barrier_layout_mip_0);
+
+      vkCmdCopyBufferToImage(cmd_buf, buf.buf, image->image,
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             1, &region);
+
+
+      if (!gen_mipmaps) {
+         vkdf_image_set_layout(cmd_buf, image->image, mip_0,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                               VK_PIPELINE_STAGE_TRANSFER_BIT,
+                               VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+      } else {
+         gen_mipmaps_linear_blit(image->image, i, num_levels, mip_levels, cmd_buf);
+      }
+
+      vkdf_command_buffer_end(cmd_buf);
+      vkdf_command_buffer_execute_sync(ctx, cmd_buf, 0);
+      vkFreeCommandBuffers(ctx->device, pool, 1, &cmd_buf);
    }
 
-   vkdf_command_buffer_end(cmd_buf);
-   vkdf_command_buffer_execute_sync(ctx, cmd_buf, 0);
 
    vkdf_destroy_buffer(ctx, &buf);
-   vkFreeCommandBuffers(ctx->device, pool, 1, &cmd_buf);
    g_free(mip_levels);
 }
 
@@ -824,9 +838,10 @@ vkdf_load_image_from_file(VkdfContext *ctx,
 
    // Create and initialize image
    create_image_from_data(ctx, pool,
-                          image, surf->w, surf->h,
+                          image, surf->w, surf->h, 1,
                           format, bpp, swz,
-                          usage, gen_mipmaps, surf->pixels);
+                          usage, gen_mipmaps,
+                          (const void **) &surf->pixels);
 
    if (out_surf)
       *out_surf = surf;
@@ -855,9 +870,9 @@ vkdf_create_image_from_data(VkdfContext *ctx,
    guess_swizzle_from_format(format, swz);
 
    create_image_from_data(ctx, pool,
-                          image, width, height,
+                          image, width, height, 1,
                           format, bpp, swz,
                           usage,
                           gen_mipmaps,
-                          pixel_data);
+                          &pixel_data);
 }
