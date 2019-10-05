@@ -30,5 +30,6 @@
 #include "vkdf-ssao.hpp"
 #include "vkdf-scene.hpp"
 #include "vkdf-terrain.hpp"
+#include "vkdf-skybox.hpp"
 
 #endif
