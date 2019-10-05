@@ -14,8 +14,11 @@ create_image(VkdfContext *ctx,
              VkImageType image_type,
              VkFormat format,
              VkFormatFeatureFlags format_flags,
-             VkImageUsageFlags usage_flags)
+             VkImageUsageFlags usage_flags,
+             bool is_cube)
 {
+   assert(!is_cube || num_layers == 6);
+
    VkImage image;
 
    VkFormatProperties props;
@@ -39,7 +42,8 @@ create_image(VkdfContext *ctx,
    image_info.queueFamilyIndexCount = 0;
    image_info.pQueueFamilyIndices = NULL;
    image_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-   image_info.flags = 0;
+   image_info.flags = is_cube ? VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT : 0;
+;
 
    VK_CHECK(vkCreateImage(ctx->device, &image_info, NULL, &image));
 
@@ -129,7 +133,8 @@ vkdf_create_image(VkdfContext *ctx,
                               num_layers, num_levels,
                               image_type, format,
                               format_flags,
-                              usage_flags);
+                              usage_flags,
+                              false);
 
    bind_image_memory(ctx, image.image, mem_props, &image.mem);
 
@@ -507,6 +512,7 @@ create_image_from_data(VkdfContext *ctx,
                        uint32_t width,
                        uint32_t height,
                        uint32_t num_layers,
+                       bool is_cube,
                        VkFormat format,
                        uint32_t bpp,
                        const VkComponentSwizzle *swz,
@@ -514,6 +520,8 @@ create_image_from_data(VkdfContext *ctx,
                        bool gen_mipmaps,
                        const void **pixel_data)
 {
+   assert(!is_cube || num_layers == 6);
+
    uint32_t num_levels;
    struct _MipmapInfo *mip_levels;
    VkDeviceSize gpu_image_bytes =
@@ -565,7 +573,7 @@ create_image_from_data(VkdfContext *ctx,
                                VK_IMAGE_TYPE_2D,
                                image->format,
                                format_flags,
-                               usage);
+                               usage, is_cube);
 
    bind_image_memory(ctx,
                      image->image,
@@ -573,7 +581,8 @@ create_image_from_data(VkdfContext *ctx,
                      &image->mem);
 
    image->view = create_image_view(ctx,
-                                   VK_IMAGE_VIEW_TYPE_2D,
+                                   is_cube ? VK_IMAGE_VIEW_TYPE_CUBE :
+                                             VK_IMAGE_VIEW_TYPE_2D,
                                    image->image,
                                    image->format,
                                    VK_IMAGE_ASPECT_COLOR_BIT,
@@ -784,6 +793,46 @@ guess_swizzle_from_format(VkFormat format, VkComponentSwizzle *swz)
    }
 }
 
+static void
+compute_image_parameters_from_surface(SDL_Surface *surf,
+                                      VkFormat *format,
+                                      uint32_t *bpp,
+                                      bool *is_srgb,
+                                      VkComponentSwizzle swz[4])
+{
+   // Get pixel size and format
+   *bpp = compute_bpp_from_sdl_surface(surf);
+
+   // If this image is not at least RGB, it is unlikely that it represents
+   // color data. It is probably a specular intensity texture, in which
+   // case it should not be sRGB encoded.
+   //
+   // FIXME: At least with Intel/Mesa if we attempt to blit to sRGB images
+   // (which we do for mipmaps) with less than 3 components we get GPU hangs.
+   // Notice that the time of this writing, the Intel/Mesa driver doesn't
+   // really support blitting to RGB either (only RGBA), but so far we seem
+   // to be able to do away with it just fine.
+   if (*bpp < 24)
+      *is_srgb = false;
+
+   *format = guess_format_from_bpp(*bpp, *is_srgb);
+   assert(*format != VK_FORMAT_UNDEFINED);
+
+   uint32_t has_component_masks =
+      surf->format->Rmask || surf->format->Gmask ||
+      surf->format->Bmask || surf->format->Amask;
+
+   // Get pixel swizzle
+   if (has_component_masks) {
+      swz[0] = compute_component_swizzle_from_mask(surf->format->Rmask, false);
+      swz[1] = compute_component_swizzle_from_mask(surf->format->Gmask, false);
+      swz[2] = compute_component_swizzle_from_mask(surf->format->Bmask, false);
+      swz[3] = compute_component_swizzle_from_mask(surf->format->Amask, true);
+   } else {
+      guess_swizzle_from_format(*format, swz);
+   }
+}
+
 bool
 vkdf_load_image_from_file(VkdfContext *ctx,
                           VkCommandPool pool,
@@ -803,42 +852,14 @@ vkdf_load_image_from_file(VkdfContext *ctx,
       return false;
    }
 
-   // Get pixel size and format
-   uint32_t bpp = compute_bpp_from_sdl_surface(surf);
-
-   // If this image is not at least RGB, it is unlikely that it represents
-   // color data. It is probably a specular intensity texture, in which
-   // case it should not be sRGB encoded.
-   //
-   // FIXME: At least with Intel/Mesa if we attempt to blit to sRGB images
-   // (which we do for mipmaps) with less than 3 components we get GPU hangs.
-   // Notice that the time of this writing, the Intel/Mesa driver doesn't
-   // really support blitting to RGB either (only RGBA), but so far we seem
-   // to be able to do away with it just fine.
-   if (bpp < 24)
-      is_srgb = false;
-
-   VkFormat format = guess_format_from_bpp(bpp, is_srgb);
-   assert(format != VK_FORMAT_UNDEFINED);
-
-   uint32_t has_component_masks =
-      surf->format->Rmask || surf->format->Gmask ||
-      surf->format->Bmask || surf->format->Amask;
-
-   // Get pixel swizzle
+   VkFormat format;
+   uint32_t bpp;
    VkComponentSwizzle swz[4];
-   if (has_component_masks) {
-      swz[0] = compute_component_swizzle_from_mask(surf->format->Rmask, false);
-      swz[1] = compute_component_swizzle_from_mask(surf->format->Gmask, false);
-      swz[2] = compute_component_swizzle_from_mask(surf->format->Bmask, false);
-      swz[3] = compute_component_swizzle_from_mask(surf->format->Amask, true);
-   } else {
-      guess_swizzle_from_format(format, swz);
-   }
+   compute_image_parameters_from_surface(surf, &format, &bpp, &is_srgb, swz);
 
    // Create and initialize image
    create_image_from_data(ctx, pool,
-                          image, surf->w, surf->h, 1,
+                          image, surf->w, surf->h, 1, false,
                           format, bpp, swz,
                           usage, gen_mipmaps,
                           (const void **) &surf->pixels);
@@ -870,9 +891,54 @@ vkdf_create_image_from_data(VkdfContext *ctx,
    guess_swizzle_from_format(format, swz);
 
    create_image_from_data(ctx, pool,
-                          image, width, height, 1,
+                          image, width, height, 1, false,
                           format, bpp, swz,
                           usage,
                           gen_mipmaps,
                           &pixel_data);
+}
+
+bool
+vkdf_load_cube_image_from_files(VkdfContext *ctx,
+                                VkCommandPool pool,
+                                const char *path[6],
+                                VkdfImage *image,
+                                VkImageUsageFlags usage,
+                                bool is_srgb)
+{
+   memset(image, 0, sizeof(VkdfImage));
+
+   SDL_Surface *surfs[6];
+   for (uint32_t i = 0; i < 6; i++) {
+      // Load image data from file and put pixel data in a GPU buffer
+      surfs[i] = IMG_Load(path[i]);
+      if (!surfs[i]) {
+         vkdf_error("image: failed to load '%s'", path[i]);
+         return false;
+      }
+   }
+
+   // We assume that all images have a matching format
+   SDL_Surface *surf = surfs[0];
+
+   VkFormat format;
+   uint32_t bpp;
+   VkComponentSwizzle swz[4];
+   compute_image_parameters_from_surface(surf, &format, &bpp, &is_srgb, swz);
+
+   // Create and initialize image
+   const void *pixels[6] = {
+      surfs[0]->pixels,
+      surfs[1]->pixels,
+      surfs[2]->pixels,
+      surfs[3]->pixels,
+      surfs[4]->pixels,
+      surfs[5]->pixels,
+   };
+   create_image_from_data(ctx, pool,
+                          image, surf->w, surf->h, 6, true,
+                          format, bpp, swz,
+                          usage, false, pixels);
+
+   return true;
 }

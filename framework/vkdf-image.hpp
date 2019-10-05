@@ -34,6 +34,14 @@ vkdf_load_image_from_file(VkdfContext *ctx,
                           bool gen_mipmaps = true,
                           SDL_Surface **out_surf = NULL);
 
+bool
+vkdf_load_cube_image_from_files(VkdfContext *ctx,
+                                VkCommandPool pool,
+                                const char *path[6],
+                                VkdfImage *image,
+                                VkImageUsageFlags usage,
+                                bool is_srgb);
+
 void
 vkdf_create_image_from_data(VkdfContext *ctx,
                             VkCommandPool pool,
