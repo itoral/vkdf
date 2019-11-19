@@ -192,9 +192,13 @@ init_queues(VkdfContext *ctx)
       // See: https://github.com/glfw/glfw/issues/828
       // can_present[i] =
       //    glfwGetPhysicalDevicePresentationSupport(ctx->inst, ctx->phy_device, i);
-      vkGetPhysicalDeviceSurfaceSupportKHR(ctx->phy_device,
-                                           i, ctx->platform.surface,
-                                           (VkBool32 *) &can_present[i]);
+      if (!ctx->no_swapchain) {
+         vkGetPhysicalDeviceSurfaceSupportKHR(ctx->phy_device,
+                                              i, ctx->platform.surface,
+                                              (VkBool32 *) &can_present[i]);
+      } else {
+         can_present[i] = false;
+      }
    }
 
    int32_t gfx_queue_index = -1;
@@ -225,7 +229,7 @@ init_queues(VkdfContext *ctx)
 
    g_free(can_present);
 
-   if (pst_queue_index == -1)
+   if (pst_queue_index == -1 && !ctx->no_swapchain)
       vkdf_fatal("Selected device does not provide a presentation queue");
 
    ctx->gfx_queue_index = (uint32_t) gfx_queue_index;
@@ -350,7 +354,8 @@ init_logical_device(VkdfContext *ctx)
    vkGetDeviceQueue(ctx->device, ctx->gfx_queue_index, 0, &ctx->gfx_queue);
 
    // FIXME: handle separate queue for presentation
-   assert(ctx->gfx_queue_index == ctx->pst_queue_index);
+   assert(ctx->gfx_queue_index == ctx->pst_queue_index ||
+          ctx->pst_queue_index == -1);
    ctx->pst_queue = ctx->gfx_queue;
 
    g_free(extension_names);
@@ -364,6 +369,9 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
 
    ctx->width = width;
    ctx->height = height;
+
+   if (ctx->no_swapchain)
+      return;
 
    vkdf_platform_create_window(&ctx->platform, ctx->inst,
                                width, height, fullscreen, resizable);
@@ -416,6 +424,9 @@ init_window_surface(VkdfContext *ctx, uint32_t width, uint32_t height,
 static void
 destroy_swap_chain(VkdfContext *ctx)
 {
+   if (ctx->no_swapchain)
+      return;
+
    for (uint32_t i = 0; i < ctx->swap_chain_length; i++) {
       vkDestroySemaphore(ctx->device, ctx->acquired_sem[i], NULL);
       vkDestroySemaphore(ctx->device, ctx->draw_sem[i], NULL);
@@ -511,6 +522,9 @@ override_present_mode_from_env(VkdfContext *ctx, VkPresentModeKHR *mode)
 void
 _init_swap_chain(VkdfContext *ctx)
 {
+   if (ctx->no_swapchain)
+      return;
+
    VkResult res;
 
    if (ctx->swap_chain_length > 0)
@@ -695,6 +709,8 @@ vkdf_init(VkdfContext *ctx,
 
    memset(ctx, 0, sizeof(VkdfContext));
 
+   ctx->no_swapchain = getenv("VKDF_NO_SWAPCHAIN") != NULL;
+
    vkdf_platform_init(&ctx->platform);
 
    init_instance(ctx, enable_validation);
@@ -756,7 +772,8 @@ vkdf_cleanup(VkdfContext *ctx)
    destroy_queue_list(ctx);
    destroy_instance_extension_list(ctx);
    destroy_physical_device_extension_list(ctx);
-   vkDestroySurfaceKHR(ctx->inst, ctx->platform.surface, NULL);
+   if (!ctx->no_swapchain)
+      vkDestroySurfaceKHR(ctx->inst, ctx->platform.surface, NULL);
    vkdf_platform_finish(&ctx->platform);
    destroy_instance(ctx);
 }

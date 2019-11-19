@@ -75,6 +75,8 @@ struct _VkdfContext {
    float fps_target;
    double frame_time_budget;
    bool fps_target_from_env;
+
+   bool no_swapchain;
 };
 
 typedef struct _VkdfContext VkdfContext;
