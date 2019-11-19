@@ -31,5 +31,7 @@
 #include "vkdf-scene.hpp"
 #include "vkdf-terrain.hpp"
 #include "vkdf-skybox.hpp"
+#include "vkdf-cpu-particle-source.hpp"
+#include "vkdf-cpu-particle-source-renderer.hpp"
 
 #endif

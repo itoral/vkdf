@@ -33,7 +33,9 @@ libvkdf_la_SOURCES = \
     vkdf-ssao.hpp vkdf-ssao.cpp \
     vkdf-scene.hpp vkdf-scene.cpp \
     vkdf-terrain.hpp vkdf-terrain.cpp \
-    vkdf-skybox.hpp vkdf-skybox.cpp
+    vkdf-skybox.hpp vkdf-skybox.cpp \
+    vkdf-cpu-particle-source.hpp vkdf-cpu-particle-source.cpp \
+    vkdf-cpu-particle-source-renderer.hpp vkdf-cpu-particle-source-renderer.cpp
 
 libvkdf_la_CXXFLAGS = \
     -DPREFIX=$(prefix) \
