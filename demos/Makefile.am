@@ -8,7 +8,8 @@ SUBDIRS = triangle \
           shadow \
           scene \
           scenelight \
-          sponza
+          sponza \
+          cpu-particle-source
 
 MAINTAINERCLEANFILES = \
         *.in \
