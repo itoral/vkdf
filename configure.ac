@@ -118,6 +118,9 @@ AC_CONFIG_FILES([
    demos/scenelight/Makefile
    demos/sponza/Makefile
    demos/cpu-particle-source/Makefile
+   demos/small-clear/Makefile
+   demos/small-render/Makefile
+   demos/small-render-wsi/Makefile
 ])
 
 AC_OUTPUT

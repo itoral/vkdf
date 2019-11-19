@@ -9,7 +9,10 @@ SUBDIRS = triangle \
           scene \
           scenelight \
           sponza \
-          cpu-particle-source
+          cpu-particle-source \
+          small-clear \
+          small-render \
+          small-render-wsi
 
 MAINTAINERCLEANFILES = \
         *.in \

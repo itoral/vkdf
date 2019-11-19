@@ -1,0 +1,41 @@
+bin_PROGRAMS = small_render_wsi
+
+AM_CPPFLAGS = @DEMO_DEPS_CFLAGS@
+
+# ------------------------------
+# small-wsi
+# ------------------------------
+
+BUILT_SOURCES = \
+    shader.vert.spv \
+    shader.frag.spv
+
+CLEANFILES = \
+    $(BUILT_SOURCES)
+
+shader.vert.spv: shader.vert
+	$(top_srcdir)/$(GLSLANG) -V shader.vert -o shader.vert.spv
+
+shader.frag.spv: shader.frag
+	$(top_srcdir)/$(GLSLANG) -V shader.frag -o shader.frag.spv
+
+small_render_wsi_SOURCES = \
+    main.cpp
+
+small_render_wsi_CXXFLAGS = \
+    -DPREFIX=$(prefix) \
+    -D_GNU_SOURCE \
+    @VKDF_DEFINES@
+
+small_render_wsi_LDADD = \
+    $(abs_top_builddir)/framework/.libs/libvkdf.so \
+    @DEMO_DEPS_LIBS@ \
+    -lm
+
+# -----------------------------
+
+MAINTAINERCLEANFILES = \
+	*.in \
+	*~
+
+DISTCLEANFILES = $(MAINTAINERCLEANFILES)
