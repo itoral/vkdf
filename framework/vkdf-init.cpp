@@ -55,11 +55,13 @@ get_required_extensions(VkdfContext *ctx, bool enable_validation)
 {
    ctx->inst_extension_count = enable_validation ? 1 : 0;
 
-   uint32_t platform_extension_count;
-   const char **platform_extensions =
-      vkdf_platform_get_required_extensions(&platform_extension_count);
-
-   ctx->inst_extension_count += platform_extension_count;
+   uint32_t platform_extension_count = 0;
+   char **platform_extensions = NULL;
+   if (!ctx->no_swapchain) {
+      platform_extensions = (char **)
+         vkdf_platform_get_required_extensions(&platform_extension_count);
+      ctx->inst_extension_count += platform_extension_count;
+   }
 
    ctx->inst_extensions = g_new(char *, ctx->inst_extension_count);
    for (uint32_t i = 0; i < platform_extension_count; i++)
