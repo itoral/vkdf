@@ -268,8 +268,8 @@ choose_device_extensions(VkdfContext *ctx,
     *       'device_extensions' union.
     */
    static struct _extension_spec extensions[] = {
-      { "VK_KHR_swapchain",            true},
-      { "VK_KHR_maintenance1",         true},
+      { "VK_KHR_swapchain",            !ctx->no_swapchain},
+      { "VK_KHR_maintenance1",         false},
    };
 
    const uint32_t num_extensions = sizeof(extensions) / sizeof(extensions[0]);
