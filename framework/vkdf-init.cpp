@@ -309,8 +309,10 @@ choose_device_extensions(VkdfContext *ctx,
          else
             vkdf_info("Optional extension '%s' not available.\n", ext);
       } else {
-         ctx->device_extensions.enabled[i] = true;
-         (*enabled_extensions)[(*enabled_extension_count)++] = ext;
+         if (extensions[i].required) {
+            ctx->device_extensions.enabled[i] = true;
+            (*enabled_extensions)[(*enabled_extension_count)++] = ext;
+         }
       }
    }
 }
