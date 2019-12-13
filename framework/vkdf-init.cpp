@@ -53,7 +53,13 @@ create_debug_callback(VkdfContext *ctx,
 static void
 get_required_extensions(VkdfContext *ctx, bool enable_validation)
 {
-   ctx->inst_extension_count = enable_validation ? 1 : 0;
+   ctx->inst_extension_count = 0;
+
+   if (enable_validation)
+      ctx->inst_extension_count++;
+
+   if (!ctx->no_swapchain)
+      ctx->inst_extension_count++;
 
    uint32_t platform_extension_count = 0;
    char **platform_extensions = NULL;
@@ -64,13 +70,22 @@ get_required_extensions(VkdfContext *ctx, bool enable_validation)
    }
 
    ctx->inst_extensions = g_new(char *, ctx->inst_extension_count);
-   for (uint32_t i = 0; i < platform_extension_count; i++)
-      ctx->inst_extensions[i] = g_strdup(platform_extensions[i]);
-
+   uint32_t i = 0;
    if (enable_validation) {
-      ctx->inst_extensions[ctx->inst_extension_count - 1] =
+      ctx->inst_extensions[i++] =
          g_strdup(VK_EXT_DEBUG_REPORT_EXTENSION_NAME);
    }
+
+   if (!ctx->no_swapchain) {
+      ctx->inst_extensions[i++] =
+         g_strdup(VK_KHR_SURFACE_EXTENSION_NAME);
+   }
+
+   assert(platform_extension_count + i <= ctx->inst_extension_count);
+   for (uint32_t c = 0; c < platform_extension_count; c++) {
+      ctx->inst_extensions[i+c] = g_strdup(platform_extensions[c]);
+   }
+
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
