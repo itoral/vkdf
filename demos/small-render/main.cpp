@@ -196,7 +196,9 @@ write_pixels_to_file(VkdfContext *ctx, DemoResources *res)
    fwrite(&TGAhead, sizeof(TGAhead), 1, out);
    for (int i = 0; i < WIDTH; i++) {
       for (int j = 0; j < HEIGHT; j++) {
-          fwrite(&data[(i * WIDTH + j) * 4], 3, 1, out);
+          fwrite(&data[(i * WIDTH + j) * 4] + 2, 1, 1, out); // B
+          fwrite(&data[(i * WIDTH + j) * 4] + 1, 1, 1, out); // G
+          fwrite(&data[(i * WIDTH + j) * 4] + 0, 1, 1, out); // R
       }
    }
    fclose(out);

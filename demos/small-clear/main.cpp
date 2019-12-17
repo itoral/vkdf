@@ -24,7 +24,7 @@ record_command_buffer(VkdfContext *ctx, DemoResources *res)
                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
    VkClearValue clear_values[1];
-   vkdf_color_clear_set(&clear_values[0], glm::vec4(0.0f, 1.0f, 0.0f, 1.0f));
+   vkdf_color_clear_set(&clear_values[0], glm::vec4(1.0f, 1.0f, 0.0f, 1.0f));
 
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -132,7 +132,9 @@ write_pixels_to_file(VkdfContext *ctx, DemoResources *res)
    fwrite(&TGAhead, sizeof(TGAhead), 1, out);
    for (int i = 0; i < WIDTH; i++) {
       for (int j = 0; j < HEIGHT; j++) {
-          fwrite(&data[(i * WIDTH + j) * 4], 3, 1, out);
+          fwrite(&data[(i * WIDTH + j) * 4] + 2, 1, 1, out); // B
+          fwrite(&data[(i * WIDTH + j) * 4] + 1, 1, 1, out); // G
+          fwrite(&data[(i * WIDTH + j) * 4] + 0, 1, 1, out); // R
       }
    }
    fclose(out);
