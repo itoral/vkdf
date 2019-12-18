@@ -288,14 +288,13 @@ choose_device_extensions(VkdfContext *ctx,
 
    for (uint32_t i = 0; i < num_extensions; i++) {
       const char *ext = extensions[i].name;
-      if (!check_extension_supported(ctx, ext)) {
-         if (extensions[i].required)
+      if (extensions[i].required) {
+         if (!check_extension_supported(ctx, ext)) {
             vkdf_fatal("Required extension '%s' not available.\n", ext);
-         else
-            vkdf_info("Optional extension '%s' not available.\n", ext);
-      } else {
-         ctx->device_extensions.enabled[i] = true;
-         (*enabled_extensions)[(*enabled_extension_count)++] = ext;
+         } else {
+            ctx->device_extensions.enabled[i] = true;
+            (*enabled_extensions)[(*enabled_extension_count)++] = ext;
+         }
       }
    }
 }
