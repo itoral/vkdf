@@ -249,7 +249,7 @@ main()
    VkdfContext ctx;
    DemoResources resources;
 
-   vkdf_init(&ctx, WIDTH, HEIGHT, false, false, true);
+   vkdf_init(&ctx, WIDTH, HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
    scene_render(&ctx, &resources);

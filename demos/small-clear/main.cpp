@@ -78,6 +78,34 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                         VK_IMAGE_ASPECT_COLOR_BIT,
                         VK_IMAGE_VIEW_TYPE_2D);
 
+#if 0
+   /* Initializes the color image pixel data */
+   const uint32_t image_bytes = WIDTH * HEIGHT * 4 * sizeof(uint8_t);
+
+   uint8_t *data;
+   vkdf_memory_map(ctx, res->color_image.mem, 0, image_bytes, (void **)&data);
+
+   VkMappedMemoryRange range;
+   range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+   range.pNext = NULL;
+   range.memory = res->color_image.mem;
+   range.offset = 0;
+   range.size = image_bytes;
+   vkInvalidateMappedMemoryRanges(ctx->device, 1, &range);
+
+   for (int i = 0; i < WIDTH; i++) {
+      for (int j = 0; j < HEIGHT; j++) {
+          data[(i * WIDTH + j) * 4 + 0] = 0;
+          data[(i * WIDTH + j) * 4 + 1] = 0;
+          data[(i * WIDTH + j) * 4 + 2] = 255;
+          data[(i * WIDTH + j) * 4 + 3] = 255;
+      }
+   }
+
+   vkdf_memory_unmap(ctx, res->color_image.mem, res->color_buffer.mem_props,
+                     0, image_bytes);
+#endif
+
    res->color_buffer =
         vkdf_create_buffer(ctx, 0,
                            4 * ctx->width * ctx->height * sizeof(float),
@@ -179,12 +207,13 @@ main()
    VkdfContext ctx;
    DemoResources resources;
 
-   vkdf_init(&ctx, WIDTH, HEIGHT, false, false, true);
+   vkdf_init(&ctx, WIDTH, HEIGHT, false, false, false);
    init_resources(&ctx, &resources);
 
    scene_render(&ctx, &resources);
 
    cleanup_resources(&ctx, &resources);
+
    vkdf_cleanup(&ctx);
 
    return 0;
