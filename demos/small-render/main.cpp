@@ -27,6 +27,9 @@ record_command_buffer(VkdfContext *ctx, DemoResources *res)
    vkdf_command_buffer_begin(res->cmd_buf,
                              VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
+   VkClearValue clear_values[1];
+   vkdf_color_clear_set(&clear_values[0], glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
    VkRenderPassBeginInfo rp_begin;
    rp_begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
    rp_begin.pNext = NULL;
@@ -36,8 +39,8 @@ record_command_buffer(VkdfContext *ctx, DemoResources *res)
    rp_begin.renderArea.offset.y = 0;
    rp_begin.renderArea.extent.width = ctx->width;
    rp_begin.renderArea.extent.height = ctx->height;
-   rp_begin.clearValueCount = 0;
-   rp_begin.pClearValues = NULL;
+   rp_begin.clearValueCount = 1;
+   rp_begin.pClearValues = clear_values;
 
    vkCmdBeginRenderPass(res->cmd_buf,
                         &rp_begin,
@@ -62,7 +65,7 @@ record_command_buffer(VkdfContext *ctx, DemoResources *res)
    scissor.offset.y = 0;
    vkCmdSetScissor(res->cmd_buf, 0, 1, &scissor);
 
-   vkCmdDraw(res->cmd_buf, 4, 1, 0, 0);
+   vkCmdDraw(res->cmd_buf, 3, 1, 0, 0);
 
    vkCmdEndRenderPass(res->cmd_buf);
 
@@ -136,7 +139,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
    res->render_pass =
       vkdf_renderpass_simple_new(ctx,
                                  VK_FORMAT_R8G8B8A8_UNORM,
-                                 VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                                 VK_ATTACHMENT_LOAD_OP_CLEAR,
                                  VK_ATTACHMENT_STORE_OP_STORE,
                                  VK_IMAGE_LAYOUT_UNDEFINED,
                                  VK_IMAGE_LAYOUT_GENERAL,
@@ -164,7 +167,7 @@ init_resources(VkdfContext *ctx, DemoResources *res)
                                             false, VK_COMPARE_OP_ALWAYS,
                                             res->render_pass,
                                             res->pipeline_layout,
-                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+                                            VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
                                             VK_CULL_MODE_NONE,
                                             1,
                                             res->vs_module,
