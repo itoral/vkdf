@@ -17,6 +17,41 @@ typedef struct {
 } DemoResources;
 
 static void
+prepare_image_for_transfer(VkCommandBuffer cmd_buf, VkImage image)
+{
+   VkImageSubresourceRange range =
+      vkdf_create_image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1);
+   VkImageMemoryBarrier barrier =
+      vkdf_create_image_barrier(VK_ACCESS_SHADER_WRITE_BIT,
+                                VK_ACCESS_TRANSFER_READ_BIT,
+                                VK_IMAGE_LAYOUT_GENERAL,
+                                VK_IMAGE_LAYOUT_GENERAL,
+                                image, range);
+   vkCmdPipelineBarrier(cmd_buf,
+                        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        0,
+                        0, NULL, 0, NULL, 1, &barrier);
+}
+
+static void
+prepare_buffer_for_host_read(VkCommandBuffer cmd_buf,
+                             VkBuffer buffer,
+                             VkDeviceSize offset,
+                             VkDeviceSize size)
+{
+   VkBufferMemoryBarrier barrier =
+      vkdf_create_buffer_barrier(VK_ACCESS_TRANSFER_WRITE_BIT,
+                                 VK_ACCESS_HOST_READ_BIT,
+                                 buffer, offset, size);
+   vkCmdPipelineBarrier(cmd_buf,
+                        VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK_PIPELINE_STAGE_HOST_BIT,
+                        0,
+                        0, NULL, 1, &barrier, 0, NULL);
+}
+
+static void
 record_command_buffer(VkdfContext *ctx, DemoResources *res)
 {
    vkdf_create_command_buffer(ctx,
@@ -69,6 +104,8 @@ record_command_buffer(VkdfContext *ctx, DemoResources *res)
 
    vkCmdEndRenderPass(res->cmd_buf);
 
+   prepare_image_for_transfer(res->cmd_buf, res->color_image.image);
+
    VkBufferImageCopy region;
    region.bufferOffset = 0;
    region.bufferRowLength = 0;
@@ -80,6 +117,9 @@ record_command_buffer(VkdfContext *ctx, DemoResources *res)
    vkCmdCopyImageToBuffer(res->cmd_buf,
                           res->color_image.image, VK_IMAGE_LAYOUT_GENERAL,
                           res->color_buffer.buf, 1, &region);
+
+   prepare_buffer_for_host_read(res->cmd_buf,
+                                res->color_buffer.buf, 0, VK_WHOLE_SIZE);
 
    vkdf_command_buffer_end(res->cmd_buf);
 }
