@@ -2963,7 +2963,7 @@ create_shadow_map_pipeline_for_mesh(VkdfScene *s, VkdfMesh *mesh)
                                       NULL,
                                       &pipeline));
 
-   g_hash_table_insert(s->shadows.pipeline.pipelines, hash, pipeline);
+   g_hash_table_insert(s->shadows.pipeline.pipelines, hash, (gpointer) pipeline);
 }
 
 /**
