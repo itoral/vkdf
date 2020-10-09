@@ -23,7 +23,7 @@ obj.vert.spv: obj.vert
 	$(top_srcdir)/$(GLSLANG) -V obj.vert -o obj.vert.spv
 
 obj.frag: obj.frag.input
-	python $(top_srcdir)/scripts/fixup-glsl.py obj.frag.input obj.frag
+	python3 $(top_srcdir)/scripts/fixup-glsl.py obj.frag.input obj.frag
 
 obj.frag.spv: obj.frag
 	$(top_srcdir)/$(GLSLANG) -V obj.frag -o obj.frag.spv
@@ -32,7 +32,7 @@ floor.vert.spv: floor.vert
 	$(top_srcdir)/$(GLSLANG) -V floor.vert -o floor.vert.spv
 
 floor.frag: floor.frag.input
-	python $(top_srcdir)/scripts/fixup-glsl.py floor.frag.input floor.frag
+	python3 $(top_srcdir)/scripts/fixup-glsl.py floor.frag.input floor.frag
 
 floor.frag.spv: floor.frag
 	$(top_srcdir)/$(GLSLANG) -V floor.frag -o floor.frag.spv

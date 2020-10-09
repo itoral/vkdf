@@ -80,7 +80,7 @@ $ ./triangle
 Troubleshooting
 -----------------------------------
 
-Many shaders are generated with a python script which implements a rudimentary
+Many shaders are generated with a python3 script which implements a rudimentary
 form of #include for GLSL shaders. This feature is very basic and won't
 detect the case where the included file has been modified and regenerate the
 the shader during the make stage, which can lead to broken rendering. To avoid
