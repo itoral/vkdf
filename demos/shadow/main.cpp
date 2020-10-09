@@ -1178,18 +1178,15 @@ default_pipeline_blend_state(VkPipelineColorBlendStateCreateInfo *cb)
 static inline void
 default_pipeline_dynamic_state(VkPipelineDynamicStateCreateInfo *dsi)
 {
-   static VkDynamicState ds_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
-
-   int ds_count = 0;
-   memset(ds_enables, 0, sizeof(ds_enables));
-   ds_enables[ds_count++] = VK_DYNAMIC_STATE_SCISSOR;
-   ds_enables[ds_count++] = VK_DYNAMIC_STATE_VIEWPORT;
+   std::vector<VkDynamicState> ds_enables;
+   ds_enables.push_back(VK_DYNAMIC_STATE_SCISSOR);
+   ds_enables.push_back(VK_DYNAMIC_STATE_VIEWPORT);
 
    dsi->sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
    dsi->pNext = NULL;
    dsi->flags = 0;
-   dsi->pDynamicStates = ds_enables;
-   dsi->dynamicStateCount = ds_count;
+   dsi->pDynamicStates = ds_enables.data();
+   dsi->dynamicStateCount = ds_enables.size();
 }
 
 /* Pipeline used to render the final scene */
