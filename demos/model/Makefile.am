@@ -18,7 +18,7 @@ shader.vert.spv: shader.vert
 	$(top_srcdir)/$(GLSLANG) -V shader.vert -o shader.vert.spv
 
 shader.frag: shader.frag.input
-	python $(top_srcdir)/scripts/fixup-glsl.py shader.frag.input shader.frag
+	python3 $(top_srcdir)/scripts/fixup-glsl.py shader.frag.input shader.frag
 
 shader.frag.spv: shader.frag
 	$(top_srcdir)/$(GLSLANG) -V shader.frag -o shader.frag.spv
