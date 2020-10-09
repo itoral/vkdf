@@ -123,21 +123,17 @@ vkdf_create_gfx_pipeline(VkdfContext *ctx,
    cb.blendConstants[3] = 1.0f;
 
    // Dynamic state (Viewport, Scissor)
-   int dynamic_state_count = 0;
-   VkDynamicState dynamic_state_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
-   memset(dynamic_state_enables, 0, sizeof(dynamic_state_enables));
-   dynamic_state_enables[dynamic_state_count++] =
-      VK_DYNAMIC_STATE_SCISSOR;
-   dynamic_state_enables[dynamic_state_count++] =
-      VK_DYNAMIC_STATE_VIEWPORT;
+   std::vector<VkDynamicState> dynamic_state_enables;
+   dynamic_state_enables.push_back(VK_DYNAMIC_STATE_SCISSOR);
+   dynamic_state_enables.push_back(VK_DYNAMIC_STATE_VIEWPORT);
 
    VkPipelineDynamicStateCreateInfo dynamic_state_info;
    dynamic_state_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
    dynamic_state_info.pNext = NULL;
    dynamic_state_info.flags = 0;
-   dynamic_state_info.pDynamicStates = dynamic_state_enables;
-   dynamic_state_info.dynamicStateCount = dynamic_state_count;
+   dynamic_state_info.pDynamicStates = dynamic_state_enables.data();
+   dynamic_state_info.dynamicStateCount = dynamic_state_enables.size();
 
    // Shader stages
    VkPipelineShaderStageCreateInfo shader_stages[2];

@@ -2885,17 +2885,15 @@ create_shadow_map_pipeline_for_mesh(VkdfScene *s, VkdfMesh *mesh)
    cb.blendConstants[3] = 1.0f;
 
    VkPipelineDynamicStateCreateInfo dsi;
-   VkDynamicState ds_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
-   uint32_t ds_count = 0;
-   memset(ds_enables, 0, sizeof(ds_enables));
-   ds_enables[ds_count++] = VK_DYNAMIC_STATE_SCISSOR;
-   ds_enables[ds_count++] = VK_DYNAMIC_STATE_VIEWPORT;
-   ds_enables[ds_count++] = VK_DYNAMIC_STATE_DEPTH_BIAS;
+   std::vector<VkDynamicState> ds_enables;
+   ds_enables.push_back(VK_DYNAMIC_STATE_SCISSOR);
+   ds_enables.push_back(VK_DYNAMIC_STATE_VIEWPORT);
+   ds_enables.push_back(VK_DYNAMIC_STATE_DEPTH_BIAS);
    dsi.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
    dsi.pNext = NULL;
    dsi.flags = 0;
-   dsi.pDynamicStates = ds_enables;
-   dsi.dynamicStateCount = ds_count;
+   dsi.pDynamicStates = ds_enables.data();
+   dsi.dynamicStateCount = ds_enables.size();
 
    // Depth bias state is dynamic so we can use different settings per light
    VkPipelineRasterizationStateCreateInfo rs;
@@ -5352,21 +5350,17 @@ create_ssr_blend_pipeline(VkdfScene *s)
    cb.blendConstants[3] = 1.0f;
 
    // Dynamic state (Viewport, Scissor)
-   int dynamic_state_count = 0;
-   VkDynamicState dynamic_state_enables[VK_DYNAMIC_STATE_RANGE_SIZE];
-   memset(dynamic_state_enables, 0, sizeof(dynamic_state_enables));
-   dynamic_state_enables[dynamic_state_count++] =
-      VK_DYNAMIC_STATE_SCISSOR;
-   dynamic_state_enables[dynamic_state_count++] =
-      VK_DYNAMIC_STATE_VIEWPORT;
+   std::vector<VkDynamicState> dynamic_state_enables;
+   dynamic_state_enables.push_back(VK_DYNAMIC_STATE_SCISSOR);
+   dynamic_state_enables.push_back(VK_DYNAMIC_STATE_VIEWPORT);
 
    VkPipelineDynamicStateCreateInfo dynamic_state_info;
    dynamic_state_info.sType =
       VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
    dynamic_state_info.pNext = NULL;
    dynamic_state_info.flags = 0;
-   dynamic_state_info.pDynamicStates = dynamic_state_enables;
-   dynamic_state_info.dynamicStateCount = dynamic_state_count;
+   dynamic_state_info.pDynamicStates = dynamic_state_enables.data();
+   dynamic_state_info.dynamicStateCount = dynamic_state_enables.size();
 
    // Shader stages
    VkPipelineShaderStageCreateInfo shader_stages[2];
