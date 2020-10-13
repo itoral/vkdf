@@ -833,6 +833,35 @@ compute_image_parameters_from_surface(SDL_Surface *surf,
    }
 }
 
+static SDL_Surface *
+convert_rgb_surface_to_rgba(SDL_Surface *rgb)
+{
+   SDL_PixelFormat *format = SDL_AllocFormat(SDL_PIXELFORMAT_RGBA32);
+   SDL_Surface *rgba = SDL_ConvertSurface(rgb, format, 0);
+   SDL_FreeFormat(format);
+   return rgba;
+}
+
+static bool
+needs_rgba_conversion(VkdfContext *ctx, VkFormat format, bool gen_mipmaps)
+{
+   if (format != VK_FORMAT_R8G8B8_UNORM &&  format != VK_FORMAT_R8G8B8_SRGB)
+      return false;
+
+   // Convert to RGBA if RGB format doesn't support sampling. If mipmaps are
+   // requested, we also require blitting.
+   VkFormatFeatureFlags format_features =
+      VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT |
+      VK_FORMAT_FEATURE_BLIT_SRC_BIT |
+      VK_FORMAT_FEATURE_BLIT_DST_BIT;
+
+   VkFormatProperties props;
+   vkGetPhysicalDeviceFormatProperties(ctx->phy_device, format, &props);
+   if ((props.optimalTilingFeatures & format_features) != format_features)
+      return true;
+   return false;
+}
+
 bool
 vkdf_load_image_from_file(VkdfContext *ctx,
                           VkCommandPool pool,
@@ -856,6 +885,12 @@ vkdf_load_image_from_file(VkdfContext *ctx,
    uint32_t bpp;
    VkComponentSwizzle swz[4];
    compute_image_parameters_from_surface(surf, &format, &bpp, &is_srgb, swz);
+
+   // Convert RGB to RGBA if needed
+   if (needs_rgba_conversion(ctx, format, gen_mipmaps)) {
+      surf = convert_rgb_surface_to_rgba(surf);
+      compute_image_parameters_from_surface(surf, &format, &bpp, &is_srgb, swz);
+   }
 
    // Create and initialize image
    create_image_from_data(ctx, pool,
@@ -925,6 +960,14 @@ vkdf_load_cube_image_from_files(VkdfContext *ctx,
    uint32_t bpp;
    VkComponentSwizzle swz[4];
    compute_image_parameters_from_surface(surf, &format, &bpp, &is_srgb, swz);
+
+   // Convert RGB to RGBA if needed
+   if (needs_rgba_conversion(ctx, format, false)) {
+      for (uint32_t i = 0; i < 6; i++)
+         surfs[i] = convert_rgb_surface_to_rgba(surfs[i]);
+      surf = surfs[0];
+      compute_image_parameters_from_surface(surf, &format, &bpp, &is_srgb, swz);
+   }
 
    // Create and initialize image
    const void *pixels[6] = {
