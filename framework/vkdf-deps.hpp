@@ -21,6 +21,7 @@
 // Vulkan
 #ifdef VKDF_PLATFORM_SDL
 #define VK_USE_PLATFORM_XLIB_KHR
+#define VK_USE_PLATFORM_WAYLAND_KHR
 #endif
 #include <vulkan/vulkan.h>
 

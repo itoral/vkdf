@@ -91,4 +91,7 @@ generated shader files are re-generated again:
 $ make clean
 $ make -j
 
+Wayland support is only available via SDL
+
 Enjoy!
+
