@@ -20,7 +20,7 @@ static void
 platform_init(VkdfPlatform *platform)
 {
    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK) < 0)
-      vkdf_fatal("Failed to initialize SDL2 platform");
+      vkdf_fatal("Failed to initialize SDL2 platform SDL_Error:%s", SDL_GetError());
 
    if (SDL_NumJoysticks() > 0) {
       SDL_Joystick *joy = SDL_JoystickOpen(0);
@@ -55,12 +55,13 @@ vkdf_platform_create_window(VkdfPlatform *platform,
                        fullscreen ? SDL_WINDOW_FULLSCREEN : 0 |
                        resizable  ? SDL_WINDOW_RESIZABLE  : 0);
 
+   if (!platform->window)
+      vkdf_fatal("Failed to create window: %s", SDL_GetError());
+
    platform->sdl.renderer =
       SDL_CreateRenderer(platform->window, -1, SDL_RENDERER_ACCELERATED);
 
 
-   if (!platform->window)
-      vkdf_fatal("Failed to create window");
 
    /* Specially in fullscreen mode, the size of the window may change a few
     * times before it gets to its final size. This means that it can take
