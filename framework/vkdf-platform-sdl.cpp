@@ -77,22 +77,39 @@ vkdf_platform_create_window(VkdfPlatform *platform,
    wait_for_window_resize(platform, width, height);
 
    /* Surface */
-   VkResult res;
+   VkResult res = VK_SUCCESS;
 
    SDL_SysWMinfo win_info;
    SDL_VERSION(&win_info.version);
    SDL_GetWindowWMInfo(platform->window, &win_info);
 
-   VkXlibSurfaceCreateInfoKHR create_info;
-   create_info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
-   create_info.pNext = NULL;
-   create_info.flags = 0;
-   create_info.dpy = win_info.info.x11.display;
-   create_info.window = win_info.info.x11.window;
-   res = vkCreateXlibSurfaceKHR(inst, &create_info, NULL, &platform->surface);
+   switch(win_info.subsystem) {
+   case SDL_SYSWM_X11: {
+      VkXlibSurfaceCreateInfoKHR create_info;
+      create_info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+      create_info.pNext = NULL;
+      create_info.flags = 0;
+      create_info.dpy = win_info.info.x11.display;
+      create_info.window = win_info.info.x11.window;
+      res = vkCreateXlibSurfaceKHR(inst, &create_info, NULL, &platform->surface);
+      break;
+   }
+   case SDL_SYSWM_WAYLAND: {
+      VkWaylandSurfaceCreateInfoKHR create_info;
+      create_info.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+      create_info.pNext = NULL;
+      create_info.flags = 0;
+      create_info.display = win_info.info.wl.display;
+      create_info.surface = win_info.info.wl.surface;
+      res = vkCreateWaylandSurfaceKHR(inst, &create_info, NULL, &platform->surface);
+      break;
+   }
+   default:
+      vkdf_fatal("SDL win_info.subsystem not supported: %i\n", win_info.subsystem);
+   }
 
    if (res != VK_SUCCESS)
-      vkdf_fatal("Failed to create window surface");
+      vkdf_fatal("Failed to create window surface. Error code: %i", res);
 }
 
 
@@ -101,7 +118,8 @@ vkdf_platform_get_required_extensions(uint32_t *count)
 {
    static const char *ext[] = {
       VK_KHR_SURFACE_EXTENSION_NAME,
-      VK_KHR_XLIB_SURFACE_EXTENSION_NAME
+      VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+      VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME
    };
    *count = sizeof(ext) / sizeof(ext[0]);
    return ext;
