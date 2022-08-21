@@ -98,10 +98,12 @@ acquire_next_image(VkdfContext *ctx)
    bool image_acquired = false;
 
    // We only get an updated swap_chain_index after calling
-   // vkAcquireNextImageKHR, but we need it before the call to select a valid
-   // semaphore, pre-increment it here for that purpose. We initialized
-   // swap_chain_index to swap_chain_length - 1, so the first time this
-   // is ever called, it will give us index 0.
+   // vkAcquireNextImageKHR.
+   //
+   // For now we just compute a index based on current
+   // swap_chain_index. If vkAcquireNextImageKHR doesn't go through
+   // the full swap chain we fix it later.
+
    uint32_t sem_index = (ctx->swap_chain_index + 1) % ctx->swap_chain_length;
    do {
       res = vkAcquireNextImageKHR(ctx->device,
@@ -110,6 +112,18 @@ acquire_next_image(VkdfContext *ctx)
                                   ctx->acquired_sem[sem_index],
                                   NULL,
                                   &ctx->swap_chain_index);
+
+      if (sem_index != ctx->swap_chain_index) {
+         // This happens when swap_chain_index goes back to zero
+         // without going through the full swap chain
+         assert(ctx->swap_chain_index == 0);
+
+         // We swap the semaphore for the acquired image with the
+         // temporary index to the one in the swap_chain_index
+         // position
+         std::swap(ctx->acquired_sem[ctx->swap_chain_index],
+                   ctx->acquired_sem[sem_index]);
+      }
 
       if (res != VK_SUCCESS &&
           res != VK_ERROR_OUT_OF_DATE_KHR &&
