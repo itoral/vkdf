@@ -402,7 +402,7 @@ done
 conf_flags=""
 
 if $want_maintainer_mode; then
-    conf_flags="--enable-maintainer-mode"
+    conf_flags="--enable-maintainer-mode ${CONFIGURE_FLAGS}"
 fi
 
 if test x$NOCONFIGURE = x; then
