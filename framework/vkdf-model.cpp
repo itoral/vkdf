@@ -61,7 +61,7 @@ process_mesh(const aiScene *scene,
              const bool load_tangents)
 {
    // FIXME: for now we only support triangle lists for loaded models
-   assert(mesh->mPrimitiveTypes == aiPrimitiveType_TRIANGLE);
+   assert(mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE);
    VkdfMesh *_mesh = vkdf_mesh_new(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
    bool has_tangent = mesh->mTangents != NULL && load_tangents;
