@@ -103,11 +103,13 @@ init_instance(VkdfContext *ctx, bool enable_validation)
    info.flags = 0;
    info.pApplicationInfo = &app_info;
 
+   // FIXME; check if layers exist
+   const char *validation_layers[] = {
+       "VK_LAYER_KHRONOS_validation",
+       "VK_LAYER_LUNARG_standard_validation", /* Legacy fallback */
+   };
+
    if (enable_validation) {
-      // FIXME: check that layer exists (ensures that debug ext is available)
-      const char *validation_layers[] = {
-          "VK_LAYER_LUNARG_standard_validation"
-      };
       info.enabledLayerCount = 1;
       info.ppEnabledLayerNames = validation_layers;
 
@@ -121,6 +123,14 @@ init_instance(VkdfContext *ctx, bool enable_validation)
    info.ppEnabledExtensionNames = ctx->inst_extensions;
 
    VkResult res = vkCreateInstance(&info, NULL, &ctx->inst);
+
+   // If we tried to create the instance with validation and
+   // failed try the legacy validation layer instead.
+   if (res != VK_SUCCESS && enable_validation) {
+      info.ppEnabledLayerNames = &validation_layers[1];
+      res = vkCreateInstance(&info, NULL, &ctx->inst);
+   }
+
    if (res != VK_SUCCESS)
       vkdf_fatal("Failed to create Vulkan instance");
 
