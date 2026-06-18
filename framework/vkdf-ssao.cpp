@@ -46,7 +46,7 @@ vkdf_ssao_gen_tangent_samples(uint32_t num_samples,
  */
 void
 vkdf_ssao_gen_noise_samples(uint32_t num_samples,
-                            std::vector<glm::vec3> *samples)
+                            std::vector<glm::vec4> *samples)
 {
    for (uint32_t i = 0; i < num_samples; i++) {
       glm::vec3 sample = glm::vec3(rand_float(-1.0f, 1.0f),
@@ -54,7 +54,7 @@ vkdf_ssao_gen_noise_samples(uint32_t num_samples,
                                    0.0f);
       vkdf_vec3_normalize(&sample);
       sample *= rand_float(0.0f, 1.0f);
-      samples->push_back(sample);
+      samples->push_back(vec4(sample, 1.0f));
    }
 }
 
@@ -63,14 +63,14 @@ vkdf_ssao_gen_noise_image(VkdfContext *ctx,
                           VkCommandPool pool,
                           uint32_t width,
                           uint32_t height,
-                          const std::vector<glm::vec3> *samples,
+                          const std::vector<glm::vec4> *samples,
                           VkdfImage *image)
 {
    assert(width * height <= samples->size());
 
    vkdf_create_image_from_data(ctx, pool,
                                width, height,
-                               VK_FORMAT_R16G16B16_SFLOAT,
+                               VK_FORMAT_R16G16B16A16_SFLOAT,
                                false,
                                &(*samples)[0],
                                VK_IMAGE_USAGE_SAMPLED_BIT,
