@@ -309,7 +309,7 @@ struct _VkdfScene {
 
       /* Noise */
       uint32_t num_noise_samples;
-      std::vector<glm::vec3> noise;
+      std::vector<glm::vec4> noise;
       uint32_t noise_image_dim;
       VkdfImage noise_image;
       VkSampler noise_sampler;
