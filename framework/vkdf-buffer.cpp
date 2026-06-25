@@ -54,12 +54,12 @@ vkdf_buffer_map_and_fill(VkdfContext *ctx,
    assert(buf.mem_props & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    void *mapped_memory;
-   vkdf_memory_map(ctx, buf.mem, offset, size, &mapped_memory);
+   vkdf_memory_map(ctx, buf.mem, offset, VK_WHOLE_SIZE, &mapped_memory);
 
-   assert(buf.mem_reqs.size >= size);
+   assert(buf.mem_reqs.size >= offset + size);
    memcpy(mapped_memory, data, size);
 
-   vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, offset, size);
+   vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, offset, VK_WHOLE_SIZE);
 }
 
 void
@@ -77,9 +77,9 @@ vkdf_buffer_map_and_fill_elements(VkdfContext *ctx,
 
    void *mapped_memory;
    VkDeviceSize size = num_elements * dst_stride;
-   assert(buf.mem_reqs.size >= size);
+   assert(buf.mem_reqs.size >= offset + size);
 
-   vkdf_memory_map(ctx, buf.mem, offset, size, &mapped_memory);
+   vkdf_memory_map(ctx, buf.mem, offset, VK_WHOLE_SIZE, &mapped_memory);
 
    VkDeviceSize dst_offset = 0;
    VkDeviceSize src_offset = 0;
@@ -90,7 +90,7 @@ vkdf_buffer_map_and_fill_elements(VkdfContext *ctx,
       src_offset += src_stride;
    }
 
-   vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, offset, size);
+   vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, offset, VK_WHOLE_SIZE);
 }
 
 void

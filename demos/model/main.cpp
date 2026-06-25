@@ -316,7 +316,7 @@ init_objects(VkdfContext *ctx, DemoResources *res)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint32_t *map;
-   vkdf_memory_map(ctx, res->instance_buf.mem, 0, instance_data_size,
+   vkdf_memory_map(ctx, res->instance_buf.mem, 0, VK_WHOLE_SIZE,
                    (void **) &map);
 
    for (uint32_t j = 0; j < model->meshes.size(); j++) {
@@ -329,7 +329,7 @@ init_objects(VkdfContext *ctx, DemoResources *res)
    }
 
    vkdf_memory_unmap(ctx, res->instance_buf.mem, res->instance_buf.mem_props,
-                     0, instance_data_size);
+                     0, VK_WHOLE_SIZE);
 }
 
 static void
