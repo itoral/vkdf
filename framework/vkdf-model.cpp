@@ -422,7 +422,7 @@ model_fill_vertex_buffer(VkdfContext *ctx, VkdfModel *model)
 
    uint8_t *map;
    vkdf_memory_map(ctx, model->vertex_buf.mem,
-                   0, vertex_data_size, (void **) &map);
+                   0, VK_WHOLE_SIZE, (void **) &map);
 
    // Interleaved per-vertex attributes (position, normal, uv, material)
    VkDeviceSize byte_offset = 0;
@@ -460,7 +460,7 @@ model_fill_vertex_buffer(VkdfContext *ctx, VkdfModel *model)
    }
 
    vkdf_memory_unmap(ctx, model->vertex_buf.mem,
-                     model->vertex_buf.mem_props, 0, vertex_data_size);
+                     model->vertex_buf.mem_props, 0, VK_WHOLE_SIZE);
 }
 
 static void
@@ -486,7 +486,7 @@ model_fill_index_buffer(VkdfContext *ctx, VkdfModel *model)
 
    uint8_t *map;
    vkdf_memory_map(ctx, model->index_buf.mem,
-                   0, index_data_size, (void **) &map);
+                   0, VK_WHOLE_SIZE, (void **) &map);
 
    VkDeviceSize byte_offset = 0;
    for (uint32_t m = 0; m < model->meshes.size(); m++) {
@@ -500,7 +500,7 @@ model_fill_index_buffer(VkdfContext *ctx, VkdfModel *model)
    }
 
    vkdf_memory_unmap(ctx, model->index_buf.mem, model->index_buf.mem_props,
-                     0, index_data_size);
+                     0, VK_WHOLE_SIZE);
 }
 
 /**

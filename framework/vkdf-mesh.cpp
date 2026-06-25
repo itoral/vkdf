@@ -317,7 +317,7 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
 
    uint8_t *map;
    vkdf_memory_map(ctx, mesh->vertex_buf.mem,
-                   0, vertex_data_size, (void **) &map);
+                   0, VK_WHOLE_SIZE, (void **) &map);
 
    for (uint32_t i = 0; i < mesh->vertices.size(); i++) {
       uint32_t elem_size = sizeof(mesh->vertices[0]);
@@ -356,7 +356,7 @@ vkdf_mesh_fill_vertex_buffer(VkdfContext *ctx, VkdfMesh *mesh)
    }
 
    vkdf_memory_unmap(ctx, mesh->vertex_buf.mem, mesh->vertex_buf.mem_props,
-                     0, vertex_data_size);
+                     0, VK_WHOLE_SIZE);
 }
 
 static inline VkDeviceSize
@@ -393,12 +393,12 @@ vkdf_mesh_fill_index_buffer(VkdfContext *ctx, VkdfMesh *mesh)
 
    uint8_t *map;
    vkdf_memory_map(ctx, mesh->index_buf.mem,
-                   0, index_data_size, (void **) &map);
+                   0, VK_WHOLE_SIZE, (void **) &map);
 
    memcpy(map, &mesh->indices[0], index_data_size);
 
    vkdf_memory_unmap(ctx, mesh->index_buf.mem, mesh->index_buf.mem_props,
-                     0, index_data_size);
+                     0, VK_WHOLE_SIZE);
 }
 
 void
