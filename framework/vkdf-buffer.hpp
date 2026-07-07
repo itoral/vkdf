@@ -19,6 +19,19 @@ vkdf_create_buffer(VkdfContext *ctx,
                    uint32_t mem_props);
 
 void
+vkdf_buffer_map(VkdfContext *ctx,
+                VkdfBuffer buf,
+                VkDeviceSize offset,
+                VkDeviceSize size,
+                void **ptr);
+
+void
+vkdf_buffer_unmap(VkdfContext *ctx,
+                  VkdfBuffer buf,
+                  VkDeviceSize offset,
+                  VkDeviceSize size);
+
+void
 vkdf_buffer_map_and_fill(VkdfContext *ctx,
                          VkdfBuffer buf,
                          VkDeviceSize offset,
