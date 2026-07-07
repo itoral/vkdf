@@ -600,9 +600,9 @@ create_image_from_data(VkdfContext *ctx,
    for (uint32_t i = 0; i < num_layers; i++) {
       // Upload pixel data to a host-visible staging buffer
       uint8_t *data;
-      vkdf_memory_map(ctx, buf.mem, 0, VK_WHOLE_SIZE, (void **)&data);
+      vkdf_buffer_map(ctx, buf, 0, VK_WHOLE_SIZE, (void **)&data);
       memcpy(data, pixel_data[i], mip_levels[0].bytes);
-      vkdf_memory_unmap(ctx, buf.mem, buf.mem_props, 0, VK_WHOLE_SIZE);
+      vkdf_buffer_unmap(ctx, buf, 0, VK_WHOLE_SIZE);
 
       // Copy data from staging buffer to mip level 0
       VkBufferImageCopy region = {};

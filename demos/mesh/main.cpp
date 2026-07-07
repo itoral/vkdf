@@ -416,7 +416,7 @@ scene_update(VkdfContext *ctx, void *data)
          VkDeviceSize buf_size = VK_WHOLE_SIZE;
 
          uint8_t *map;
-         vkdf_memory_map(ctx, res->M_ubo.mem, 0, buf_size, (void**) &map);
+         vkdf_buffer_map(ctx, res->M_ubo, 0, buf_size, (void**) &map);
 
          for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
             VkdfObject *obj = res->objs[i];
@@ -439,8 +439,7 @@ scene_update(VkdfContext *ctx, void *data)
                pos_speeds[i].z *= -1.0f;
          }
 
-         vkdf_memory_unmap(ctx, res->M_ubo.mem, res->M_ubo.mem_props,
-                           0, buf_size);
+         vkdf_buffer_unmap(ctx, res->M_ubo, 0, buf_size);
          return;
       }
    }
@@ -450,7 +449,7 @@ scene_update(VkdfContext *ctx, void *data)
    VkDeviceSize buf_size = VK_WHOLE_SIZE;
 
    uint8_t *map;
-   vkdf_memory_map(ctx, res->M_ubo.mem, 0, buf_size, (void**) &map);
+   vkdf_buffer_map(ctx, res->M_ubo, 0, buf_size, (void**) &map);
 
    for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
       VkdfObject *obj = res->objs[i];
@@ -473,8 +472,7 @@ scene_update(VkdfContext *ctx, void *data)
          pos_speeds[i].z *= -1.0f;
    }
 
-   vkdf_memory_unmap(ctx, res->M_ubo.mem, res->M_ubo.mem_props,
-                     0, buf_size);
+   vkdf_buffer_unmap(ctx, res->M_ubo, 0, buf_size);
 }
 
 static void

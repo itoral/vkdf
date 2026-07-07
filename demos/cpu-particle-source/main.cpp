@@ -333,7 +333,7 @@ scene_update(VkdfContext *ctx, void *data)
    // Prepare particle UBO for rendering
    unsigned char *map;
    VkDeviceSize ubo_size = sizeof(ParticleCollectionShaderData);
-   vkdf_memory_map(ctx, res->psr_ubo.mem, 0, ubo_size, (void **) &map);
+   vkdf_buffer_map(ctx, res->psr_ubo, 0, ubo_size, (void **) &map);
    glm::mat4 psr_vp = res->clip * res->projection * res->view;
    memcpy(map, &psr_vp, sizeof(glm::mat4));
    map += sizeof(glm::mat4);
@@ -349,7 +349,7 @@ scene_update(VkdfContext *ctx, void *data)
       iter = g_list_next(iter);
       map += sizeof(ParticleShaderData);
    }
-   vkdf_memory_unmap(ctx, res->psr_ubo.mem, res->psr_ubo.mem_props, 0, ubo_size);
+   vkdf_buffer_unmap(ctx, res->psr_ubo, 0, ubo_size);
 }
 
 static void

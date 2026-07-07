@@ -2348,8 +2348,7 @@ create_static_object_ubo(VkdfScene *s)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *mem;
-   vkdf_memory_map(s->ctx, s->ubo.obj.buf.mem,
-                   0, VK_WHOLE_SIZE, (void **) &mem);
+   vkdf_buffer_map(s->ctx, s->ubo.obj.buf, 0, VK_WHOLE_SIZE, (void **) &mem);
 
    // NOTE: this assumes that each set-id model has a different set of
    // materials. In theory, we could have different set-ids share models
@@ -2407,8 +2406,7 @@ create_static_object_ubo(VkdfScene *s)
       model_index++;
    }
 
-   vkdf_memory_unmap(s->ctx, s->ubo.obj.buf.mem, s->ubo.obj.buf.mem_props,
-                     0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(s->ctx, s->ubo.obj.buf, 0, VK_WHOLE_SIZE);
 }
 
 static void
@@ -2540,8 +2538,7 @@ create_static_object_shadow_map_ubo(VkdfScene *s)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *mem;
-   vkdf_memory_map(s->ctx, s->ubo.shadow_map.buf.mem,
-                   0, VK_WHOLE_SIZE, (void **) &mem);
+   vkdf_buffer_map(s->ctx, s->ubo.shadow_map.buf, 0, VK_WHOLE_SIZE, (void **) &mem);
 
    VkDeviceSize offset = 0;
    GList *set_id_iter = s->set_ids;
@@ -2574,8 +2571,7 @@ create_static_object_shadow_map_ubo(VkdfScene *s)
       set_id_iter = g_list_next(set_id_iter);
    }
 
-   vkdf_memory_unmap(s->ctx, s->ubo.shadow_map.buf.mem,
-                     s->ubo.shadow_map.buf.mem_props, 0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(s->ctx, s->ubo.shadow_map.buf, 0, VK_WHOLE_SIZE);
 }
 
 static void
@@ -2616,8 +2612,7 @@ create_static_material_ubo(VkdfScene *s)
 
    uint8_t *mem;
    VkDeviceSize material_size = sizeof(VkdfMaterial);
-   vkdf_memory_map(s->ctx, s->ubo.material.buf.mem,
-                   0, VK_WHOLE_SIZE, (void **) &mem);
+   vkdf_buffer_map(s->ctx, s->ubo.material.buf, 0, VK_WHOLE_SIZE, (void **) &mem);
 
    uint32_t model_idx = 0;
    GList *model_iter = s->models;
@@ -2636,8 +2631,7 @@ create_static_material_ubo(VkdfScene *s)
       model_idx++;
    }
 
-   vkdf_memory_unmap(s->ctx, s->ubo.material.buf.mem,
-                     s->ubo.material.buf.mem_props, 0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(s->ctx, s->ubo.material.buf, 0, VK_WHOLE_SIZE);
 }
 
 static void
@@ -4646,8 +4640,7 @@ prepare_scene_ssao(VkdfScene *s)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint8_t *mem;
-   vkdf_memory_map(s->ctx, s->ssao.samples_buf.buf.mem,
-                   0, VK_WHOLE_SIZE, (void **) &mem);
+   vkdf_buffer_map(s->ctx, s->ssao.samples_buf.buf, 0, VK_WHOLE_SIZE, (void **) &mem);
 
    const uint32_t sample_size = sizeof(s->ssao.samples[0]);
    for (uint32_t i = 0; i < s->ssao.num_samples; i++) {
@@ -4655,10 +4648,7 @@ prepare_scene_ssao(VkdfScene *s)
       mem += ALIGN(sample_size, 16);
    }
 
-   vkdf_memory_unmap(s->ctx,
-                     s->ssao.samples_buf.buf.mem,
-                     s->ssao.samples_buf.buf.mem_props,
-                     0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(s->ctx, s->ssao.samples_buf.buf, 0, VK_WHOLE_SIZE);
 
    /* SSAO noise texture & sampler */
    vkdf_ssao_gen_noise_samples(s->ssao.num_noise_samples, &s->ssao.noise);
@@ -6026,15 +6016,11 @@ prepare_brightness_filter(VkdfScene *s,
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    float *mem;
-   vkdf_memory_map(s->ctx, s->brightness.buf.mem,
-                   0, VK_WHOLE_SIZE, (void **) &mem);
+   vkdf_buffer_map(s->ctx, s->brightness.buf, 0, VK_WHOLE_SIZE, (void **) &mem);
 
    *mem = s->brightness.value;
 
-   vkdf_memory_unmap(s->ctx,
-                     s->brightness.buf.mem,
-                     s->brightness.buf.mem_props,
-                     0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(s->ctx, s->brightness.buf, 0, VK_WHOLE_SIZE);
 
    VkDeviceSize ubo_offset = 0;
    VkDeviceSize ubo_size = sizeof(float);

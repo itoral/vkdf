@@ -309,7 +309,7 @@ create_texture(VkdfContext *ctx, DemoResources *res)
    // Write image data to the staging buffer for each mipmap. Each level has
    // a different color so it is easy to spot which level is being displayed.
    uint8_t *data;
-   vkdf_memory_map(ctx, staging_buf.mem, 0, VK_WHOLE_SIZE, (void **)&data);
+   vkdf_buffer_map(ctx, staging_buf, 0, VK_WHOLE_SIZE, (void **)&data);
 
    for (uint32_t l = 0; l < levels.num_levels; l++) {
       for (uint32_t i = 0; i < levels.size[l] * levels.size[l]; i++) {
@@ -322,8 +322,7 @@ create_texture(VkdfContext *ctx, DemoResources *res)
       data += levels.size[l] * levels.size[l] * 4;
    }
 
-   vkdf_memory_unmap(ctx, staging_buf.mem, staging_buf.mem_props,
-                     0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(ctx, staging_buf, 0, VK_WHOLE_SIZE);
 
    // Create a device-local texture image that we will sample from the
    // fragment shader. We will need to fill this image by copying texture

@@ -664,7 +664,7 @@ init_objects(VkdfContext *ctx, DemoResources *res)
                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
    uint32_t *map;
-   vkdf_memory_map(ctx, res->instance_buf.mem, 0, instance_data_size,
+   vkdf_buffer_map(ctx, res->instance_buf, 0, instance_data_size,
                    (void **) &map);
 
    for (uint32_t j = 0; j < model->meshes.size(); j++) {
@@ -676,15 +676,14 @@ init_objects(VkdfContext *ctx, DemoResources *res)
       }
    }
 
-   vkdf_memory_unmap(ctx, res->instance_buf.mem, res->instance_buf.mem_props,
-                     0, instance_data_size);
+   vkdf_buffer_unmap(ctx, res->instance_buf, 0, instance_data_size);
 }
 
 static void
 fill_model_ubo(VkdfContext *ctx, DemoResources *res)
 {
    uint8_t *map;
-   vkdf_memory_map(ctx, res->M_ubo.mem, 0, VK_WHOLE_SIZE, (void**) &map);
+   vkdf_buffer_map(ctx, res->M_ubo, 0, VK_WHOLE_SIZE, (void**) &map);
 
    for (uint32_t i = 0; i < NUM_OBJECTS; i++) {
       VkdfObject *obj = res->objs[i];
@@ -693,8 +692,7 @@ fill_model_ubo(VkdfContext *ctx, DemoResources *res)
       map += sizeof(glm::mat4);
    }
 
-   vkdf_memory_unmap(ctx, res->M_ubo.mem, res->M_ubo.mem_props,
-                     0, VK_WHOLE_SIZE);
+   vkdf_buffer_unmap(ctx, res->M_ubo, 0, VK_WHOLE_SIZE);
 }
 
 static void
