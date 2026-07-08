@@ -226,7 +226,7 @@ vkdf_light_get_volume_scale(VkdfLight *l)
    }
    default:
       assert(!"Invalid light type");
-      break;
+      return glm::vec3(0, 0, 0);
    }
 }
 
